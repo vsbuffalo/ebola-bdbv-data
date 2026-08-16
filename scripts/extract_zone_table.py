@@ -116,6 +116,19 @@ def to_int(s: str) -> int | None:
     return int(re.sub(f"[{SPACES}]", "", t))
 
 
+#: A row's ordinal or bullet, which is numbering rather than name. Some reports
+#: number their zone rows -- `1- Bunia`, `2- Rwampara` -- and others prefix them
+#: with a dash. Requiring a row name to begin with a letter therefore discarded
+#: EVERY zone row on those reports: sitrep 020 kept only its unallocated row and
+#: its three subtotals, five rows out of twenty-eight, and Ituri came up 265
+#: cases short. The ordinal carries no information and is dropped, not captured.
+ORDINAL = re.compile(r"^\s*(?:\d{1,2}\s*[-.\)]\s*|[-•·–]\s*)")
+
+
+def strip_ordinal(name: str) -> str:
+    return ORDINAL.sub("", name).strip()
+
+
 def level_of(name: str) -> str:
     key = norm(name).strip(MARKERS + " ")
     if SUBTOTAL.match(key):
@@ -145,7 +158,7 @@ def extract(pdf: Path, specs=SPECS) -> tuple[list[dict], str]:
         t = page.table
         for i in range(t.header_rows(), t.nrows):
             cells = t.row(i)
-            name = page.label(cells)
+            name = strip_ordinal(page.label(cells))
             if not name or not re.match(r"^[A-Za-zÀ-ÿ]", name):
                 continue
             # EVERY VALUE COLUMN IS EMITTED, present in this table or not, and

@@ -94,6 +94,26 @@ def test_level_of(name, want):
     assert E.level_of(name) == want
 
 
+@pytest.mark.parametrize("printed, want", [
+    ("1- Bunia", "Bunia"),
+    ("2- Rwampara", "Rwampara"),
+    ("10- Mambasa", "Mambasa"),
+    ("3. Nizi", "Nizi"),
+    ("4) Aru", "Aru"),
+    ("- Autres ZS", "Autres ZS"),
+    ("Bunia", "Bunia"),
+    ("Makiso- Kisangani", "Makiso- Kisangani"),   # not an ordinal
+])
+def test_strip_ordinal(printed, want):
+    """Some reports number their zone rows; the number is not part of the name.
+
+    Requiring a row name to begin with a letter discarded EVERY numbered zone
+    row: sitrep 020 kept five rows out of twenty-eight and Ituri came up 265
+    cases short.
+    """
+    assert E.strip_ordinal(printed) == want
+
+
 def test_subtotal_is_province_not_zone():
     """Counting `Sous-total Ituri` as a zone double-counts the province.
 
