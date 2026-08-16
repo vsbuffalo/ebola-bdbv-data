@@ -149,7 +149,54 @@ def extract(pdf: Path, specs=SPECS) -> tuple[list[dict], str]:
                 "page": t.page,
                 **vals,
             })
-    return rows, "ok" if rows else "no_rows"
+    return demote_repeats(rows), "ok" if rows else "no_rows"
+
+
+def demote_repeats(rows: list[dict]) -> list[dict]:
+    """A province name printed twice is a province and then one of its own zones.
+
+    `Tshopo` is both a province and a health zone WITHIN that province, and both
+    rows are printed in the same table -- on sitrep 092, `Tshopo 11 6` opening
+    the block and `Tshopo 1 0` among the zones inside it. Classifying by name
+    alone makes both province rows, and the aggregation then compares the zone
+    sum of 10 against a printed total of 1.
+
+    The two are told apart by POSITION, which is the only thing that
+    distinguishes them: the province row opens its block and the zone row sits
+    inside it, so the first occurrence is the province and any repeat below it
+    is a health zone. `Kinshasa` and `Maniema` have the same property and would
+    behave the same way if the outbreak reached them.
+
+    A repeat is demoted rather than dropped, because it is a real place with a
+    real count that belongs in the province's parts.
+
+    A REPEAT WITH THE SAME COUNTS IS A DIFFERENT THING ENTIRELY, and telling the
+    two apart is the whole of this function. When the table runs onto a second
+    page, Word repeats the province row at the top of the continuation -- sitrep
+    048 prints `ITURI 1333 380` at the head of page 4 and again at the head of
+    page 5. That repeat is typography, not a place, and demoting it to a zone
+    added the province's own total to its parts and doubled them.
+
+    So: a repeated name carrying the SAME counts is a repeated header and is
+    dropped, and one carrying DIFFERENT counts is the province's namesake health
+    zone and is demoted. Nothing with a distinct value is ever discarded.
+    """
+    seen: dict[str, tuple] = {}
+    out: list[dict] = []
+    for r in rows:
+        if r["level"] != "province":
+            out.append(r)
+            continue
+        key = norm(r["zone_reported"]).strip(MARKERS + " ")
+        counts = (r.get("cum_cases"), r.get("cum_deaths"))
+        if key in seen:
+            if seen[key] == counts:
+                continue                      # a repeated header row
+            r["level"] = "zone"               # the province's own health zone
+        else:
+            seen[key] = counts
+        out.append(r)
+    return out
 
 
 def reconcile(rows: list[dict], column: str = "cum_cases") -> dict:
