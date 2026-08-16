@@ -300,7 +300,7 @@ EARLY_ZONE_TABLE = TableSpec(
 SPECS: tuple[TableSpec, ...] = (ZONE_TABLE, EARLY_ZONE_TABLE)
 
 
-def spans_same(a, b, tol: float = 8.0) -> bool:
+def spans_same(a, b, tol: float = 10.0) -> bool:
     """Two tables have the same left and right edges, so a page break split one table.
 
     BOTH edges must agree, and that is the strength of the test rather than a
@@ -310,11 +310,18 @@ def spans_same(a, b, tol: float = 8.0) -> bool:
     province-reports fell from 216 to 146 under it. Two edges agreeing within a
     few points is a much rarer coincidence than one broad overlap.
 
-    The tolerance is 8 pt, and it was tuned rather than chosen: measured end to
-    end, 8 pt gives 198 province-reports reconciling and 10 pt gives 180. The
-    looser value joins more pages and the extra joins are mostly wrong, which is
-    also why sitrep 090 is left unrecovered here -- its two pages begin 8.5 pt
-    apart, and buying that one report costs eighteen others.
+    The tolerance is 10 pt, and the history of this number is the point. It was
+    set to 8 pt because 10 pt measured WORSE end to end -- 180 reconciling
+    province-reports against 198 -- and that measurement was real but its
+    conclusion was wrong. Two defects elsewhere were doing the damage: an empty
+    row inside a heading was truncating headings, and numbered rows (`1- Bunia`)
+    were being discarded entirely. With those fixed, 10 pt gives 238 reconciling
+    against 226, recovers sitreps 090 and 093 whose two pages begin 8.5 and 9.0
+    pt apart, and adds 67 health-zone rows. 12 pt gives nothing further, so the
+    smaller value is kept.
+
+    A tuning parameter measured against a buggy pipeline gives the wrong answer
+    confidently, and the number then outlives the bug it was compensating for.
     """
     return abs(a.xs[0] - b.xs[0]) <= tol and abs(a.xs[-1] - b.xs[-1]) <= tol
 
