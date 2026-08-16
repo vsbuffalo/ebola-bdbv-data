@@ -2,7 +2,7 @@
 
 Date: 2026-08-16
 Project: ebola-bdbv-data
-Status: implemented, tested, and measured; 8 reports unread, 4 residuals open
+Status: every report that prints a zone table is read; 3 residuals open
 Tags: architecture, pdf-extraction, table-geometry
 
 ## The one design decision everything follows from
@@ -199,14 +199,17 @@ to 221.
 the name test required a letter first, so sitrep 020 kept five rows out of
 twenty-eight and Ituri came up 265 cases short.
 
-## Measured dead ends, recorded so they are not retried
+## Approaches tried and reverted, with the cost of each
 
 - **Overlap-fraction page matching** instead of two-edge: 146 province-reports
   against 216. Nearly every table spans most of the text width, so containment
   scores a perfect match.
-- **Edge tolerance of 10 pt** instead of 8: 180 reconciling against 198. Looser
-  joins more pages and the extra joins are mostly wrong. Sitrep 090's two pages
-  begin 8.5 pt apart and are left unjoined for that reason.
+- **Edge tolerance of 10 pt** instead of 8: measured 180 reconciling against
+  198 — and that conclusion was WRONG. Two defects elsewhere (a heading
+  truncated by an empty row, and numbered rows discarded) were doing the damage
+  and the looser tolerance was being blamed. With both fixed, 10 pt gives 238
+  against 226 and is now the value in use. A tuning parameter measured against
+  a buggy pipeline gives the wrong answer confidently.
 - **Forbidding `Zones de santé touchées`** to exclude the provincial summary:
   gains two reconciling province-reports, loses four whole reports, because the
   phrase also lands in this table's own heading where the title bleeds.
@@ -220,18 +223,26 @@ forbidding any vocabulary.
 
 ## What is left
 
-**Eight reports unread.** Sitreps 12, 14 and 16 print no zone table anywhere —
-a source fact, confirmed against the reference. Sitrep 15 and 83–86 are live
-gaps; 83–86 lay narrative prose across the heading row.
+**Every report that prints a per-zone table is now read: 77 of 83.** The other
+six — sitreps 12, 14, 16, 84, 85 and 86 — print no such table anywhere. The
+phrase does not occur in their text and the reference pipeline recovers nothing
+at zone level for them either. The 084–086 vintage dropped the table outright.
+That is a source fact, not a gap in the reading.
 
-**Four residuals, all ours.** Sitreps 028 and 033 recover a fragment. Sitrep 089
-is one death short. Sitrep 090's two pages are the 8.5 pt case above.
+Three layouts are in use, and each is a declared spec rather than a code path:
 
-**A diagnosed defect not yet fixed: a chain never extends backward.** On sitrep
-067 Table 2 begins on page 2 with its province rows and continues on page 3 with
-the zones; the head resolves on page 3, and nothing looks back, so Ituri's
-province row — 2,202 cases — is absent and 29 zone rows carry no province.
-Eighty zone rows across sitreps 5, 9, 67 and 87 are affected.
+| Spec | Reports | What it carries |
+| --- | --- | --- |
+| `zone_cumulative` | 68 | cumulative confirmed cases and deaths, letality, and from 13 July the daily ascertainment block |
+| `zone_early` | 8 | suspected cases and deaths, confirmed cases, contacts — no letality, no cumulative deaths |
+| `zone_mixed` | 1 | both at once: new suspected, new confirmed, THEN cumulative cases and deaths |
+
+The mixed layout is the reason order is declared rather than inferred: `Nouveaux
+cas confirmés` and `Cumul de cas Confirmés` are adjacent columns and only their
+sequence tells them apart.
+
+**Three residuals open**, all ours. Sitrep 033 recovers one part of Ituri; 083
+and 089 are each one death short.
 
 **Not yet built**, deliberately downstream: zone alias resolution, the
 rejected-values register, and the weekly stream construction the models consume.

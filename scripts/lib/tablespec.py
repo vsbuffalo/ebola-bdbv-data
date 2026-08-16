@@ -297,7 +297,32 @@ EARLY_ZONE_TABLE = TableSpec(
     values=(Role.SUSPECTED, Role.SUSPECTED_DEATHS, Role.CUM_CASES, Role.CONTACTS),
 )
 
-SPECS: tuple[TableSpec, ...] = (ZONE_TABLE, EARLY_ZONE_TABLE)
+#: A THIRD LAYOUT, printed around the end of May, which carries the daily and
+#: the cumulative side by side: new suspected, suspected deaths, new confirmed,
+#: THEN cumulative confirmed cases and cumulative confirmed deaths, recoveries
+#: and contacts. Both other specs reject it, and correctly -- the cumulative
+#: spec forbids a suspected column and the early spec forbids `Nouveaux` --
+#: because reading either of those onto this table would put a daily flow into a
+#: cumulative series or the reverse.
+#:
+#: It is a spec rather than a special case precisely because that is what the
+#: architecture is for: a new vintage adds a declared column order, not a code
+#: path. The order is what matters here, since `Nouveaux cas confirmés` and
+#: `Cumul de cas Confirmés` are adjacent and only their sequence tells them
+#: apart.
+MIXED_ZONE_TABLE = TableSpec(
+    name="zone_mixed",
+    requires=(
+        P(r"zones?\s+de\s+sant"),
+        P(r"nouveaux?\s+cas\s+suspects?"),
+        P(r"cumul\s+de\s+cas"),
+    ),
+    forbids=(P(r"letalit"), P(r"alertes")),
+    values=(Role.SUSPECTED, Role.SUSPECTED_DEATHS, Role.NEW_CASES,
+            Role.CUM_CASES, Role.CUM_DEATHS, Role.RECOVERED, Role.CONTACTS),
+)
+
+SPECS: tuple[TableSpec, ...] = (ZONE_TABLE, MIXED_ZONE_TABLE, EARLY_ZONE_TABLE)
 
 
 def spans_same(a, b, tol: float = 10.0) -> bool:
