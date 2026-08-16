@@ -162,6 +162,70 @@ Reports returning rows: 71 of 82, against the reference's 63. Identity closes on
 52, is not checkable on 13 (no printed total in the rows recovered), and fails on
 6.
 
+## The 11 unidentified reports, one by one
+
+Each was diagnosed by measuring what geometry the page actually carries, and
+they fall into four classes with nothing ambiguous between them. Two of the four
+are not defects.
+
+| Class | Reports | What the page carries | Fix |
+| --- | --- | --- | --- |
+| A. No zone table exists | 12, 14, 16, 17 | no `Province / Zone` heading anywhere in the document | none — a source fact. The reference route also returns nothing at zone level for all four. |
+| B. Zone data is in prose | 33 | narrative text, no table | none here — this is the prose route's job. The reference recovers 37 rows from narrative. |
+| C. No vertical rules | 18, 19, 20 | horizontal rules and row shading only; columns set by text alignment | rows from the horizontal rules, columns by clustering word x-positions |
+| D. Borders drawn as dots | 26, 28 | ~8,400 rectangles of 0.5 × 0.5 pt, stippled along every rule | coalesce collinear runs of dots into segments before filtering |
+| E. Narrative in the heading row | 89 | a correct grid; the heading holds three paragraphs of summary prose | identify structurally rather than by vocabulary |
+
+Class A is the handoff's claim that some reports print no zone data in any form,
+independently confirmed. Class B is the layering working as designed: a table
+reader should return nothing for a document that prints no table.
+
+**Class C** is the real limitation, and worth stating plainly: the geometric
+approach assumes a table is ruled on both axes. Sitrep 018's table is *banded* —
+alternating row shading with horizontal rules and no column separators at all.
+The producer is `ilovepdf.com` for 018 and macOS Quartz for 020, so this
+travels with the re-encoding rather than with the vintage. The fix is a hybrid
+that keeps the part geometry answers well: rows still come from the horizontal
+rules, so a wrapped zone name is still one row, and only the column boundaries
+are inferred from text alignment. That is strictly better than the character-grid
+approach, which has to infer both.
+
+**Class D** is a pure geometry fix and should be done first — it is the cheapest
+and it is entirely inside `pdftable`. Nothing about the table changed; the
+re-encoder simply replaced each ruled line with a row of dots, and a run of
+collinear dots is a rule.
+
+## On using vision models to resolve these
+
+Worth saying why I would not, for extraction.
+
+Every one of the eleven turned out to be mechanically diagnosable — the page
+either carries a grid or it does not, and measuring `len(rects)` by shape said
+which in one pass. None of them needed a model to look at a picture. Having
+found that out, adding a non-deterministic step to resolve cases that a
+deterministic one already explains would be the wrong trade: a released data
+artefact has to rebuild byte-identically, and a panel of model reads does not.
+Agreement between several models is also weaker evidence than it appears — they
+are not independent of each other, and all of them are reading the same document,
+which is the same objection that applies to comparing our extraction against
+INRB's.
+
+There is a genuinely independent check available and it is deterministic. 67 of
+the 82 reports carry a tagged structure tree with real `/Table`, `/TR`, `/TH`
+and `/TD` markup — sitrep 080 declares 13 tables, 163 rows and 782 data cells.
+That is the document author's own statement of which cell belongs to which row
+and column, and comparing it against the grid we infer from drawn borders is two
+genuinely different claims about the same page. Where they disagree, one is
+wrong in a way neither can conceal. Harvesting the text per cell needs
+marked-content mapping through the page content stream, which no mainstream
+Python library does out of the box, so it is a day of work rather than an
+afternoon — but it is the right cross-validation, and it is reproducible.
+
+Where a vision model does earn its place is as a *triage* instrument on new
+vintages: point it at a page and ask what changed, so the spec can be written.
+That is a development aid, not a pipeline step, and nothing it produces gets
+committed.
+
 ## What is left
 
 **Identification on 11 reports** — 12, 14, 16, 17, 18, 19, 20, 26, 28, 33, 89.
