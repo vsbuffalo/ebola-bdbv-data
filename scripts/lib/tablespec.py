@@ -122,13 +122,25 @@ class TableSpec:
 
 
 @dataclass(frozen=True)
-class Resolved:
-    """One table of a document, with its columns identified."""
+class Mapped:
+    """One page of a table, with that page's own columns identified.
 
-    spec: TableSpec
+    COLUMNS ARE MAPPED PER PAGE, not once for the whole table. The page that
+    carries the heading and the page that carries the data do not always have
+    the same column count: on sitrep 090 the heading page has ten columns and
+    its continuation has eight, because the title text laid across the heading
+    row creates boundaries the data rows do not have. Resolving once on the head
+    and indexing the continuation with it read the wrong columns; requiring the
+    two to match exactly orphaned the continuation and lost all 61 of its rows.
+
+    Mapping each page separately is safe precisely because the spec declares an
+    ORDER rather than indices -- whatever a page's column count, its numeric
+    columns still carry cases, then deaths, then letality, then the daily block.
+    """
+
+    table: object          # pdftable.Table
     roles: dict[Role, int]
     labels: tuple[int, ...]
-    tables: tuple  # pdftable.Table, in page order: the head and its continuations
 
     def label(self, row: Sequence[str]) -> str:
         """The row's own name: the RIGHTMOST label column carrying text.
@@ -153,6 +165,14 @@ class Resolved:
     def get(self, row: Sequence[str], role: Role) -> str:
         j = self.roles.get(role)
         return row[j] if j is not None and j < len(row) else ""
+
+
+@dataclass(frozen=True)
+class Resolved:
+    """A table of a document: its spec, and each of its pages already mapped."""
+
+    spec: TableSpec
+    pages: tuple[Mapped, ...]
 
 
 # --------------------------------------------------------------------------
@@ -254,97 +274,103 @@ EARLY_ZONE_TABLE = TableSpec(
 SPECS: tuple[TableSpec, ...] = (ZONE_TABLE, EARLY_ZONE_TABLE)
 
 
-def same_columns(a, b, tol: float = 4.0) -> bool:
-    """Two tables share a column geometry, so a page break split one table."""
-    return (len(a.xs) == len(b.xs)
-            and all(abs(u - v) <= tol for u, v in zip(a.xs, b.xs)))
+def spans_same(a, b, tol: float = 8.0) -> bool:
+    """Two tables occupy the same horizontal band, so a page break split one table.
+
+    Matched on the OUTER extent rather than on every internal boundary. A
+    continuation page has the same left and right edges as its head but need not
+    have the same column count: the heading page's title text creates boundaries
+    the data rows do not have, and on sitrep 090 that is ten columns against
+    eight. Requiring every boundary to agree orphaned the continuation and lost
+    all 61 of its rows; requiring only the extent keeps them, and mapping each
+    page's columns separately is what makes that safe.
+    """
+    return abs(a.xs[0] - b.xs[0]) <= tol and abs(a.xs[-1] - b.xs[-1]) <= tol
+
+
+def _map(table, spec: TableSpec) -> Mapped | None:
+    labels, values = classify(table, start=table.header_rows())
+    if not values:
+        return None
+    roles = {role: col for role, col in zip(spec.values, values)
+             if role is not Role.IGNORED}
+    return Mapped(table=table, roles=roles, labels=tuple(labels))
 
 
 def select(tables: Iterable, spec: TableSpec) -> Resolved | None:
     """The document's instance of `spec`, with its continuation pages attached.
 
-    The head is the FIRST table that identifies, not the largest. This table is
-    printed across two pages in most vintages, with the province rows on the
-    first and the health zones on the second, and both repeat the heading.
-    Choosing the larger made the second page the head and dropped the first, so
-    every province row went missing and the identity had nothing to compare
-    against -- sitrep 060 lost 1,808 of its 2,011 cases that way.
+    CANDIDATES ARE RANKED, NOT TAKEN IN ORDER. Heading vocabulary alone does not
+    single this table out, and no amount of tightening it did. The provincial
+    summary sits above this table on the same page and states the same things
+    about itself -- a province, a case count, a death count -- because it IS a
+    summary of it. Every phrase that excluded the summary also excluded some
+    vintage of the real table, because the title text bleeds across the heading
+    row into arbitrary cells.
 
-    Continuations are found by COLUMN GEOMETRY rather than by looking for a
-    repeated heading, because some vintages repeat it and some do not. Columns
-    are classified once, over the head and its continuations together, so a
-    continuation page that carries no heading at all is still readable.
+    The difference that holds is structural: the summary carries one row per
+    province, five to eight of them, and this table one row per health zone,
+    thirty to sixty. So candidates are grouped into chains by horizontal extent
+    and the chain with the most data rows wins.
+
+    Ranking also settles the opposite failure. This table is printed across two
+    pages, and taking the LARGEST PAGE as the head made page two the head and
+    dropped page one's province rows -- sitrep 060 lost 1,808 of its 2,011 cases
+    that way. A chain is scored whole, so both pages count together.
     """
     tabs = sorted(tables, key=lambda t: (t.page, t.ys[0]))
-
-    # CANDIDATES ARE RANKED, NOT TAKEN IN ORDER. Heading vocabulary alone does
-    # not single this table out, and no amount of tightening the vocabulary made
-    # it. The provincial summary sits above this table on the same page and
-    # states the same four things about itself -- a province, a case count, a
-    # death count, a letality -- because it IS a summary of this table. Every
-    # phrase that excluded it excluded some vintage of the real table too, since
-    # the title text bleeds across the heading row and lands in arbitrary cells.
-    #
-    # The difference that actually holds is structural rather than lexical: the
-    # summary carries one row per province, five to eight of them, and this
-    # table carries one row per health zone, thirty to sixty. So candidates are
-    # grouped into chains by column geometry and the chain with the most data
-    # rows wins.
-    #
-    # Ranking also removes the ordering problem in the other direction. This
-    # table is printed across two pages, and taking the FIRST candidate as the
-    # head is right while taking the LARGEST PAGE was wrong -- the province rows
-    # are on page one and the zones on page two, and choosing page two dropped
-    # every province row, costing sitrep 060 1,808 of its 2,011 cases. Chains
-    # are scored whole, so both pages are counted together and the head is
-    # simply the chain's first page.
-    cands = []
-    for t in tabs:
-        if not spec.identifies(t.header()):
-            continue
-        labels, values = classify(t, start=t.header_rows())
-        if values:
-            cands.append(t)
-    if not cands:
+    heads = [t for t in tabs if spec.identifies(t.header()) and _map(t, spec)]
+    if not heads:
         return None
 
+    # CHAINING REQUIRES ADJACENCY, not merely a shared width. Nearly every
+    # table in these reports spans the full text width, so extent alone linked
+    # the provincial summary on page 2 to the zone table on page 4 and then to
+    # the laboratory table on page 7 -- one "chain" of three unrelated tables
+    # whose province rows were counted twice, giving a residual of exactly the
+    # printed total on five reports.
+    #
+    # A table continued across a page break resumes on the NEXT page. Anything
+    # with a page of something else in between is a different table.
     chains: list[list] = []
-    for t in cands:
+    for t in heads:
         for chain in chains:
-            if same_columns(t, chain[0]):
+            if spans_same(t, chain[-1]) and t.page - chain[-1].page <= 1:
                 chain.append(t)
                 break
         else:
             chains.append([t])
 
+    # A CONTINUATION CARRIES NO HEADING OF ITS OWN. That is the test, and
+    # dropping it was a mistake worth naming: matching on horizontal extent
+    # alone attached the alerts and laboratory tables further down the document,
+    # because nearly every table on these pages spans the full text width. The
+    # sums then included rows from three different tables and the identity
+    # failed on 37 reports instead of 6.
+    #
+    # So a continuation must be headless AND share the extent AND follow the
+    # chain without another table of its own intervening -- the chain grows only
+    # into what comes directly next.
+    for chain in chains:
+        anchor = chain[0]
+        pos = max((t.page, t.ys[0]) for t in chain)
+        for t in tabs:
+            if (t.page, t.ys[0]) <= pos or not spans_same(t, anchor):
+                continue
+            if t.header_rows() != 0 or t.page - pos[0] > 1:
+                break
+            chain.append(t)
+            pos = (t.page, t.ys[0])
+        chain.sort(key=lambda t: (t.page, t.ys[0]))
+
     def weight(chain) -> int:
         return sum(t.nrows - t.header_rows() for t in chain)
 
     best = max(chains, key=weight)
-    head = best[0]
-
-    # Continuation pages carry no heading of their own, so they are not
-    # candidates and must be attached separately -- by the same column geometry.
-    chain = sorted(
-        {id(t): t for t in best
-         + [t for t in tabs
-            if same_columns(t, head) and (t.page, t.ys[0]) >= (head.page, head.ys[0])]
-         }.values(),
-        key=lambda t: (t.page, t.ys[0]))
-
-    labels, values = classify(head, start=head.header_rows())
-    if not values:
-        for t in chain[1:]:
-            labels, values = classify(t, start=t.header_rows())
-            if values:
-                break
-    if not values:
+    pages = tuple(m for m in (_map(t, spec) for t in best) if m)
+    if not pages:
         return None
-
-    roles = {role: col for role, col in zip(spec.values, values)
-             if role is not Role.IGNORED}
-    return Resolved(spec=spec, roles=roles, labels=tuple(labels),
-                    tables=tuple(chain))
+    return Resolved(spec=spec, pages=pages)
 
 
 def select_any(tables: Iterable, specs: Sequence[TableSpec] = SPECS) -> Resolved | None:

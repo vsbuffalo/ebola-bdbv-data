@@ -122,10 +122,11 @@ def extract(pdf: Path, specs=SPECS) -> tuple[list[dict], str]:
         return [], "no_matching_table"
 
     rows: list[dict] = []
-    for t in got.tables:
+    for page in got.pages:
+        t = page.table
         for i in range(t.header_rows(), t.nrows):
             cells = t.row(i)
-            name = got.label(cells)
+            name = page.label(cells)
             if not name or not re.match(r"^[A-Za-zÀ-ÿ]", name):
                 continue
             # EVERY VALUE COLUMN IS EMITTED, present in this table or not, and
@@ -136,13 +137,13 @@ def extract(pdf: Path, specs=SPECS) -> tuple[list[dict], str]:
             # column, so `cum_deaths` vanished from the output for all 82
             # reports. A column absent from a table is not data that is missing;
             # it is a quantity that table does not report, and null says so.
-            vals = {r.value: (to_int(got.get(cells, r)) if r in got.roles else None)
+            vals = {r.value: (to_int(page.get(cells, r)) if r in page.roles else None)
                     for r in VALUE_ROLES}
             if all(v is None for v in vals.values()):
                 continue
             rows.append({
                 "zone_reported": name,
-                "province_printed": got.parent(cells),
+                "province_printed": page.parent(cells),
                 "level": level_of(name),
                 "table": got.spec.name,
                 "page": t.page,
