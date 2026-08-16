@@ -356,3 +356,112 @@ def test_multi_page_tables_keep_their_province_rows(n):
     rows, _ = E.extract(pdf(n))
     levels = {r["level"] for r in rows}
     assert "province" in levels and "zone" in levels
+
+
+# --------------------------------------------------------------------------
+# The exception register
+# --------------------------------------------------------------------------
+
+import aggregate_provinces as A                                   # noqa: E402
+import polars as pl                                               # noqa: E402
+
+REGISTER = ROOT / "data" / "raw" / "reconciliation_exceptions.tsv"
+
+
+def _check_row(sitrep, province, rc, rd, verdict="fails"):
+    return {"sitrep": sitrep, "date": "2026-01-01", "province": province,
+            "residual_cases": rc, "residual_deaths": rd, "reconciled": verdict}
+
+
+def _register(rows):
+    return pl.DataFrame(rows, schema={c: pl.Utf8 for c in A.REGISTER_COLUMNS})
+
+
+def _entry(sitrep, unit, column, gap, note="because the page says so"):
+    return {"sitrep": str(sitrep), "date": "2026-01-01",
+            "sha256_16": "0" * 16, "unit": unit, "column": column,
+            "expected_gap": str(gap), "verified_by": "test", "note": note}
+
+
+def test_exception_excuses_only_its_own_gap():
+    """An entry licenses ONE residual, not a report.
+
+    Recording the number rather than the report is what makes the register a
+    claim about the page instead of a mute button: if our reading later changes
+    the gap, the report goes straight back to the failing set.
+    """
+    ex = _register([_entry(53, "Nord-Kivu", "cum_cases", 5),
+                    _entry(53, "Nord-Kivu", "cum_deaths", 7)])
+    same = A.apply_exceptions(pl.DataFrame([_check_row(53, "Nord-Kivu", 5, 7)]), ex)
+    assert same["reconciled"][0] == "verified_exception"
+
+    moved = A.apply_exceptions(pl.DataFrame([_check_row(53, "Nord-Kivu", 6, 7)]), ex)
+    assert moved["reconciled"][0] == "fails", "a gap that moved is not excused"
+
+
+def test_exception_does_not_leak_to_another_province():
+    ex = _register([_entry(53, "Nord-Kivu", "cum_cases", 5)])
+    other = A.apply_exceptions(pl.DataFrame([_check_row(53, "Ituri", 5, 0)]), ex)
+    assert other["reconciled"][0] == "fails"
+
+
+def test_a_reconciling_row_is_left_alone():
+    ex = _register([_entry(53, "Nord-Kivu", "cum_cases", 5)])
+    good = A.apply_exceptions(
+        pl.DataFrame([_check_row(53, "Nord-Kivu", 0, 0, verdict="ok")]), ex)
+    assert good["reconciled"][0] == "ok"
+
+
+@needs_pdfs
+def test_the_committed_register_is_not_stale():
+    """Every entry's hash still matches the document it describes.
+
+    A revised report must return to the failing set rather than inherit the
+    exception its predecessor was granted, so this is the guarantee that makes
+    the register safe to keep.
+    """
+    ex = A.load_exceptions(REGISTER, PDFS)
+    assert ex.height > 0
+
+
+@needs_pdfs
+def test_a_stale_hash_stops_the_build(tmp_path):
+    text = REGISTER.read_text().replace("d8d21e9c003d1ae7", "0" * 16)
+    bad = tmp_path / "stale.tsv"
+    bad.write_text(text)
+    with pytest.raises(SystemExit, match="STALE"):
+        A.load_exceptions(bad, PDFS)
+
+
+def test_unverifiable_register_is_refused(tmp_path):
+    """Without the archive the hashes cannot be checked, so nothing is excused."""
+    bad = tmp_path / "reg.tsv"
+    bad.write_text(REGISTER.read_text())
+    with pytest.raises(SystemExit, match="suppression"):
+        A.load_exceptions(bad, None)
+
+
+@needs_pdfs
+def test_every_registered_gap_is_the_gap_we_actually_measure():
+    """The register describes THIS pipeline's residuals, not a remembered one.
+
+    If the reader improves and a documented page starts closing, the entry is
+    obsolete and should be deleted rather than left asserting a gap that no
+    longer exists.
+    """
+    recon = ROOT / "data" / "build" / "series" / "province_series_reconciliation.csv"
+    if not recon.exists():
+        pytest.skip("run `make build` first")
+    got = pl.read_csv(recon, infer_schema_length=None)
+    ex = pl.read_csv(REGISTER, separator="\t", comment_prefix="#",
+                     infer_schema_length=None)
+    col = {"cum_cases": "residual_cases", "cum_deaths": "residual_deaths"}
+    for e in ex.iter_rows(named=True):
+        if e["column"] not in col:
+            continue
+        row = got.filter((pl.col("sitrep") == int(e["sitrep"]))
+                         & (pl.col("province") == e["unit"]))
+        assert row.height == 1, f"sitrep {e['sitrep']} {e['unit']} not in the build"
+        assert row[col[e["column"]]][0] == int(e["expected_gap"]), (
+            f"sitrep {e['sitrep']} {e['unit']} {e['column']}: register says "
+            f"{e['expected_gap']}, build measures {row[col[e['column']]][0]}")

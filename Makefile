@@ -34,6 +34,8 @@ build:
 		--pdfs data/raw/sitrep_pdfs --out data/build/series/zone_table.csv
 	uv run python scripts/aggregate_provinces.py \
 		--panel data/build/series/zone_table.csv \
+		--pdfs data/raw/sitrep_pdfs \
+		--exceptions data/raw/reconciliation_exceptions.tsv \
 		--out data/build/series/province_series.csv
 
 ## test    -- the pure-function tests.

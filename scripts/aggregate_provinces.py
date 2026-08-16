@@ -35,11 +35,72 @@ whatever reads the file rather than hidden by its absence.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import re
 import sys
 from pathlib import Path
 
 import polars as pl
+
+REGISTER_COLUMNS = ("sitrep", "date", "sha256_16", "unit", "column",
+                    "expected_gap", "verified_by", "note")
+
+
+def load_exceptions(path: Path, pdfs: Path | None) -> pl.DataFrame:
+    """Read the hand-verified exception register, and refuse a stale one.
+
+    An entry asserts that a named PDF does not agree with itself. That claim is
+    about ONE VERSION of the document, and INSP revises reports and republishes
+    them under the same number -- so the file's hash is checked against the
+    entry, and a mismatch stops the build. A corrected report must return to the
+    failing set and be read again, not inherit the exception its predecessor was
+    granted.
+
+    With no `--pdfs` the hashes cannot be checked, and the register is refused
+    rather than applied unverified: an exception that has not been tied to a
+    document is not an exception, it is a suppression.
+    """
+    if not path.exists():
+        return pl.DataFrame(schema={c: pl.Utf8 for c in REGISTER_COLUMNS})
+    ex = pl.read_csv(path, separator="\t", comment_prefix="#",
+                     infer_schema_length=None)
+    missing = set(REGISTER_COLUMNS) - set(ex.columns)
+    if missing:
+        raise SystemExit(f"{path}: missing column(s) {sorted(missing)}")
+    if ex.is_empty():
+        return ex
+    if pdfs is None:
+        raise SystemExit(
+            f"{path} holds {ex.height} exceptions but --pdfs was not given, so "
+            "their hashes cannot be verified. An exception not tied to a "
+            "document is a suppression; pass --pdfs or move the register aside.")
+
+    stale, absent = [], []
+    for e in ex.iter_rows(named=True):
+        hits = sorted(pdfs.glob(f"sitrep_{int(e['sitrep']):03d}_*.pdf"))
+        if not hits:
+            absent.append(e)
+            continue
+        got = hashlib.sha256(hits[0].read_bytes()).hexdigest()[:16]
+        if got != e["sha256_16"]:
+            stale.append((e, got, hits[0].name))
+    if absent:
+        raise SystemExit(
+            "the exception register names reports that are not in the archive:\n"
+            + "\n".join(f"  sitrep {e['sitrep']} ({e['unit']}, {e['column']})"
+                        for e in absent))
+    if stale:
+        lines = "\n".join(
+            f"  sitrep {e['sitrep']} {name}: register says {e['sha256_16']}, "
+            f"file is {got}" for e, got, name in stale)
+        raise SystemExit(
+            "EXCEPTIONS ARE STALE -- the documents they describe have changed:\n"
+            + lines
+            + "\n\nEach was a claim about one version of a page. Re-read the new "
+              "version and update or remove the entry; do not just refresh the "
+              "hash.")
+    return ex
+
 
 PARTS = ("zone", "unassigned")
 COUNTS = ("cum_cases", "cum_deaths", "new_cases", "deaths_community",
@@ -151,6 +212,41 @@ def carry_province(panel: pl.DataFrame) -> pl.DataFrame:
             .drop("_prov", "_sub", "_fwd", "_bwd", "_merged", "_blk"))
 
 
+def apply_exceptions(check: pl.DataFrame, ex: pl.DataFrame) -> pl.DataFrame:
+    """Mark a residual the page itself produces, and only that residual.
+
+    A row is re-labelled `verified_exception` when an entry names its report,
+    its province and its column AND the residual equals the entry's
+    `expected_gap` exactly. A gap that has moved -- because our reading changed
+    -- is NOT excused: it goes back to `fails`, which is the point of recording
+    the number rather than the report.
+    """
+    if ex.is_empty():
+        return check.with_columns(pl.lit(None, pl.Utf8).alias("exception_note"))
+
+    wide = {}
+    for e in ex.iter_rows(named=True):
+        wide[(int(e["sitrep"]), e["unit"], e["column"])] = (
+            int(e["expected_gap"]), e["note"])
+
+    verdicts, notes = [], []
+    for r in check.iter_rows(named=True):
+        v, n = r["reconciled"], None
+        if v == "fails":
+            hit_c = wide.get((r["sitrep"], r["province"], "cum_cases"))
+            hit_d = wide.get((r["sitrep"], r["province"], "cum_deaths"))
+            rc, rd = r.get("residual_cases"), r.get("residual_deaths")
+            ok_c = (rc in (0, None)) or (hit_c is not None and hit_c[0] == rc)
+            ok_d = (rd in (0, None)) or (hit_d is not None and hit_d[0] == rd)
+            if ok_c and ok_d and (hit_c or hit_d):
+                v = "verified_exception"
+                n = (hit_c or hit_d)[1]
+        verdicts.append(v)
+        notes.append(n)
+    return check.with_columns(pl.Series("reconciled", verdicts),
+                              pl.Series("exception_note", notes, dtype=pl.Utf8))
+
+
 def aggregate(panel: pl.DataFrame) -> tuple[pl.DataFrame, pl.DataFrame]:
     """Sum the parts to province level, and compare against the printed row."""
     if "province" not in panel.columns:
@@ -207,6 +303,15 @@ def main() -> None:
                     help="the health-zone extraction (zone_table.csv)")
     ap.add_argument("--out", required=True, type=Path,
                     help="province series; a _reconciliation.csv sibling is written beside it")
+    ap.add_argument("--exceptions", type=Path,
+                    default=Path("data/raw/reconciliation_exceptions.tsv"),
+                    help="TSV of reports whose OWN arithmetic does not close, "
+                         "verified by hand against the page and keyed on the "
+                         "PDF's hash. An entry asserts a claim about the "
+                         "document -- that its printed rows do not sum to its "
+                         "printed total -- not a licence to silence the check.")
+    ap.add_argument("--pdfs", type=Path, default=Path("data/raw/sitrep_pdfs"),
+                    help="the archive, so each exception's hash can be verified")
     ap.add_argument("--allow-unchecked", type=int, default=None,
                     help="how many province-reports may lack a printed total to "
                          "compare against. Absent, any number is allowed and "
@@ -214,9 +319,12 @@ def main() -> None:
     args = ap.parse_args()
     args.out.parent.mkdir(parents=True, exist_ok=True)
 
+    ex = load_exceptions(args.exceptions,
+                         args.pdfs if args.pdfs and args.pdfs.is_dir() else None)
     panel = pl.read_csv(args.panel, infer_schema_length=None)
     panel = carry_province(panel)
     summed, check = aggregate(panel)
+    check = apply_exceptions(check, ex)
 
     summed.write_csv(args.out)
     check.write_csv(args.out.with_name(args.out.stem + "_reconciliation.csv"))
@@ -239,8 +347,10 @@ def main() -> None:
     ok = tally.get("ok", 0)
     bad = tally.get("fails", 0)
     unchecked = tally.get("not_checkable", 0)
+    excused = tally.get("verified_exception", 0)
     print(f"{check.height} province-reports: {ok} reconcile, "
-          f"{bad} disagree, {unchecked} have no printed total to check against")
+          f"{excused} carry a verified exception, {bad} disagree, "
+          f"{unchecked} have no printed total to check against")
 
     if bad:
         print("\nPROVINCE TOTALS THAT DO NOT MATCH THE SUM OF THEIR PARTS:",

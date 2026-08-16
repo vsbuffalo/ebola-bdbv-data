@@ -1,0 +1,45 @@
+# Reports whose OWN ARITHMETIC does not close, verified by hand against the page.
+#
+# WHAT THIS FILE IS FOR, AND WHAT IT IS NOT FOR
+# The extraction is checked by the page's own arithmetic: a province's health
+# zone rows, plus any rows the source counts but has not assigned to a zone,
+# must equal the province total the page prints. A residual is normally OUR
+# defect -- a row the reader failed to recover -- and most chased so far have
+# been exactly that, each traceable to one row whose value equalled the gap.
+#
+# But some pages do not close on their own terms. An entry here asserts: I
+# OPENED THIS PAGE, ADDED THE PRINTED ROWS, AND THE SOURCE DOES NOT AGREE WITH
+# ITSELF. It is a claim about the document, not a licence to silence a check.
+# Every entry below was read against the rendered page, not inferred from the
+# residual's size -- a residual's shape suggests where to look and never what
+# is there.
+#
+# KEYED ON THE FILE HASH, NOT THE REPORT NUMBER. INSP revises reports and
+# republishes them under the same number. An exception granted to one version
+# must not silently carry over to a corrected one, so the hash is verified and a
+# mismatch fails the build rather than applying a stale exception. `sha256_16`
+# is the first 16 hex characters of the file's SHA-256.
+#
+# `expected_gap` IS EXACT. The build accepts that residual and no other. If our
+# reading later improves or regresses the number changes, and the report returns
+# to the failing set instead of staying quietly excused.
+#
+# COLUMNS
+#   sitrep        report number
+#   date          data date, from the page's `Date de rapportage`
+#   sha256_16     first 16 hex characters of the PDF's SHA-256
+#   unit          which identity: a province name, or `national`
+#   column        which value column the exception covers
+#   expected_gap  the residual the printed page produces, signed as
+#                 (sum of parts) - (printed total)
+#   verified_by   who checked, and against what
+#   note          what is inconsistent on the page
+#
+sitrep	date	sha256_16	unit	column	expected_gap	verified_by	note
+34	2026-06-17	d9fb49946779aeb6	Ituri	cum_cases	1	read against the rendered page 2026-08-16: Table 2 rows, the ITURI subtotal, and the front-page list of affected zones	Drodro is printed as a Table 2 zone row (1 case, 1 death) and named in the narrative breakdown, but is NOT counted in the printed ITURI subtotal of 817, and the front page's list of affected Ituri zones reads "Ituri (21/36)" and names exactly 21 zones, Drodro not among them. Two places on the page agree with each other and disagree with the one row, so the zone rows exceed the printed subtotal by exactly Drodro's single case.
+34	2026-06-17	d9fb49946779aeb6	Ituri	cum_deaths	1	same reading	The same row. Drodro's single death is likewise absent from the subtotal.
+53	2026-07-06	d8d21e9c003d1ae7	Nord-Kivu	cum_cases	5	read against the rendered page 2026-08-16, adding the eleven printed zone rows	The printed NORD-KIVU province row states 144 cases. Its own eleven zone rows -- Butembo 41, Katwa 56, Beni 29, Oicha 3, Kalunguta 2, Kyondo 4, Goma 1, Masereka 3, Vuhovi 1, Mabalako 1, Musienene 8 -- sum to 149. No zone row is missing: the front page states "Nord-Kivu (11/34)" and names the same eleven. The page simply does not add up.
+53	2026-07-06	d8d21e9c003d1ae7	Nord-Kivu	cum_deaths	7	same reading	Same block: the eleven zone rows sum to 88 deaths against a printed 81.
+55	2026-07-08	44706aea5157df82	Nord-Kivu	cum_cases	-3	read against the rendered page 2026-08-16, adding the eleven printed zone rows	The printed NORD-KIVU row states 158 cases; its eleven zone rows sum to 155. The same eleven zones as sitrep 053 two days earlier, where the discrepancy ran the other way -- so the province row and the zone block are being updated on different schedules rather than one being consistently wrong.
+55	2026-07-08	44706aea5157df82	Nord-Kivu	cum_deaths	-1	same reading	Same block: 88 against a printed 89.
+81	2026-08-03	d342d30b1eaf941c	Nord-Kivu	cum_deaths	-2	read against the rendered page 2026-08-16: Table 2's Katwa row, Table 2's province row, the provincial summary table, and the narrative paragraph	THE PAGE STATES NORD-KIVU'S CUMULATIVE DEATHS TWO WAYS AND OUR ZONE SUM AGREES WITH THE NARRATIVE. Table 2's province row and the provincial summary both print 290; the narrative reads "Le cumul atteint 426 cas et 288 deces, soit une letalite de 68,1 %", and the twelve zone rows sum to 288. The cases agree everywhere at 426. The same two deaths are visible in the daily block: the narrative says 5 deaths all at Katwa of which 2 in a treatment centre, and the province row prints 3 community plus 2 intra-CTE, while Katwa's own row prints 1 community plus 2 intra-CTE. The zone row is two community deaths short of what the province row and the narrative both assert.
