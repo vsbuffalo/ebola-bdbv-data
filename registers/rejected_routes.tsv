@@ -1,0 +1,19 @@
+# Reports whose extraction ROUTE is rejected by hand, after reading the page.
+#
+# An entry says: this route, on this document, reads a table that is not what
+# the route believes it is, and its output is wrong in a way no identity can
+# catch from inside. It does not delete the report -- the named FALLBACK route
+# carries it -- and it is keyed on the file hash so a revised document returns
+# for a fresh judgement rather than inheriting this one.
+#
+# COLUMNS
+#   sitrep      report number
+#   date        data date, from the page's Date de rapportage
+#   sha256_16   first 16 hex characters of the PDF's SHA-256
+#   route       the extraction route being rejected
+#   fallback    the route that carries this report instead
+#   verified_by who read the page, and what they compared
+#   note        what the rejected route actually read
+#
+sitrep	date	sha256_16	route	fallback	verified_by	note
+33	2026-06-16	b70cd26f0bceba7e	zone_cumulative	provincial_summary	read against the page 2026-08-16, with the provincial summary and the narrative	Sitrep 033 prints NO per-zone table: its zone data is a narrative list. The zone route matches a fragment of the PROVINCIAL SUMMARY instead and emits its rows as health zones -- including a row literally named "Nord-Kivu1" carrying 73 cases, which then enters Ituri's zone series and persists there by forward-fill. The summary route reads the same page correctly (Ituri 799, Nord-Kivu 73, Sud-Kivu 3, Total 875, matching the narrative "Province de l'Ituri (799 cas)").

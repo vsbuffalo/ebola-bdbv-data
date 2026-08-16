@@ -2,7 +2,7 @@
 # by design: `build` and `doc` never touch the network, so a rebuild can never
 # silently change what the source says.
 
-.PHONY: check fetch verify build compare figures test
+.PHONY: check fetch verify build streams compare figures external test
 
 ## check   -- is the archive current, and does the source still look the same?
 ##            Exit 0 current, 1 behind, 2 the source moved, 3 unreachable.
@@ -44,12 +44,35 @@ build:
 		--exceptions registers/reconciliation_exceptions.tsv \
 		--out data/build/series/province_series.csv
 
+## streams -- OFFLINE. The weekly observation streams the models fit.
+##            Fails unless every stream's emitted total equals what the
+##            source's cumulative moved; the grid is also checked against
+##            every printed province row and the gaps land in meta.json.
+streams:
+	uv run python scripts/build_streams.py \
+		--panel data/build/series/zone_table.csv \
+		--geojson data/raw/health_zones.geojson \
+		--population data/raw/zone_population.csv \
+		--out-dir data/build/streams
+
 ## compare -- ours against the two other extraction lineages of the same PDFs.
 ##            Paths default to sibling checkouts; override INRB_DIR / SCAN.
 ##            Agreement is evidence about transcription, never about the counts;
 ##            a disagreement is always a finding and lands in compare/.
-INRB_DIR ?= ../ebola-camdl/data/raw/inrb_extraction
+INRB_DIR ?= external/BDBV2026-Data
 SCAN     ?= ../epiforecast-repro/raw/insp_sitrep_scanned.csv
+
+## external -- clone the comparison sources into external/ (gitignored).
+##            INRB-UMIE's transcription comes from its own repository;
+##            the epiforecasts scan lives in the local epiforecast-repro
+##            checkout, whose path SCAN can override.
+external:
+	mkdir -p external
+	test -d external/BDBV2026-Data || \
+		git clone --depth 1 https://github.com/INRB-UMIE/BDBV2026-Data \
+		external/BDBV2026-Data
+	cd external/BDBV2026-Data && git log -1 --format='%H %cs' \
+		> ../BDBV2026-Data.commit
 compare:
 	uv run python scripts/compare_extractions.py \
 		--zone-table data/build/series/zone_table.csv \

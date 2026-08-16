@@ -1,0 +1,30 @@
+# Rows whose PROVINCE ATTRIBUTION is stated by the page but not recoverable
+# from the table's geometry alone, verified by hand against the page.
+#
+# The early layout prints the province as a merged cell spanning its zones, and
+# the grid records only the row that cell's text happens to centre on. The
+# carry fills the rest by taking the nearest printed label, and at a block
+# boundary the nearest label can be the wrong block's: on sitrep 009, Rwampara
+# sits two rows from Nord-Kivu's label and three from Ituri's, so 32 Ituri
+# cases entered Nord-Kivu -- once -- and persisted in its stream by forward
+# fill. The front page of the same report states the membership in words.
+#
+# An entry asserts what the PAGE says a row belongs to. `province` may be
+# `none`, meaning the page assigns the row to no province (a national pool
+# row); such rows stay out of every province series and inside the national
+# identity. Hash-keyed like every register: a revised document returns for a
+# fresh judgement.
+#
+# COLUMNS
+#   sitrep      report number
+#   date        data date, from the page's Date de rapportage
+#   sha256_16   first 16 hex characters of the PDF's SHA-256
+#   zone        the row's printed name (folded matching)
+#   province    what the page assigns it to, or `none`
+#   verified_by who read the page, and against what
+#   note        where on the page the assignment is stated
+#
+sitrep	date	sha256_16	zone	province	verified_by	note
+9	2026-05-23	281f68c03b1a9db8	Rwampara	Ituri	read against the page 2026-08-16: the front-page zone list and the table order	The front page reads "ITURI : Aru, Bunia, Kilo, Mongbwalu, Nizi, Nyankunde et Rwampara" and "NORD-KIVU : Butembo, Goma et Katwa". Rwampara is Ituri's. The table also groups it with Ituri's zones, above the Nord-Kivu block; only the merged label's landing row misleads the carry.
+7	2026-05-21	e7a9592ec0925e74	Echantillons sans fiche	none	read against the page 2026-08-16: the front-page zone lists name no such zone	Samples without a case-investigation form: a national pool row printed among the zones. The front page's per-province zone lists do not contain it, so the page assigns it to no province. It stays inside the national total and out of every province series.
+8	2026-05-22	5223224672033718	Echantillons sans fiche	none	same reading as sitrep 007	Same row, same vintage, same status.

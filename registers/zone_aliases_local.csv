@@ -1,0 +1,24 @@
+# Zone-name aliases the INRB table does not cover, observed in the INSP PDFs.
+#
+# HAND-CURATED. The INRB feed ships data/aliases.csv, which we fetch to
+# data/raw/zone_aliases.csv and apply; it maps names seen in the feed's OWN
+# curated CSVs. It does not cover names that arise only when a PDF table is
+# converted to text, because INRB never does that conversion.
+#
+# Two things produce those names. A health zone whose printed name is simply
+# spelled differently from the shapefile ("Wanie-Rukula" vs "Wanierukula"), and
+# a name too wide for its column, which pdftotext emits as two fragments; the
+# parser rejoins them and the rejoined string can lack the separator that the
+# shapefile spelling has ("Makiso-" + "Kisangani" -> "MakisoKisangani").
+#
+# Same columns as the INRB table so the two load through one code path.
+# canonical_nom must be a `nom` value in data/raw/health_zones.geojson.
+observed_name,canonical_nom,source_dataset,notes
+Wanie-Rukula,Wanierukula,insp_sitrep,Hyphenated spelling in INSP SitRep Table 2; shapefile has no hyphen
+MakisoKisangani,Makiso Kisangani,insp_sitrep,Column-wrap rejoin of "Makiso-" + "Kisangani" (SitRep 078 onward)
+BomaMangbetu,Boma Mangbetu,insp_sitrep,Column-wrap rejoin of "Boma" + "Mangbetu" (SitRep 078 onward)
+Nai-Nia,Nia Nia,insp_sitrep,"Transposition of Nia-Nia, a real Ituri health zone in Mambasa territory. Appears once, SitRep 30 (2026-06-13), 1 case and 1 death; that report prints no other Nia-Nia row, so this is the zone's own row misspelt rather than a duplicate."
+Karissibi,Karisimbi,insp_sitrep_early,"Sitreps 010 and 011 double the s. Karisimbi is a Nord-Kivu health zone in Goma; the shapefile spells it with one."
+Manguripa,Manguredjipa,insp_sitrep_early,"Sitrep 015 contracts the name. Manguredjipa is a Nord-Kivu health zone; it reports 0 confirmed cases here and appears in no later report."
+Kilo Mission,Kilo,insp_sitrep_early,"Sitrep 007 prints the mission's name alongside the health zone's. Kilo is the zone; the later reports print it alone."
+Mungbwalu,Mongbwalu,insp_sitrep_early,"A vowel transposition of the outbreak's index health zone, in the early layout only."

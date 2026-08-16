@@ -53,10 +53,36 @@ def load_ours_zone(path: Path) -> pl.DataFrame:
 
 
 def load_inrb(dirpath: Path) -> pl.DataFrame:
-    cases = pl.read_csv(dirpath / "insp_sitrep__cumulative_confirmed_cases__daily.csv",
-                        infer_schema_length=None)
-    deaths = pl.read_csv(dirpath / "insp_sitrep__cumulative_confirmed_deaths__daily.csv",
-                         infer_schema_length=None)
+    """The INRB-UMIE per-zone series, under either of the layouts they have used.
+
+    The upstream repository restructured between the reference pin (2026-08-10,
+    `data/insp_sitrep/processed/...__daily.csv`) and the current head
+    (2026-08-13, `build/long/...` without the suffix). Both are tried; which one
+    loaded is part of the comparison's provenance, so it is printed.
+    """
+    def find(stem: str) -> Path:
+        for cand in (dirpath / f"{stem}__daily.csv",
+                     dirpath / f"{stem}.csv",
+                     dirpath / "data" / "insp_sitrep" / "processed" / f"{stem}__daily.csv",
+                     dirpath / "build" / "long" / f"{stem}.csv"):
+            if cand.exists():
+                print(f"  [inrb] {cand}")
+                return cand
+        raise SystemExit(f"no INRB file for {stem} under {dirpath}")
+    def read(path: Path, value_name: str) -> pl.DataFrame:
+        d = pl.read_csv(path, infer_schema_length=None)
+        if value_name not in d.columns:
+            # The 2026-08-13 restructure dropped the header row and prepended a
+            # byte-order mark. A file whose first row is data must not lose it
+            # to a guessed header, so it is re-read headerless with the columns
+            # stated.
+            d = pl.read_csv(path, has_header=False, infer_schema_length=None,
+                            new_columns=["nom", "date", value_name])
+        return d.with_columns(pl.col("nom").str.replace("\ufeff", ""))
+    cases = read(find("insp_sitrep__cumulative_confirmed_cases"),
+                 "cumulative_confirmed_cases")
+    deaths = read(find("insp_sitrep__cumulative_confirmed_deaths"),
+                  "cumulative_confirmed_deaths")
     j = (cases.rename({"cumulative_confirmed_cases": "inrb_cases"})
          .join(deaths.rename({"cumulative_confirmed_deaths": "inrb_deaths"}),
                on=["nom", "date"], how="full", coalesce=True))

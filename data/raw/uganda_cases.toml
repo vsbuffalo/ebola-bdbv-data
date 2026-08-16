@@ -1,0 +1,74 @@
+# Uganda arm of the 2026 Bundibugyo virus outbreak.
+#
+# Uganda's outbreak is CLOSED: last case identified 21 June 2026, last patient
+# discharged 16 July, end declared by the Ministry of Health on 28 July after
+# the standard 42-day countdown. That makes it a complete epidemic curve rather
+# than a censored one -- unusually informative, because nothing here is
+# right-truncated by reporting lag.
+#
+# Recorded by hand from the WHO Disease Outbreak News. This is a small, closed
+# series stated in prose rather than a published table, so there is nothing to
+# scrape; the numbers below are transcribed with their source and date.
+#
+# NOTE ON SCOPE. The epiforecasts model uses only THREE of these cases and
+# treats Uganda as imports alone. The published totals distinguish importations
+# from onward transmission, and the importation count is 15, not 3. See
+# `imported_cases` below.
+
+as_of_date = "2026-07-28"
+source_url = "https://www.who.int/emergencies/disease-outbreak-news/item/2026-DON613"
+
+[confirmed_cases]
+value  = 20
+source = "WHO DON 2026-DON613 (as of 14 July 2026) and the Uganda Ministry of Health end-of-outbreak declaration, 28 July 2026. Total laboratory-confirmed cases in Uganda over the whole outbreak."
+
+[imported_cases]
+value  = 15
+source = "WHO DON 2026-DON613: 'were imported cases and five were secondary cases among contacts and health workers'. These are the travel-associated introductions from DRC -- the quantity an importation likelihood should condition on. The epiforecasts model uses 3, being the imports detected by its original 28 May cut-off, and its manifest has not been advanced since."
+
+[secondary_cases]
+value  = 5
+source = "WHO DON 2026-DON613 -- onward transmission within Uganda among contacts and health workers. Distinct from the imports: these inform Uganda's own reproduction number, not the importation rate from DRC."
+
+[deaths]
+value  = 2
+source = "WHO DON 2026-DON613 -- both among imported cases, dying 15 May and 5 June 2026. A third death was among a probable (not confirmed) case."
+
+[recovered]
+value  = 18
+source = "WHO DON 2026-DON613."
+
+[health_worker_cases]
+value  = 4
+source = "WHO DON 2026-DON613 -- confirmed cases among health workers, a subset of the five secondary cases."
+
+[last_case_date]
+value  = "2026-06-21"
+source = "WHO DON 2026-DON613 -- identification date of the final confirmed case. Discharged 16 July after two negative tests."
+
+[outbreak_declared_over]
+value  = "2026-07-28"
+source = "Uganda Ministry of Health, 28 July 2026, twelve days after the last patient was discharged."
+
+[affected_districts]
+value  = ["Kampala"]
+source = "WHO DON 2026-DON613 -- all confirmed cases were in Kampala District. Relevant to the importation model: the imports were detected in the capital, not at the border, so the detection delay includes internal travel."
+
+# Dated series known so far. INCOMPLETE: the DONs give totals and a handful of
+# individual dates in prose, not a line list, so this is not the full set of 15
+# importation dates. Extending it needs the Uganda MoH situation reports.
+[export_case_dates]
+value  = ["2026-05-11", "2026-05-16", "2026-05-23"]
+source = "WHO DON 2026-DON602, 2026-DON603 and the WHO Director-General's ministerial briefing, 25 May 2026 -- the first three imports, by Uganda report date. The remaining twelve importation dates are not published in the DONs."
+
+[export_death_dates]
+value  = ["2026-05-15", "2026-06-05"]
+source = "WHO DON 2026-DON613 -- both deaths were among imported cases. Note the second, 5 June, falls after the epiforecasts cut-off and is absent from their manifest, which still records one death."
+
+# Moments at which the bulletins PIN a cumulative importation count. Only these
+# can be scored: between them the total is known to have climbed but nothing
+# published says by how much, and asserting an intermediate value would assert
+# information we do not have.
+[cumulative_detected]
+value  = [["2026-05-28", 3], ["2026-06-21", 15]]
+source = "28 May: WHO DON 2026-DON602, 2026-DON603 and the WHO Director-General's ministerial briefing of 25 May report three travel-related importations; a fourth appears only in 2-June reporting, so three was the published cumulative as of 28 May. 21 June: WHO DON 2026-DON613 gives 15 importations over the whole outbreak with the last case identified 21 June, so the total is pinned from that date onward. Between 2 and 21 June the count rose from 4 to 15 and no bulletin pins an intermediate value."

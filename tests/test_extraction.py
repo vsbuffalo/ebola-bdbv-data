@@ -554,3 +554,17 @@ def test_prose_route_refuses_a_breakdown_that_does_not_close(monkeypatch):
     rows, st = PR.extract(Path("/dev/null"))
     assert rows == []
     assert st.startswith("breakdown_does_not_close")
+
+
+@pytest.mark.parametrize("name", [
+    "Sans fiche", "ZS non identifiée", "Echantillons sans fiche",
+])
+def test_more_unassigned_spellings(name):
+    """Sitrep 015 prints `Sans fiche` (14) and `ZS non identifiée` (6) once.
+
+    Read as zones, they forward-filled to the end of the window as a constant
+    +20 phantom in Ituri's cumulative -- invisible to the emitted==source-delta
+    identity, caught only by comparing the grid against the printed province
+    rows. They are pool spellings: counted, but not places.
+    """
+    assert E.level_of(name) == "unassigned"

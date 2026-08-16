@@ -146,6 +146,40 @@ def canonical_province(name: str) -> str | None:
     return PROVINCE_ALIASES.get(s)
 
 
+def load_province_overrides(path: Path = Path("registers/zone_province_overrides.tsv"),
+                            pdfs: Path = Path("data/raw/sitrep_pdfs")) -> dict:
+    """Rows whose province the page states in words -- see the register itself.
+
+    Hash-verified like every register. Applied AFTER the carry, so an override
+    is a correction the register can be audited against, not an input the carry
+    quietly depends on.
+    """
+    if not path.exists():
+        return {}
+    d = pl.read_csv(path, separator="\t", comment_prefix="#",
+                    infer_schema_length=None)
+    out = {}
+    for e in d.iter_rows(named=True):
+        hits = sorted(pdfs.glob(f"sitrep_{int(e['sitrep']):03d}_*.pdf"))
+        if hits:
+            got = hashlib.sha256(hits[0].read_bytes()).hexdigest()[:16]
+            if got != e["sha256_16"]:
+                raise SystemExit(
+                    f"zone-province override for sitrep {e['sitrep']} is "
+                    f"STALE: register says {e['sha256_16']}, file is {got}. "
+                    "Re-read the new version; do not refresh the hash.")
+        key = (int(e["sitrep"]), re.sub(r"[^a-z0-9]+", "",
+                                        _fold_ascii(e["zone"]).lower()))
+        out[key] = None if e["province"] == "none" else e["province"]
+    return out
+
+
+def _fold_ascii(s: str) -> str:
+    import unicodedata
+    t = unicodedata.normalize("NFKD", s or "")
+    return "".join(c for c in t if not unicodedata.combining(c))
+
+
 def carry_province(panel: pl.DataFrame) -> pl.DataFrame:
     """Give every zone row the province it was printed under.
 
@@ -230,7 +264,23 @@ def carry_province(panel: pl.DataFrame) -> pl.DataFrame:
             .with_columns(pl.col("_raw")
                           .map_elements(canonical_province, return_dtype=pl.Utf8)
                           .alias("province"))
-            .drop("_prov", "_sub", "_fwd", "_bwd", "_merged", "_blk"))
+            .drop("_prov", "_sub", "_fwd", "_bwd", "_merged", "_blk")
+            .pipe(_apply_province_overrides))
+
+
+def _apply_province_overrides(panel: pl.DataFrame) -> pl.DataFrame:
+    ov = load_province_overrides()
+    if not ov:
+        return panel
+    def fix(row) -> str | None:
+        key = (row["sitrep"], re.sub(r"[^a-z0-9]+", "",
+                                     _fold_ascii(row["zone_reported"]).lower()))
+        if key in ov:
+            return ov[key]
+        return row["province"]
+    return panel.with_columns(
+        pl.struct(["sitrep", "zone_reported", "province"])
+        .map_elements(fix, return_dtype=pl.Utf8).alias("province"))
 
 
 def apply_exceptions(check: pl.DataFrame, ex: pl.DataFrame) -> pl.DataFrame:

@@ -82,7 +82,7 @@ SUBTOTAL = re.compile(r"^sous[-\s]?total")
 #: silently disappears from a provincial one.
 UNASSIGNED = re.compile(
     r"^autres?\s+(zs|zones?)|^donnees?\s+non\s+ventilees?|^a\s*ventiler"
-    r"|^non\s+identifiee?s?|^inconnue?$|^nd$"
+    r"|^(?:zs\s+)?non\s+identifiee?s?|^inconnue?$|^nd$|^sans\s+fiche"
     # `Echantillons sans fiche` -- samples without a case-investigation form:
     # counted in the totals, but not a place. Sitrep 007 prints it among the
     # zone rows with 4 cases, and reading it as a health zone both invents a
@@ -145,6 +145,32 @@ def level_of(name: str) -> str:
     if key in PROVINCES:
         return "province"
     return "zone"
+
+
+def load_rejected_routes(path: Path, pdfs: Path) -> dict[int, str]:
+    """Reports whose zone route is rejected by hand -- see the register itself.
+
+    Hash-verified like every register: a revised document must return for a
+    fresh judgement, not inherit one made about its predecessor.
+    """
+    import hashlib
+    if not path.exists():
+        return {}
+    out: dict[int, str] = {}
+    d = pl.read_csv(path, separator="\t", comment_prefix="#",
+                    infer_schema_length=None)
+    for e in d.iter_rows(named=True):
+        hits = sorted(pdfs.glob(f"sitrep_{int(e['sitrep']):03d}_*.pdf"))
+        if not hits:
+            sys.exit(f"rejected-route register names sitrep {e['sitrep']}, "
+                     "which is not in the archive")
+        got = hashlib.sha256(hits[0].read_bytes()).hexdigest()[:16]
+        if got != e["sha256_16"]:
+            sys.exit(f"REJECTED-ROUTE ENTRY IS STALE for sitrep {e['sitrep']}: "
+                     f"register says {e['sha256_16']}, file is {got}. Re-read "
+                     "the new version; do not refresh the hash.")
+        out[int(e["sitrep"])] = e["route"]
+    return out
 
 
 def extract(pdf: Path, specs=SPECS) -> tuple[list[dict], str]:
@@ -318,6 +344,9 @@ def main() -> None:
                      f"known: {', '.join(by_name)}")
         specs = tuple(by_name[n] for n in args.spec)
 
+    rejected = load_rejected_routes(Path("registers/rejected_routes.tsv"),
+                                    args.pdfs)
+
     out, status = [], []
     for pdf in sorted(args.pdfs.glob("*.pdf")):
         if not FILENAME.search(pdf.stem):
@@ -326,6 +355,8 @@ def main() -> None:
         # named with the publication date, which dates those reports a day early.
         num, date = report_key(pdf)
         rows, st = extract(pdf, specs)
+        if rows and rejected.get(num) == rows[0]["table"]:
+            rows, st = [], f"route_rejected_by_register"
         chk = reconcile(rows) if rows else {}
         status.append({"sitrep": num, "date": date, "status": st,
                        "rows": len(rows),

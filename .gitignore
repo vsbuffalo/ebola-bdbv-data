@@ -15,3 +15,6 @@ analysis/_site/
 
 # Trial/spike output. Regenerate with scripts/trial_geometric_table2.py.
 data/trial/
+
+# Comparison sources, cloned by `make external`; pinned by the .commit file.
+external/

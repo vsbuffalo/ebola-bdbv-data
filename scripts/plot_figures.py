@@ -167,6 +167,10 @@ def draw_province_series(inputs: dict[str, Path], out: Path) -> None:
 
     for ax, col, title in ((axes[0], "cum_cases", "Confirmed cases (cumulative)"),
                            (axes[1], "cum_deaths", "Confirmed deaths (cumulative)")):
+        # End labels carry series identity (the palette's worst adjacent pair
+        # needs the secondary encoding), so two labels may not sit on top of
+        # each other: ends closer than ~12% in log-space are staggered.
+        ends: list[tuple[float, str, str]] = []
         for prov, color in PROVINCE_COLOR.items():
             line = (series.filter((pl.col("province") == prov)
                                   & pl.col(col).is_not_null())
@@ -174,9 +178,8 @@ def draw_province_series(inputs: dict[str, Path], out: Path) -> None:
             if line.height:
                 x, y = _dates(line["date"]), line[col].to_list()
                 ax.plot(x, y, color=color, linewidth=1.8, zorder=3)
-                ax.annotate(prov, (x[-1], y[-1]), xytext=(4, 0),
-                            textcoords="offset points", va="center",
-                            fontsize=8, color=color)
+                if y[-1] and y[-1] > 0:
+                    ends.append((y[-1], prov, color))
             rings = (summary.filter((pl.col("zone_reported")
                                      .map_elements(lambda s: s.strip("*†‡ "),
                                                    return_dtype=pl.Utf8) == prov)
@@ -192,6 +195,18 @@ def draw_province_series(inputs: dict[str, Path], out: Path) -> None:
                     ax.scatter(_dates(pr["date"]), pr["cum_cases"].to_list(),
                                marker="s", facecolors="none", edgecolors=color,
                                s=18, linewidths=0.9, zorder=4)
+        import math
+        ends.sort()
+        placed: list[float] = []
+        for yv, prov, color in ends:
+            ly = math.log10(yv)
+            while placed and ly - placed[-1] < 0.12:
+                ly = placed[-1] + 0.12
+            placed.append(ly)
+            last_x = ax.lines[-1].get_xdata()[-1] if ax.lines else 0
+            ax.annotate(prov, (last_x, 10 ** ly), xytext=(5, 0),
+                        textcoords="offset points", va="center",
+                        fontsize=8, color=color)
         ax.set_yscale("log")
         ax.set_title(title, loc="left", fontsize=11)
         ax.grid(True, **GRID)
