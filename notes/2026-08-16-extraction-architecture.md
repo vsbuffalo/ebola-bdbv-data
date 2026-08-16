@@ -2,7 +2,7 @@
 
 Date: 2026-08-16
 Project: ebola-bdbv-data
-Status: implemented, tested, and measured; 8 reports unread
+Status: implemented, tested, and measured; 8 reports unread, 4 residuals open
 Tags: architecture, pdf-extraction, table-geometry
 
 ## The one design decision everything follows from
@@ -134,59 +134,106 @@ page's own arithmetic closes**:
 
 | | |
 | --- | --- |
-| rows matched on (report, row name) | 2,353 |
+| rows matched on (report, row name) | 2,403 |
 | values disagreeing | **0** |
 | reports returning rows | 74 of 82 |
-| health-zone rows | 2,464 |
+| health-zone rows | 2,514 |
 
-Aggregation: **218 of 238 province-reports reconcile**, 10 disagree, 10 print no
-total to check against.
+Aggregation: **226 of 247 province-reports reconcile**, 7 carry a verified
+exception, 4 disagree, 10 print no total to check against.
 
-Tests: 58 passing, 1 strict xfail. Every case names the report it came from.
+Tests: 73 passing, 1 strict xfail. Every case names the report it came from.
 
-## What the tests found immediately
+## The exception register
 
-Writing them turned up three live defects, one of which no identity could catch.
+`data/raw/reconciliation_exceptions.tsv` holds judgements about specific
+documents. An entry asserts: *I opened this page, added the printed rows, and
+the source does not agree with itself.* Seven entries so far, each read against
+the rendered page before being written.
 
-**The thousands separator had been flattened.** `SPACES` is meant to hold ASCII
-space, no-break space and narrow no-break space. It had become three ordinary
-spaces — indistinguishable in any editor or diff — so every count of a thousand
-or more printed with a no-break separator was rejected. Now written as escapes.
+Three design properties make it a record rather than a mute button.
 
-**An empty row was ending the heading.** `Province /` and `Zone de santé` are
-two rows of one heading with a blank between them. The scan stopped at the
-blank, the heading truncated to `Province /`, and the table failed to identify
-itself — sitrep 080 returned five province rows and no zones. Fixing it took
-province-reports reconciling from 198 to 221.
+**Keyed on the PDF's SHA-256, not the report number.** INSP revises reports and
+republishes under the same number; a hash mismatch stops the build, so a
+corrected report returns to the failing set instead of inheriting the exception
+its predecessor was granted.
 
-**The early layout was being read as the cumulative one.** This is the one worth
-remembering. Dropping the letality requirement let the cumulative spec match the
-early table, so sitrep 005's Mongbwalu was recorded with **309 confirmed cases
-where the page prints 309 suspected and 13 confirmed**. The figures were
-plausible, the columns internally consistent, and the page's own arithmetic
-closed — the whole table had simply been read one concept to the left. Nothing
-in the pipeline could see it.
+**`expected_gap` is exact.** An entry licenses one residual, not a report. If
+our reading changes the number, the report fails again.
 
-The rule that follows: **each relaxation of the heading vocabulary has to be
-paid for with a discriminator.** Sitrep 091, whose heading names no case column
-at all, is left unread and marked strict-xfail rather than bought with another
-relaxation.
+**Unverifiable means refused.** Without the archive the hashes cannot be
+checked, so the register is rejected outright rather than applied on trust: an
+exception not tied to a document is a suppression.
+
+The strongest entry is sitrep 059, where the page explains its own gap. The note
+beneath its zone table reads *"Ituri : la répartition cumulée par zone de santé
+correspond à la dernière distribution consolidée (10/07) ; le total provincial
+(1 772 cas / 608 décès) est le cumul du 12/07, l'écart avec la somme des ZS
+reflétant les cas et décès accumulés depuis cette distribution"* — the zone rows
+are the 10 July distribution and the province row the 12 July cumulative. Where
+an entry infers rather than quotes, it says so: the same report's Nord-Kivu and
+Tshopo gaps have the same shape, but the note names only Ituri.
+
+## What the tests found
+
+Writing them turned up four live defects, one of which no identity could catch.
+
+**The early layout was being read as the cumulative one.** Dropping the letality
+requirement let the cumulative spec match the early table, so sitrep 005's
+Mongbwalu was recorded with **309 confirmed cases where the page prints 309
+suspected and 13 confirmed**. Figures plausible, columns internally consistent,
+page arithmetic closing — the whole table had been read one concept to the left.
+The rule that follows is now in the code: *each relaxation of the heading
+vocabulary has to be paid for with a discriminator.*
+
+**The thousands separator had been flattened** from ASCII + no-break + narrow
+no-break to three ordinary spaces, invisible in any diff, rejecting every count
+of a thousand or more with a no-break separator. Now written as escapes.
+
+**An empty row was ending the heading**, truncating `Province / Zone de santé`
+to `Province /` so the table failed to identify itself. Sitrep 080 returned five
+province rows and no zones. Fixing it took province-reports reconciling from 198
+to 221.
+
+**A numbered row was not a row.** Some reports print `1- Bunia`, `2- Rwampara`;
+the name test required a letter first, so sitrep 020 kept five rows out of
+twenty-eight and Ituri came up 265 cases short.
+
+## Measured dead ends, recorded so they are not retried
+
+- **Overlap-fraction page matching** instead of two-edge: 146 province-reports
+  against 216. Nearly every table spans most of the text width, so containment
+  scores a perfect match.
+- **Edge tolerance of 10 pt** instead of 8: 180 reconciling against 198. Looser
+  joins more pages and the extra joins are mostly wrong. Sitrep 090's two pages
+  begin 8.5 pt apart and are left unjoined for that reason.
+- **Forbidding `Zones de santé touchées`** to exclude the provincial summary:
+  gains two reconciling province-reports, loses four whole reports, because the
+  phrase also lands in this table's own heading where the title bleeds.
+- **Requiring the LABEL column specifically to name a zone** — the precise form
+  of the same discriminator: costs 55 reconciling province-reports, because
+  label headings are too often truncated.
+
+What worked instead was comparing the label heading between two candidates
+before chaining them, which separates a table from its own summary without
+forbidding any vocabulary.
 
 ## What is left
 
 **Eight reports unread.** Sitreps 12, 14 and 16 print no zone table anywhere —
-a source fact, and the reference route returns nothing for them either. Sitrep
-15 and 83–86 are live gaps; 83–86 are the vintage that lays narrative prose
-across the heading row.
+a source fact, confirmed against the reference. Sitrep 15 and 83–86 are live
+gaps; 83–86 lay narrative prose across the heading row.
 
-**Ten province disagreements.** Two kinds. Sitreps 20, 33, 90 and 91 recover
-only a fragment of their table — ours, and the same class as the unread reports.
-Sitreps 34 (+1), 53 (+5), 55 (−3) and 81 (−2 deaths) are the size the reference
-pipeline carries as hand-verified exceptions after a page read. That register
-mechanism is not ported yet, and should be: a residual that has been read and
-understood is a different object from one that has not.
+**Four residuals, all ours.** Sitreps 028 and 033 recover a fragment. Sitrep 089
+is one death short. Sitrep 090's two pages are the 8.5 pt case above.
 
-**Not yet built**, and deliberately downstream: zone alias resolution, the
+**A diagnosed defect not yet fixed: a chain never extends backward.** On sitrep
+067 Table 2 begins on page 2 with its province rows and continues on page 3 with
+the zones; the head resolves on page 3, and nothing looks back, so Ituri's
+province row — 2,202 cases — is absent and 29 zone rows carry no province.
+Eighty zone rows across sitreps 5, 9, 67 and 87 are affected.
+
+**Not yet built**, deliberately downstream: zone alias resolution, the
 rejected-values register, and the weekly stream construction the models consume.
 
 ## Interface
