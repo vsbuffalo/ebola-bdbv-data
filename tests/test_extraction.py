@@ -385,7 +385,7 @@ def test_multi_page_tables_keep_their_province_rows(n):
 import aggregate_provinces as A                                   # noqa: E402
 import polars as pl                                               # noqa: E402
 
-REGISTER = ROOT / "data" / "raw" / "reconciliation_exceptions.tsv"
+REGISTER = ROOT / "registers" / "reconciliation_exceptions.tsv"
 
 
 def _check_row(sitrep, province, rc, rd, verdict="fails"):

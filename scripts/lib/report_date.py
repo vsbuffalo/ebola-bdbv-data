@@ -16,7 +16,7 @@ neither date the report prints. The consequences were not subtle:
     report number, sitreps 19, 23 and 50 were deleted outright -- three whole
     days of the series, removed to fix a collision that did not exist.
 
-`data/raw/sitrep_number_overrides.tsv` already states the rule in its own header
+`registers/sitrep_number_overrides.tsv` already states the rule in its own header
 -- "the filename dates are misleading and must NOT be parsed as data dates" --
 but it was applied only where the filename had no parseable date at all. Where
 one was present it was trusted.

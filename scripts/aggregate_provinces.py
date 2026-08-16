@@ -304,7 +304,7 @@ def main() -> None:
     ap.add_argument("--out", required=True, type=Path,
                     help="province series; a _reconciliation.csv sibling is written beside it")
     ap.add_argument("--exceptions", type=Path,
-                    default=Path("data/raw/reconciliation_exceptions.tsv"),
+                    default=Path("registers/reconciliation_exceptions.tsv"),
                     help="TSV of reports whose OWN arithmetic does not close, "
                          "verified by hand against the page and keyed on the "
                          "PDF's hash. An entry asserts a claim about the "

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import sys
 from pathlib import Path
 
@@ -47,7 +48,18 @@ def main() -> None:
     if args.limit:
         rows = rows[: args.limit]
 
-    got = skipped = failed = 0
+    # WHAT WE ALREADY HOLD, BY CONTENT. A file is recognised by its bytes, not
+    # by the name we happened to give it. Recognising it by name instead meant
+    # that when the naming rule changed, every held report was downloaded a
+    # SECOND time under the new name: one refresh took the archive from 82 files
+    # to 94, with eleven documents present twice, byte-identical, under two
+    # different dates. The extraction would then have read each of those reports
+    # twice and placed the same counts at two points in the series.
+    held = {}
+    for f in out.glob("*.pdf"):
+        held[hashlib.sha256(f.read_bytes()).hexdigest()] = f
+
+    got = skipped = renamed = failed = 0
     for r in rows:
         date = r["data_date"] or "undated"
         dest = out / f"sitrep_{int(r['sitrep']):03d}_{date}.pdf"
@@ -65,43 +77,75 @@ def main() -> None:
             dest.unlink(missing_ok=True)
             failed += 1
             continue
+
+        # ALREADY HELD UNDER ANOTHER NAME. The index's `data_date` comes from
+        # the UPLOAD FILENAME, and the filename is not reliable: it carries the
+        # publication date on some reports, no date at all on others, and on
+        # sitrep 038 a timestamp that parses as the year 2022. The archive is
+        # named from the page's own `Date de rapportage` instead. When the two
+        # disagree the download is a document we already have, so it is
+        # discarded and the held copy keeps its page-derived name.
+        digest = hashlib.sha256(payload).hexdigest()
+        if digest in held and held[digest] != dest:
+            dest.unlink(missing_ok=True)
+            print(f"  SitRep {r['sitrep']}: already held as "
+                  f"{held[digest].name} (the index dates it {date})")
+            renamed += 1
+            continue
+        held[digest] = dest
         got += 1
 
     total = len(list(out.glob("*.pdf")))
-    print(f"downloaded {got}, already present {skipped}, failed {failed}")
+    print(f"downloaded {got}, already present {skipped}, "
+          f"already held under another name {renamed}, failed {failed}")
     print(f"  {total} PDFs in {out.relative_to(REPO_ROOT)}")
     if failed:
         raise SystemExit(1)
 
     if args.manifest:
-        want = {f"sitrep_{int(r['sitrep']):03d}_{r['data_date'] or 'undated'}.pdf"
-                for r in rows}
+        # Keyed on the report NUMBER, not on the index's date: the archive is
+        # named from the page and the index from the upload filename, and the
+        # two disagree on eleven reports. What must hold is that we have one
+        # file per picked report, not that its name matches the index's guess.
+        want_nums = {int(r["sitrep"]) for r in rows}
         mf = (args.manifest if args.manifest.is_absolute()
               else REPO_ROOT / args.manifest)
-        _write_manifest(out, want, mf)
+        _write_manifest(out, want_nums, mf)
 
 
-def _write_manifest(out_dir: Path, index, manifest: Path) -> None:
+def _write_manifest(out_dir: Path, want_nums: set[int], manifest: Path) -> None:
     """Every PDF with its hash, and the index checked in BOTH directions.
 
-    One direction alone is half a check: a missing file and a stray file are
+    One direction alone is half a check: a missing report and a stray file are
     different failures, and testing only for the first leaves the second silent
-    -- and a stray PDF in this directory is globbed straight into the trunk by
-    both parsers.
+    -- a stray PDF in this directory is globbed straight into the trunk.
+
+    RECONCILED ON THE REPORT NUMBER, not on the filename. The archive is named
+    from each page's own `Date de rapportage` and the index from the upload
+    filename, and the two disagree on eleven reports -- the filename carries the
+    publication date on some, no date at all on others, and on sitrep 038 a
+    timestamp that parses as the year 2022. Comparing names made every one of
+    those look like a missing report AND a stray file at once. What must hold is
+    that we have exactly one file per picked report.
     """
     import hashlib
+    import re as _re
     files = sorted(out_dir.glob("*.pdf"))
-    rows = []
+    rows, by_num = [], {}
     for f in files:
         h = hashlib.sha256(f.read_bytes()).hexdigest()
         rows.append({"file": f.name, "bytes": f.stat().st_size, "sha256": h})
-    have = {r["file"] for r in rows}
-    want = {r for r in index}
-    missing, stray = sorted(want - have), sorted(have - want)
-    if missing or stray:
+        m = _re.match(r"sitrep_(\d+)_", f.name)
+        if m:
+            by_num.setdefault(int(m.group(1)), []).append(f.name)
+    missing = sorted(want_nums - by_num.keys())
+    stray = sorted(n for n in by_num if n not in want_nums)
+    doubled = {n: v for n, v in by_num.items() if len(v) > 1}
+    if missing or stray or doubled:
         sys.exit(f"archive does not match the index.\n"
                  f"  in the index, no file: {missing}\n"
-                 f"  file, not in the index: {stray}")
+                 f"  file, not in the index: {stray}\n"
+                 f"  report held more than once: {doubled}")
     manifest.parent.mkdir(parents=True, exist_ok=True)
     with manifest.open("w", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=["file", "bytes", "sha256"],

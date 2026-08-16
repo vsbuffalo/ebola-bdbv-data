@@ -133,7 +133,7 @@ def main() -> None:
     # their filename and are resolved from their front page; without applying
     # the same table the fetch applies, they read here as "no longer listed",
     # which is a false alarm on precisely the check that must not cry wolf.
-    ov = REPO_ROOT / "data/raw/sitrep_number_overrides.tsv"
+    ov = REPO_ROOT / "registers/sitrep_number_overrides.tsv"
     if ov.exists():
         table = {}
         for line in ov.read_text().splitlines():
@@ -192,7 +192,7 @@ def main() -> None:
             f"{names[:8]}{' ...' if len(names) > 8 else ''}\n"
             f"      A report published under a name carrying no series token "
             f"is invisible to every rule here. Read its front page and record "
-            f"it in data/raw/sitrep_number_overrides.tsv.")
+            f"it in registers/sitrep_number_overrides.tsv.")
 
     new = sorted(listed - have_nums)
     if new:

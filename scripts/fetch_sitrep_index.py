@@ -209,7 +209,19 @@ def main() -> None:
     # Read from the PDF front pages; see the file's header for why the
     # filename digits must not be parsed instead.
     overrides: dict[str, tuple[str, str]] = {}
-    ov_path = REPO_ROOT / "data" / "raw" / "sitrep_number_overrides.tsv"
+    ov_path = REPO_ROOT / "registers" / "sitrep_number_overrides.tsv"
+    # A MISSING REGISTER IS A HARD FAILURE, NOT AN EMPTY ONE. These overrides
+    # carry the report number and DATA DATE for uploads whose filename states
+    # neither correctly -- the filename gives the publication date on some, no
+    # date at all on others, and on sitrep 038 a timestamp that parses as 2022.
+    # When the file was moved and this path was not updated, the index rebuilt
+    # itself from filename-derived dates without a word, and the next fetch
+    # downloaded eleven reports we already held under a second, wrong name.
+    if not ov_path.exists():
+        raise SystemExit(
+            f"the overrides register is missing: {ov_path}\n"
+            "Without it the index takes its data dates from upload filenames, "
+            "which are wrong on eleven reports. Refusing to write an index.")
     if ov_path.exists():
         for line in ov_path.read_text().splitlines():
             if line.startswith("#") or not line.strip() or line.startswith("filename\t"):
