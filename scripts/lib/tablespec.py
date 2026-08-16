@@ -243,7 +243,6 @@ ZONE_TABLE = TableSpec(
         P(r"provinces?\s*/\s*zones?\s*de\s*sant|zones?\s+de\s+sant"),
         P(r"\bcas\b"),
         P(r"deces"),
-        P(r"letalit"),
     ),
     forbids=(
         P(r"gueri"),
