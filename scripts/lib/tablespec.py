@@ -319,6 +319,30 @@ def spans_same(a, b, tol: float = 8.0) -> bool:
     return abs(a.xs[0] - b.xs[0]) <= tol and abs(a.xs[-1] - b.xs[-1]) <= tol
 
 
+def same_label_heading(a, b) -> bool:
+    """Two headed tables name their label column the same way.
+
+    Adjacency and width are not enough to say that two headed tables are one
+    table. The PROVINCIAL SUMMARY heads its label column `Province`; this table
+    heads its own `Province / Zone de santé`, because its rows are provinces AND
+    their zones. On sitrep 059 the summary sits on page 2 and the zone table
+    begins on page 3, so the two are adjacent and equally wide -- they chained,
+    the summary's five province rows preceded every zone row, and the province
+    carry attached all 43 zones to Tshopo, the last province the summary lists.
+
+    Comparing the label heading separates them without forbidding any
+    vocabulary, which matters because the phrase that would exclude the summary
+    (`Zones de santé touchées`, a COUNT of affected zones) also appears in this
+    table's own heading on four reports, where the title text bleeds across the
+    row. Tested: forbidding it gains two reconciling province-reports and loses
+    four whole reports.
+    """
+    ha, hb = a.header(), b.header()
+    if not ha or not hb:
+        return True                     # a headless continuation carries no claim
+    return norm(ha[0]) == norm(hb[0])
+
+
 def _map(table, spec: TableSpec) -> Mapped | None:
     labels, values = classify(table, start=table.header_rows())
     if not values:
@@ -366,7 +390,8 @@ def select(tables: Iterable, spec: TableSpec) -> Resolved | None:
     chains: list[list] = []
     for t in heads:
         for chain in chains:
-            if spans_same(t, chain[-1]) and t.page - chain[-1].page <= 1:
+            if (spans_same(t, chain[-1]) and t.page - chain[-1].page <= 1
+                    and same_label_heading(t, chain[-1])):
                 chain.append(t)
                 break
         else:
