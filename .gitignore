@@ -1,0 +1,17 @@
+# The PDF archive: ~141 MB, regenerable from the committed index and manifest.
+# Pinned instead by data/raw/insp_sitrep_index.tsv (what exists upstream),
+# data/raw/sitrep_pdfs.manifest.tsv (sha256 per file) and data/raw/PROVENANCE.tsv.
+data/raw/sitrep_pdfs/
+
+# Everything under build/ has a rule. Delete it and `make build` returns it.
+data/build/
+
+__pycache__/
+*.pyc
+.venv/
+.snakemake/
+logs/
+analysis/_site/
+
+# Trial/spike output. Regenerate with scripts/trial_geometric_table2.py.
+data/trial/
