@@ -2,14 +2,12 @@
 
 Date: 2026-08-16
 Project: ebola-bdbv-data
-Status: implemented and measured; identification incomplete on 11 reports
+Status: implemented, tested, and measured; 8 reports unread
 Tags: architecture, pdf-extraction, table-geometry
 
 ## The one design decision everything follows from
 
 **A heading identifies a table. It cannot index the table's columns.**
-
-Both halves of that were learned by getting them wrong.
 
 Word merges and centres heading cells, so a heading's text sits wherever its own
 cell centres — which is not above the data column it labels. Sitrep 080's
@@ -17,29 +15,26 @@ heading block reads
 
     col0 `Province / Zone de santé`   col2 `Cas (n)`   col5 `Décès`  col6 `(n)`
 
-while the data row beneath it is `Ituri | 3 317 | 1 382 | …`, with the cases in
-column 1 and the deaths in column 2. Indexing by heading read every zone's death
-count as its case count, on every report of that vintage.
+while the data row beneath it is `Ituri | 3 317 | 1 382 | …`, cases in column 1.
+Indexing by heading read every zone's death count as its case count.
 
-The other direction fails too. Indexing by fixed position — name at 0, cases at
-1, deaths at 2 — breaks on sitrep 090, whose table carries a leading spacer
-column, and on the early layout, which carries two label columns (`Provinces`
-and `Zones de santé`).
+Indexing by fixed position fails too: sitrep 090's table carries a leading
+spacer column and the early layout carries two label columns.
 
-So the two jobs take different evidence. Vocabulary answers *which table this
-is*. Geometry, read from the data rather than the heading, answers *which column
-is which*.
+So vocabulary answers *which table this is*, and geometry read from the **data
+rows** answers *which column is which*.
 
 ## Layers
 
 | Layer | File | Knows | Does not know |
 | --- | --- | --- | --- |
-| Geometry | `scripts/lib/pdftable.py` | PDF rectangles, lines, curves; how to turn drawn rules into a cell grid | French, Ebola, what any column means |
-| Vocabulary | `scripts/lib/tablespec.py` | French headings; the order each layout prints its quantities in | PDFs; what the numbers imply |
-| Domain | `scripts/extract_zone_table.py` | Provinces, subtotals, unallocated rows, the reconciliation identity | Geometry |
+| Geometry | `scripts/lib/pdftable.py` | PDF rectangles, lines, curves; turning drawn rules into a cell grid | French, Ebola, what any column means |
+| Vocabulary | `scripts/lib/tablespec.py` | French headings; the left-to-right order each layout prints its quantities in | PDFs; what the numbers imply |
+| Domain | `scripts/extract_zone_table.py` | Provinces, subtotals, unallocated rows, the page's own identity | Geometry |
+| Aggregation | `scripts/aggregate_provinces.py` | The province carry, the closed province set, what must sum to what | How anything was read |
 
-`pdftable` is genuinely project-agnostic and could be lifted out as a package.
-It is 300 lines and its whole public surface is `read(pdf) -> list[Table]`.
+`pdftable` is project-agnostic and could be lifted out as a package. Its whole
+public surface is `read(pdf) -> list[Table]`.
 
 ### Types
 
@@ -51,17 +46,12 @@ class Table:
     xs:    tuple[float, ...]          # column boundaries, ncols = len(xs) - 1
     ys:    tuple[float, ...]          # row boundaries
     cells: dict[tuple[int, int], str] # (row, col) -> text; absent means no ink
-
-    def row(i)         -> list[str]
-    def header_rows()  -> int         # leading rows that are heading, not data
-    def header()       -> list[str]   # per column, wrapped fragments joined
+    def row(i) -> list[str]; def header_rows() -> int; def header() -> list[str]
 
 def read(pdf: Path) -> list[Table]
 
 # Layer 2 — vocabulary
-class Role(StrEnum):
-    ZONE; PROVINCE; CUM_CASES; CUM_DEATHS; LETALITY; NEW_CASES
-    DEATHS_COMMUNITY; DEATHS_CTE; DEATHS_TOTAL; SUSPECTED; …; IGNORED
+class Role(StrEnum): ZONE; PROVINCE; CUM_CASES; CUM_DEATHS; LETALITY; …; IGNORED
 
 @dataclass(frozen=True)
 class TableSpec:
@@ -71,193 +61,145 @@ class TableSpec:
     values:   tuple[Role, ...]        # LEFT-TO-RIGHT ORDER of the value columns
 
 @dataclass(frozen=True)
-class Resolved:
-    spec:   TableSpec
-    roles:  dict[Role, int]           # role -> column index
-    labels: tuple[int, ...]           # label columns, outermost first
-    tables: tuple[Table, ...]         # the head and its continuation pages
+class Mapped:                          # one PAGE, with its own columns resolved
+    table: Table; roles: dict[Role, int]; labels: tuple[int, ...]
 
-def classify(table, *, start) -> tuple[list[int], list[int]]   # labels, values
-def select(tables, spec)      -> Resolved | None
+@dataclass(frozen=True)
+class Resolved:  spec: TableSpec; pages: tuple[Mapped, ...]
 ```
 
 ### How a table is delimited
 
-Not by a title and a terminator. Word draws every border as a thin rectangle, so
-rules are grouped by whether they touch — a union-find over rule intersections —
-and each connected component is one table with its own row and column edges.
-That removes the title-regex-plus-lookahead-plus-terminator mechanism whose
-failure twice ran the read on into the alerts table and returned its figures as
-case counts.
+Not by a title — table numbers are not stable across reports, the same table
+being Table 2, 4 or 5 by vintage. Word draws every border as a thin rectangle,
+so rules are grouped by whether they touch (union-find over intersections) and
+each connected component is one table.
 
-Table numbers are not stable across reports (the same table is Table 2, 4 or 5
-by vintage), which is why the title was never a safe key in the first place.
+**A rule drawn in pieces is one rule**, and this matters at two very different
+scales. The macOS Quartz re-encoder stipples every rule into half-point squares
+— 8,419 on one page of sitrep 026 — and a banded table draws its column rules
+only inside shaded banner rows, leaving sitrep 018's borders in 94 disconnected
+islands. Collinear pieces within 36 pt are joined before components form; a
+coalesced run still shorter than 10 pt is dropped, which removes isolated dots
+without removing the rules they compose. 36 pt rather than 30 because a
+double-height row — one whose name wraps, like `Autres ZS (données non
+ventilées)` — is 32 pt tall and otherwise falls in the crack, taking its 94
+unallocated Ituri cases with it.
 
 ### How columns are indexed
 
-`classify()` reads the *data* rows. A column whose non-empty cells are mostly
-numbers is a value column; label columns are the non-numeric ones to its left.
-A sentinel meaning "not reported" (`ND`, an em-dash) counts as neither — a
-column that is mostly em-dashes is still a value column, and calling it a label
-would shift every later column one place.
+`classify()` reads the data rows. A column whose non-empty cells are mostly
+numbers is a value column; labels are the non-numeric columns to its left. A
+sentinel (`ND`, an em-dash) counts as neither — a column that is mostly
+em-dashes is still a value column, and calling it a label would shift every
+later column one place.
 
-The value columns are then zipped, left to right, against the spec's declared
-`values` order. Column *order* within a layout is stable even though the column
-*count* is not: the daily ascertainment block appears from 13 July and extends
-the sequence rather than reordering it, so a shorter table simply stops early.
-This is what survives the vintages that a fixed index cannot, and it absorbs the
-leading-spacer and two-label-column cases without a special case for either.
+Value columns are then zipped, left to right, against the spec's declared
+`values` order. Order within a layout is stable even though *count* is not: the
+daily block appears from 13 July and extends the sequence rather than reordering
+it, so shorter tables stop early. That absorbs the spacer column and the
+two-label case without a special case for either.
 
-### How continuation pages work
+**Columns are mapped per page, not once per table.** On sitrep 090 the heading
+page has ten columns and its continuation eight, because the title text laid
+across the heading row creates boundaries the data rows do not have. Resolving
+once on the head indexed the continuation wrongly; requiring an exact match
+orphaned it and lost 61 rows. Per-page mapping is safe precisely because the
+spec declares an order rather than indices.
 
-The table is printed across two pages in most vintages — province rows on the
-first, health zones on the second — and some vintages repeat the heading while
-others do not. So a continuation is found by **column geometry**: a later table
-whose column boundaries coincide with the head's is the same table continued.
-Roles are resolved once and inherited, which is what makes a headingless
-continuation page readable at all.
+### How pages are joined
 
-The head is the first candidate that both identifies *and* classifies. Requiring
-both matters in each direction. Choosing the largest candidate made page two the
-head and dropped page one, so sitrep 060 lost 1,808 of its 2,011 cases. Choosing
-the first that merely identifies picked up stray caption fragments whose few
-words satisfy the required phrases while holding no data, which rejected 30 of
-82 reports.
+Candidates are **ranked, not taken in order**. Heading vocabulary does not
+single this table out and no tightening of it did: the provincial summary sits
+above this table on the same page and states the same things about itself,
+because it *is* a summary of it. Every phrase that excluded the summary also
+excluded some vintage of the real table, since the title text bleeds across the
+heading row into arbitrary cells. The difference that holds is structural — the
+summary has one row per province, this table one per health zone — so candidates
+are chained and the chain with the most data rows wins.
 
-## Where the failure classes went
-
-Every failure in the first trial run was a table-selection failure, and each one
-turned out to be an instance of the same root cause — column roles assumed by
-position. What they looked like:
-
-| Symptom | Reports | Cause |
-| --- | --- | --- |
-| Residual exactly ×2 the printed total | 13, 15, 21–32 | `Sous total Ituri` rows counted as zones as well as being the province total |
-| Residual exactly +17 on 15 consecutive reports | 34–68 | unallocated rows added at national level, where they are already inside a province's total |
-| Residual ≈ −1,800 | 60, 61, 62, 67 | both pages headed; the larger was taken as head, dropping the province page |
-| Wrong values entirely (Bunia 35 against a printed 967) | 83 | the per-zone *outcomes* table selected instead — same heading vocabulary, plus `Guéris` and `En hospitalisation` |
-| No columns resolved | 40–58 | the table's title is laid out across the heading row, so the heading cell reads `Tableau 2. Répartition … Province / Zone de santé` |
-| Every heading truncated to `Nbre de`, `Zones de` | early layout | the heading block spans six rows; the scan cap was four |
-| `cum_deaths` absent from the output entirely | all 82 | rows from two specs carry different keys, and the frame took its schema from whichever report sorted first |
-
-The last one is worth naming separately: it was silent. The column simply was
-not in the CSV, and nothing failed. The fix is a declared schema, and the
-general rule is that a column absent from a table is not missing data — it is a
-quantity that table does not report, and null says so.
+A continuation must be **headless, share both page edges within 8 pt, and be on
+the next page**. All three are load-bearing. Extent alone linked the page-2
+summary to the page-4 zone table to the page-7 laboratory table. The 8 pt
+tolerance was tuned end to end: 10 pt takes province-reports reconciling from
+198 down to 180, and an overlap-fraction test is worse still at 146, because
+nearly every table spans most of the text width and containment scores a perfect
+match. Sitrep 090's two pages begin 8.5 pt apart and are therefore left
+unjoined — buying that one report costs eighteen others.
 
 ## Measured state
 
-Against the reference extraction (`sitrep_table2.csv` from the `pdftotext`
-parser), on the **52 reports where the page's own arithmetic closes**:
+Against the reference `pdftotext` extraction, on the **64 reports where the
+page's own arithmetic closes**:
 
 | | |
 | --- | --- |
-| rows matched on (report, row name) | 1,638 |
+| rows matched on (report, row name) | 2,353 |
 | values disagreeing | **0** |
-| level classification agreeing | 1,638 / 1,638 |
-| rows only in the reference | 53 |
-| rows only in the geometric read | 79 |
+| reports returning rows | 74 of 82 |
+| health-zone rows | 2,464 |
 
-Reports returning rows: 71 of 82, against the reference's 63. Identity closes on
-52, is not checkable on 13 (no printed total in the rows recovered), and fails on
-6.
+Aggregation: **218 of 238 province-reports reconcile**, 10 disagree, 10 print no
+total to check against.
 
-## The 11 unidentified reports, one by one
+Tests: 58 passing, 1 strict xfail. Every case names the report it came from.
 
-Each was diagnosed by measuring what geometry the page actually carries, and
-they fall into four classes with nothing ambiguous between them. Two of the four
-are not defects.
+## What the tests found immediately
 
-| Class | Reports | What the page carries | Fix |
-| --- | --- | --- | --- |
-| A. No zone table exists | 12, 14, 16, 17 | no `Province / Zone` heading anywhere in the document | none — a source fact. The reference route also returns nothing at zone level for all four. |
-| B. Zone data is in prose | 33 | narrative text, no table | none here — this is the prose route's job. The reference recovers 37 rows from narrative. |
-| C. No vertical rules | 18, 19, 20 | horizontal rules and row shading only; columns set by text alignment | rows from the horizontal rules, columns by clustering word x-positions |
-| D. Borders drawn as dots | 26, 28 | ~8,400 rectangles of 0.5 × 0.5 pt, stippled along every rule | coalesce collinear runs of dots into segments before filtering |
-| E. Narrative in the heading row | 89 | a correct grid; the heading holds three paragraphs of summary prose | identify structurally rather than by vocabulary |
+Writing them turned up three live defects, one of which no identity could catch.
 
-Class A is the handoff's claim that some reports print no zone data in any form,
-independently confirmed. Class B is the layering working as designed: a table
-reader should return nothing for a document that prints no table.
+**The thousands separator had been flattened.** `SPACES` is meant to hold ASCII
+space, no-break space and narrow no-break space. It had become three ordinary
+spaces — indistinguishable in any editor or diff — so every count of a thousand
+or more printed with a no-break separator was rejected. Now written as escapes.
 
-**Class C** is the real limitation, and worth stating plainly: the geometric
-approach assumes a table is ruled on both axes. Sitrep 018's table is *banded* —
-alternating row shading with horizontal rules and no column separators at all.
-The producer is `ilovepdf.com` for 018 and macOS Quartz for 020, so this
-travels with the re-encoding rather than with the vintage. The fix is a hybrid
-that keeps the part geometry answers well: rows still come from the horizontal
-rules, so a wrapped zone name is still one row, and only the column boundaries
-are inferred from text alignment. That is strictly better than the character-grid
-approach, which has to infer both.
+**An empty row was ending the heading.** `Province /` and `Zone de santé` are
+two rows of one heading with a blank between them. The scan stopped at the
+blank, the heading truncated to `Province /`, and the table failed to identify
+itself — sitrep 080 returned five province rows and no zones. Fixing it took
+province-reports reconciling from 198 to 221.
 
-**Class D** is a pure geometry fix and should be done first — it is the cheapest
-and it is entirely inside `pdftable`. Nothing about the table changed; the
-re-encoder simply replaced each ruled line with a row of dots, and a run of
-collinear dots is a rule.
+**The early layout was being read as the cumulative one.** This is the one worth
+remembering. Dropping the letality requirement let the cumulative spec match the
+early table, so sitrep 005's Mongbwalu was recorded with **309 confirmed cases
+where the page prints 309 suspected and 13 confirmed**. The figures were
+plausible, the columns internally consistent, and the page's own arithmetic
+closed — the whole table had simply been read one concept to the left. Nothing
+in the pipeline could see it.
 
-## On using vision models to resolve these
-
-Worth saying why I would not, for extraction.
-
-Every one of the eleven turned out to be mechanically diagnosable — the page
-either carries a grid or it does not, and measuring `len(rects)` by shape said
-which in one pass. None of them needed a model to look at a picture. Having
-found that out, adding a non-deterministic step to resolve cases that a
-deterministic one already explains would be the wrong trade: a released data
-artefact has to rebuild byte-identically, and a panel of model reads does not.
-Agreement between several models is also weaker evidence than it appears — they
-are not independent of each other, and all of them are reading the same document,
-which is the same objection that applies to comparing our extraction against
-INRB's.
-
-There is a genuinely independent check available and it is deterministic. 67 of
-the 82 reports carry a tagged structure tree with real `/Table`, `/TR`, `/TH`
-and `/TD` markup — sitrep 080 declares 13 tables, 163 rows and 782 data cells.
-That is the document author's own statement of which cell belongs to which row
-and column, and comparing it against the grid we infer from drawn borders is two
-genuinely different claims about the same page. Where they disagree, one is
-wrong in a way neither can conceal. Harvesting the text per cell needs
-marked-content mapping through the page content stream, which no mainstream
-Python library does out of the box, so it is a day of work rather than an
-afternoon — but it is the right cross-validation, and it is reproducible.
-
-Where a vision model does earn its place is as a *triage* instrument on new
-vintages: point it at a page and ask what changed, so the spec can be written.
-That is a development aid, not a pipeline step, and nothing it produces gets
-committed.
+The rule that follows: **each relaxation of the heading vocabulary has to be
+paid for with a discriminator.** Sitrep 091, whose heading names no case column
+at all, is left unread and marked strict-xfail rather than bought with another
+relaxation.
 
 ## What is left
 
-**Identification on 11 reports** — 12, 14, 16, 17, 18, 19, 20, 26, 28, 33, 89.
+**Eight reports unread.** Sitreps 12, 14 and 16 print no zone table anywhere —
+a source fact, and the reference route returns nothing for them either. Sitrep
+15 and 83–86 are live gaps; 83–86 are the vintage that lays narrative prose
+across the heading row.
 
-**The 083+ vintage** prints prose into the heading row: sitrep 089's first
-heading cell contains three paragraphs of narrative summary interleaved word by
-word with the column names. Reports 90–92 currently resolve to the provincial
-summary rather than the zone table and return 6–7 rows instead of ~60. This is
-the hardest remaining case and probably wants a `forbids` pattern on narrative
-length rather than more vocabulary.
+**Ten province disagreements.** Two kinds. Sitreps 20, 33, 90 and 91 recover
+only a fragment of their table — ours, and the same class as the unread reports.
+Sitreps 34 (+1), 53 (+5), 55 (−3) and 81 (−2 deaths) are the size the reference
+pipeline carries as hand-verified exceptions after a page read. That register
+mechanism is not ported yet, and should be: a residual that has been read and
+understood is a different object from one that has not.
 
-**Six identity failures**, and they are not all ours. Sitreps 53 (−5) and 57
-(+5) are small residuals of the kind the reference pipeline carries as
-hand-verified exceptions — the page's own arithmetic does not close, and the
-register records that as a claim about the document. Sitrep 48 (+1,333) and
-90/92 (−119, −136) are ours.
-
-**Not yet built**, and deliberately downstream of this: alias resolution, the
-province carry, the exception and rejected-value registers. Those are claims
-about the outbreak and its sources rather than about the page, and they belong
-to steps that can be audited on their own.
+**Not yet built**, and deliberately downstream: zone alias resolution, the
+rejected-values register, and the weekly stream construction the models consume.
 
 ## Interface
 
 ```
-uv run python scripts/extract_zone_table.py \
-    --pdfs data/raw/sitrep_pdfs \
-    --out  data/build/series/zone_table.csv
+make check    # networked: is the archive current, and has the source moved?
+make fetch    # networked: fetch anything new
+make verify   # every held PDF hashes to what the manifest records
+make build    # PDFs -> zone extraction -> province aggregation
+make test
 ```
 
-Writes the trunk CSV and a `_status.csv` sibling carrying, per report: the
-status, the row count, which spec matched, the identity verdict, the printed
-total, the summed parts, the residual, and the basis the identity was taken on.
-`--spec` restricts to named specs in order of preference, which is how a single
-layout can be re-run in isolation while debugging one.
+`build` stops with exit 2 if a province total disagrees with the sum of its
+parts, exit 1 if a report printed no total to check against. Nothing is clipped,
+dropped or repaired: a province that does not reconcile is written out flagged,
+and zone rows that carry no province at all are named on stderr.
