@@ -82,7 +82,12 @@ SUBTOTAL = re.compile(r"^sous[-\s]?total")
 #: silently disappears from a provincial one.
 UNASSIGNED = re.compile(
     r"^autres?\s+(zs|zones?)|^donnees?\s+non\s+ventilees?|^a\s*ventiler"
-    r"|^non\s+identifiee?s?|^inconnue?$|^nd$")
+    r"|^non\s+identifiee?s?|^inconnue?$|^nd$"
+    # `Echantillons sans fiche` -- samples without a case-investigation form:
+    # counted in the totals, but not a place. Sitrep 007 prints it among the
+    # zone rows with 4 cases, and reading it as a health zone both invents a
+    # zone and hands those cases to whichever province the carry reaches first.
+    r"|^echantillons?\b")
 
 VALUE_ROLES = (Role.CUM_CASES, Role.CUM_DEATHS, Role.NEW_CASES,
                Role.DEATHS_COMMUNITY, Role.DEATHS_CTE, Role.DEATHS_TOTAL,

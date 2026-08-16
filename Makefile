@@ -2,7 +2,7 @@
 # by design: `build` and `doc` never touch the network, so a rebuild can never
 # silently change what the source says.
 
-.PHONY: check fetch verify build test
+.PHONY: check fetch verify build figures test
 
 ## check   -- is the archive current, and does the source still look the same?
 ##            Exit 0 current, 1 behind, 2 the source moved, 3 unreachable.
@@ -43,6 +43,13 @@ build:
 		--pdfs data/raw/sitrep_pdfs \
 		--exceptions registers/reconciliation_exceptions.tsv \
 		--out data/build/series/province_series.csv
+
+## figures -- OFFLINE. The EDA figures, from the built series.
+figures: 
+	uv run python scripts/plot_figures.py --figure availability \
+		--out data/build/figures/availability.png
+	uv run python scripts/plot_figures.py --figure province_series \
+		--out data/build/figures/province_series.png
 
 ## test    -- the pure-function tests.
 test:

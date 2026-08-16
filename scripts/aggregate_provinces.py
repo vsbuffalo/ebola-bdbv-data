@@ -188,9 +188,30 @@ def carry_province(panel: pl.DataFrame) -> pl.DataFrame:
     panel = panel.with_columns(
         (is_sub.cast(pl.Int32).cum_sum().over("sitrep")
          - is_sub.cast(pl.Int32)).alias("_blk"))
-    panel = panel.with_columns(
-        pl.col("province_printed").str.strip_chars().replace("", None)
-          .max().over(["sitrep", "_blk"]).alias("_merged"))
+
+    # THE NEAREST ANCHOR, not the block's maximum. The early layout prints
+    # SEVERAL merged province cells in one block -- Ituri's landing mid-way down
+    # its own zones, Nord-Kivu's mid-way down its own -- and taking one value
+    # per block reduced them to whichever sorted last: `Sud-Kivu` beats
+    # `Nord-Kivu` beats `Ituri` alphabetically, so sitreps 007-013 attributed
+    # every zone in the report to Sud-Kivu, and the figure showed Sud-Kivu at a
+    # hundred cases in May when it had one. Each row instead takes the closest
+    # printed label above or below it, which is what the merged cell's own
+    # placement states: it is centred on the block it spans.
+    def _nearest(sub: pl.DataFrame) -> pl.DataFrame:
+        vals = [v.strip() or None for v in sub["province_printed"].fill_null("").to_list()]
+        anchors = [(i, v) for i, v in enumerate(vals) if v]
+        out = []
+        for i in range(len(vals)):
+            if not anchors:
+                out.append(None)
+                continue
+            j, v = min(anchors, key=lambda a: abs(a[0] - i))
+            out.append(v)
+        return sub.with_columns(pl.Series("_merged", out, dtype=pl.Utf8))
+
+    panel = (panel.group_by(["sitrep", "_blk"], maintain_order=True)
+             .map_groups(_nearest))
 
     return (panel
             .with_columns(
