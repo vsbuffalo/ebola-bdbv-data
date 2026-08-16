@@ -286,8 +286,16 @@ def aggregate(panel: pl.DataFrame) -> tuple[pl.DataFrame, pl.DataFrame]:
     parts = panel.filter(pl.col("level").is_in(PARTS))
     present = [c for c in COUNTS if c in panel.columns]
 
+    # A SUM OF NOTHING IS NOTHING, NOT ZERO. polars sums an all-null group to
+    # zero, and the early layout prints no confirmed-deaths column at all -- so
+    # every report before 29 May acquired a fabricated cum_deaths of 0. On the
+    # log-scale figure the zeros could not draw and the fabrication was
+    # invisible; in the CSV it was a value someone would have used. The
+    # reference project's handoff warns that this exact polars behaviour bit
+    # three separate times. This was the fourth.
     summed = (parts.group_by(["sitrep", "date", "province"])
-              .agg([pl.col(c).sum().alias(c) for c in present]
+              .agg([pl.when(pl.col(c).is_not_null().any())
+                      .then(pl.col(c).sum()).alias(c) for c in present]
                    + [pl.len().alias("n_parts"),
                       (pl.col("level") == "unassigned").sum().alias("n_unassigned")])
               .sort(["sitrep", "province"]))

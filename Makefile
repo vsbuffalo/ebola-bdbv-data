@@ -2,7 +2,7 @@
 # by design: `build` and `doc` never touch the network, so a rebuild can never
 # silently change what the source says.
 
-.PHONY: check fetch verify build figures test
+.PHONY: check fetch verify build compare figures test
 
 ## check   -- is the archive current, and does the source still look the same?
 ##            Exit 0 current, 1 behind, 2 the source moved, 3 unreachable.
@@ -43,6 +43,19 @@ build:
 		--pdfs data/raw/sitrep_pdfs \
 		--exceptions registers/reconciliation_exceptions.tsv \
 		--out data/build/series/province_series.csv
+
+## compare -- ours against the two other extraction lineages of the same PDFs.
+##            Paths default to sibling checkouts; override INRB_DIR / SCAN.
+##            Agreement is evidence about transcription, never about the counts;
+##            a disagreement is always a finding and lands in compare/.
+INRB_DIR ?= ../ebola-camdl/data/raw/inrb_extraction
+SCAN     ?= ../epiforecast-repro/raw/insp_sitrep_scanned.csv
+compare:
+	uv run python scripts/compare_extractions.py \
+		--zone-table data/build/series/zone_table.csv \
+		--summary data/build/series/province_summary.csv \
+		--inrb $(INRB_DIR) --scan $(SCAN) \
+		--out-dir data/build/compare
 
 ## figures -- OFFLINE. The EDA figures, from the built series.
 figures: 
