@@ -88,8 +88,20 @@ def to_int(s: str) -> int | None:
     The thousands separator is a space, and the reports use three different
     ones -- ASCII, no-break and narrow no-break. A footnote marker can attach to
     a number as readily as to a name, and it is typography rather than value.
+
+    THE MARKER CAN PRECEDE THE VALUE, not only follow it. Sitrep 088's
+    `A ventiler` row -- the confirmed deaths that occurred in a province's
+    treatment centres and are awaiting classification by health zone -- prints
+    its death count as a footnote marker with the figure wrapped onto the next
+    line, so the cell reads `* 59`. Stripping markers only from the end left
+    `* 59`, which matches no number, and the 59 deaths were dropped: Ituri's
+    cases reconciled exactly while its deaths came up 59 short. Because that
+    column is cumulative the shortfall would have grown with it.
+
+    Markers are therefore stripped from both ends. Internal spacing is left
+    alone, because there the space is a thousands separator and not padding.
     """
-    t = s.strip().rstrip(MARKERS).strip()
+    t = s.strip().strip(MARKERS + " ")
     if not t or t.upper() in NOT_REPORTED:
         return None
     if not NUM.match(t):

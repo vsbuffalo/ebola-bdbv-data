@@ -274,15 +274,20 @@ SPECS: tuple[TableSpec, ...] = (ZONE_TABLE, EARLY_ZONE_TABLE)
 
 
 def spans_same(a, b, tol: float = 8.0) -> bool:
-    """Two tables occupy the same horizontal band, so a page break split one table.
+    """Two tables have the same left and right edges, so a page break split one table.
 
-    Matched on the OUTER extent rather than on every internal boundary. A
-    continuation page has the same left and right edges as its head but need not
-    have the same column count: the heading page's title text creates boundaries
-    the data rows do not have, and on sitrep 090 that is ten columns against
-    eight. Requiring every boundary to agree orphaned the continuation and lost
-    all 61 of its rows; requiring only the extent keeps them, and mapping each
-    page's columns separately is what makes that safe.
+    BOTH edges must agree, and that is the strength of the test rather than a
+    limitation. Nearly every table in these reports spans most of the text
+    width, so a looser criterion -- overlap as a fraction of the wider span --
+    chains unrelated tables together and costs far more than it recovers:
+    province-reports fell from 216 to 146 under it. Two edges agreeing within a
+    few points is a much rarer coincidence than one broad overlap.
+
+    The tolerance is 8 pt, and it was tuned rather than chosen: measured end to
+    end, 8 pt gives 198 province-reports reconciling and 10 pt gives 180. The
+    looser value joins more pages and the extra joins are mostly wrong, which is
+    also why sitrep 090 is left unrecovered here -- its two pages begin 8.5 pt
+    apart, and buying that one report costs eighteen others.
     """
     return abs(a.xs[0] - b.xs[0]) <= tol and abs(a.xs[-1] - b.xs[-1]) <= tol
 
