@@ -251,7 +251,71 @@ def _segments(page) -> list[Segment]:
             segs.append(Segment(y1, x0, x1, True))
             segs.append(Segment(x0, y0, y1, False))
             segs.append(Segment(x1, y0, y1, False))
+        else:
+            # A DOT. Too small to have a direction of its own, so it is emitted
+            # on both axes and left for coalescing to resolve: a dot in a
+            # horizontal run joins a horizontal rule, one in a vertical run
+            # joins a vertical rule, and one in neither is dropped afterwards
+            # for being too short to be a rule. This is what makes the
+            # dot-stippled re-encodes readable at all -- sitrep 026 draws every
+            # border as 8,419 squares of half a point.
+            segs.append(Segment((y0 + y1) / 2, x0, x1, True))
+            segs.append(Segment((x0 + x1) / 2, y0, y1, False))
     return segs
+
+
+#: How large a gap along a rule still counts as the same rule. A rule is
+#: routinely drawn in pieces, and the two ways it happens here are far apart in
+#: scale but identical in kind:
+#:
+#:   * The macOS Quartz re-encoder stipples every rule into a run of 0.5 pt
+#:     squares -- sitrep 026 carries 8,419 of them on one page -- with
+#:     essentially no gap between the pieces.
+#:   * A banded table draws its column rules only where a row is shaded, so the
+#:     rule exists inside each banner row and stops across the unshaded data
+#:     rows between them. On sitrep 018 that leaves the table's own borders in
+#:     94 disconnected islands, none more than six rows tall.
+#:
+#: In both cases the drawn pieces lie on one line at one position, and treating
+#: them as separate rules is what prevents the table from forming. The gap must
+#: therefore exceed a data row's height (about 16 pt here) and stay well below
+#: the distance between genuinely separate tables.
+COALESCE_GAP = 30.0
+
+
+def _coalesce(segs: list[Segment], gap: float = COALESCE_GAP) -> list[Segment]:
+    """Merge collinear pieces that lie on one line into single rules."""
+    out: list[Segment] = []
+    for horizontal in (True, False):
+        axis = [s for s in segs if s.horizontal is horizontal]
+        if not axis:
+            continue
+        axis.sort(key=lambda s: (s.pos, s.lo))
+        cluster: list[Segment] = []
+        for s in axis:
+            if cluster and s.pos - cluster[-1].pos > (SNAP_Y if horizontal else SNAP_X):
+                out.extend(_merge_run(cluster, horizontal, gap))
+                cluster = []
+            cluster.append(s)
+        if cluster:
+            out.extend(_merge_run(cluster, horizontal, gap))
+    return out
+
+
+def _merge_run(cluster: list[Segment], horizontal: bool, gap: float) -> list[Segment]:
+    """Join pieces at one position whose spans touch or nearly touch."""
+    pos = sum(s.pos for s in cluster) / len(cluster)
+    spans = sorted((s.lo, s.hi) for s in cluster)
+    out: list[Segment] = []
+    lo, hi = spans[0]
+    for a, b in spans[1:]:
+        if a - hi <= gap:
+            hi = max(hi, b)
+        else:
+            out.append(Segment(pos, lo, hi, horizontal))
+            lo, hi = a, b
+    out.append(Segment(pos, lo, hi, horizontal))
+    return out
 
 
 def _components(segs: list[Segment]) -> list[list[Segment]]:
@@ -282,9 +346,17 @@ def _components(segs: list[Segment]) -> list[list[Segment]]:
     return list(groups.values())
 
 
-def tables(page, *, min_cols: int = MIN_COLS, min_rows: int = MIN_ROWS) -> list[Table]:
+#: A coalesced rule shorter than this is not a rule. Applied AFTER coalescing,
+#: so it removes the isolated dots and stray marks that survive as degenerate
+#: segments while leaving every run that actually forms a border.
+MIN_RUN = 10.0
+
+
+def tables(page, *, min_cols: int = MIN_COLS, min_rows: int = MIN_ROWS,
+           gap: float = COALESCE_GAP) -> list[Table]:
     """Every table on one page, as a cell grid."""
-    comps = _components(_segments(page))
+    segs = [s for s in _coalesce(_segments(page), gap) if s.hi - s.lo >= MIN_RUN]
+    comps = _components(segs)
     words = page.extract_words()
     out: list[Table] = []
 

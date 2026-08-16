@@ -225,7 +225,10 @@ ZONE_TABLE = TableSpec(
         P(r"deces"),
         P(r"letalit"),
     ),
-    forbids=(P(r"gueri"), P(r"hospitalisation")),
+    forbids=(
+        P(r"gueri"),
+        P(r"hospitalisation"),
+    ),
     values=(Role.CUM_CASES, Role.CUM_DEATHS, Role.LETALITY, Role.NEW_CASES,
             Role.DEATHS_COMMUNITY, Role.DEATHS_CTE, Role.DEATHS_TOTAL),
 )
@@ -274,33 +277,74 @@ def select(tables: Iterable, spec: TableSpec) -> Resolved | None:
     """
     tabs = sorted(tables, key=lambda t: (t.page, t.ys[0]))
 
-    # A CANDIDATE MUST BOTH IDENTIFY AND CLASSIFY. Heading vocabulary alone is
-    # not sufficient evidence: a page carries small fragments -- a stray caption
-    # box, a one-row table -- whose few words can satisfy the required phrases
-    # while holding no data at all. Taking the first such fragment as the head
-    # then found no value columns and the whole document was reported as having
-    # no matching table, on 30 of 82 reports.
+    # CANDIDATES ARE RANKED, NOT TAKEN IN ORDER. Heading vocabulary alone does
+    # not single this table out, and no amount of tightening the vocabulary made
+    # it. The provincial summary sits above this table on the same page and
+    # states the same four things about itself -- a province, a case count, a
+    # death count, a letality -- because it IS a summary of this table. Every
+    # phrase that excluded it excluded some vintage of the real table too, since
+    # the title text bleeds across the heading row and lands in arbitrary cells.
     #
-    # A table with no column of numbers is not the table we are looking for, so
-    # the search continues rather than failing. The first candidate that both
-    # names itself correctly AND holds data is the head.
-    for head in (t for t in tabs if spec.identifies(t.header())):
-        chain = [t for t in tabs
-                 if t is head or (same_columns(t, head)
-                                  and (t.page, t.ys[0]) > (head.page, head.ys[0]))]
-        labels, values = classify(head, start=head.header_rows())
-        if not values:
-            for t in chain[1:]:
-                labels, values = classify(t, start=t.header_rows())
-                if values:
-                    break
-        if not values:
+    # The difference that actually holds is structural rather than lexical: the
+    # summary carries one row per province, five to eight of them, and this
+    # table carries one row per health zone, thirty to sixty. So candidates are
+    # grouped into chains by column geometry and the chain with the most data
+    # rows wins.
+    #
+    # Ranking also removes the ordering problem in the other direction. This
+    # table is printed across two pages, and taking the FIRST candidate as the
+    # head is right while taking the LARGEST PAGE was wrong -- the province rows
+    # are on page one and the zones on page two, and choosing page two dropped
+    # every province row, costing sitrep 060 1,808 of its 2,011 cases. Chains
+    # are scored whole, so both pages are counted together and the head is
+    # simply the chain's first page.
+    cands = []
+    for t in tabs:
+        if not spec.identifies(t.header()):
             continue
-        roles = {role: col for role, col in zip(spec.values, values)
-                 if role is not Role.IGNORED}
-        return Resolved(spec=spec, roles=roles, labels=tuple(labels),
-                        tables=tuple(chain))
-    return None
+        labels, values = classify(t, start=t.header_rows())
+        if values:
+            cands.append(t)
+    if not cands:
+        return None
+
+    chains: list[list] = []
+    for t in cands:
+        for chain in chains:
+            if same_columns(t, chain[0]):
+                chain.append(t)
+                break
+        else:
+            chains.append([t])
+
+    def weight(chain) -> int:
+        return sum(t.nrows - t.header_rows() for t in chain)
+
+    best = max(chains, key=weight)
+    head = best[0]
+
+    # Continuation pages carry no heading of their own, so they are not
+    # candidates and must be attached separately -- by the same column geometry.
+    chain = sorted(
+        {id(t): t for t in best
+         + [t for t in tabs
+            if same_columns(t, head) and (t.page, t.ys[0]) >= (head.page, head.ys[0])]
+         }.values(),
+        key=lambda t: (t.page, t.ys[0]))
+
+    labels, values = classify(head, start=head.header_rows())
+    if not values:
+        for t in chain[1:]:
+            labels, values = classify(t, start=t.header_rows())
+            if values:
+                break
+    if not values:
+        return None
+
+    roles = {role: col for role, col in zip(spec.values, values)
+             if role is not Role.IGNORED}
+    return Resolved(spec=spec, roles=roles, labels=tuple(labels),
+                    tables=tuple(chain))
 
 
 def select_any(tables: Iterable, specs: Sequence[TableSpec] = SPECS) -> Resolved | None:
