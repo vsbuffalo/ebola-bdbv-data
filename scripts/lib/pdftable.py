@@ -279,8 +279,11 @@ def _segments(page) -> list[Segment]:
 #: In both cases the drawn pieces lie on one line at one position, and treating
 #: them as separate rules is what prevents the table from forming. The gap must
 #: therefore exceed a data row's height (about 16 pt here) and stay well below
-#: the distance between genuinely separate tables.
-COALESCE_GAP = 30.0
+#: the distance between genuinely separate tables. Measured end to end: at 30 pt
+#: a DOUBLE-height row -- one whose name wraps, such as `Autres ZS (données non
+#: ventilées)` -- is 32 pt tall and falls in the gap between two components,
+#: taking its 94 unallocated Ituri cases with it. 36 pt bridges it.
+COALESCE_GAP = 36.0
 
 
 def _coalesce(segs: list[Segment], gap: float = COALESCE_GAP) -> list[Segment]:

@@ -2,7 +2,7 @@
 # by design: `build` and `doc` never touch the network, so a rebuild can never
 # silently change what the source says.
 
-.PHONY: check fetch build doc test
+.PHONY: check fetch verify build test
 
 ## check   -- is the archive current, and does the source still look the same?
 ##            Exit 0 current, 1 behind, 2 the source moved, 3 unreachable.
@@ -25,6 +25,16 @@ fetch:
 verify:
 	uv run python scripts/verify_archive.py --pdfs data/raw/sitrep_pdfs \
 		--manifest data/raw/sitrep_pdfs.manifest.tsv
+
+## build   -- OFFLINE. PDFs -> health-zone extraction -> province aggregation.
+##            Stops with exit 2 if a province total disagrees with the sum of
+##            its parts; that is a finding, not a nuisance.
+build:
+	uv run python scripts/extract_zone_table.py \
+		--pdfs data/raw/sitrep_pdfs --out data/build/series/zone_table.csv
+	uv run python scripts/aggregate_provinces.py \
+		--panel data/build/series/zone_table.csv \
+		--out data/build/series/province_series.csv
 
 ## test    -- the pure-function tests.
 test:
