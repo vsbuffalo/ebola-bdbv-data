@@ -156,12 +156,22 @@ class Table:
         failed to identify itself for want of the words `zone de santé` -- so a
         report whose grid reads perfectly returned only its province rows.
 
-        Only a number ends the heading, because a heading never contains one.
+        TWO NUMBERS END THE HEADING, NOT ONE. A single number in a heading row
+        is usually part of the title: from sitrep 083 the table's title is laid
+        across the heading, and `Cas et décès confirmés par province et zone de
+        santé (situation du 14 août 2026)` puts the bare `14` in a cell of its
+        own. Ending the heading at the first number stopped it at row 0, the
+        table lost its heading entirely and stopped identifying itself.
+
+        A data row carries at least two numbers -- a count and a count. That is
+        what separates it from a heading holding a date fragment, and it still
+        terminates on the rows that matter: sitrep 080's `Ituri | 3 317 | 1 382`
+        interleaved into its heading block has two.
         """
         n = 0
         for i in range(min(max_scan, self.nrows)):
             cells = [c for c in self.row(i) if c.strip()]
-            if any(_numeric(c) for c in cells):
+            if sum(1 for c in cells if _numeric(c)) >= 2:
                 break
             if cells:
                 n = i + 1
@@ -301,11 +311,22 @@ def _coalesce(segs: list[Segment], gap: float = COALESCE_GAP) -> list[Segment]:
         if not axis:
             continue
         axis.sort(key=lambda s: (s.pos, s.lo))
+        # MEASURED FROM THE CLUSTER'S ANCHOR, NOT ITS LAST MEMBER. Comparing
+        # against the previous element chains: on a dot-stippled page the
+        # positions are dense enough that each is within tolerance of the next,
+        # so every rule on the page collapses into one cluster spanning it.
+        # Sitrep 083's Table 2 page carries 2,233 dots and 5,206 raw segments,
+        # of which exactly 13 survived -- the table did not form at all and the
+        # report read as having no zone table.
         cluster: list[Segment] = []
+        anchor = 0.0
+        tol = SNAP_Y if horizontal else SNAP_X
         for s in axis:
-            if cluster and s.pos - cluster[-1].pos > (SNAP_Y if horizontal else SNAP_X):
+            if cluster and s.pos - anchor > tol:
                 out.extend(_merge_run(cluster, horizontal, gap))
                 cluster = []
+            if not cluster:
+                anchor = s.pos
             cluster.append(s)
         if cluster:
             out.extend(_merge_run(cluster, horizontal, gap))
