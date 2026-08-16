@@ -48,7 +48,14 @@ from lib.pdftable import read
 from lib.report_date import FILENAME, report_key
 from lib.tablespec import Role, SPECS, TableSpec, norm, select
 
-SPACES = "   "
+#: The three characters the reports use as a thousands separator: ASCII
+#: space, no-break space (U+00A0) and narrow no-break space (U+202F).
+#: WRITTEN AS ESCAPES ON PURPOSE. Spelled as literal characters these are
+#: indistinguishable from three ordinary spaces in every editor and diff,
+#: and they were silently flattened to `"   "` at some point -- which made
+#: `to_int` reject every count of a thousand or more that the source prints
+#: with a no-break separator, and those are most of them.
+SPACES = "\u0020\u00a0\u202f"
 NUM = re.compile(rf"^-?[\d{SPACES}]*\d$")
 MARKERS = "*†‡"
 

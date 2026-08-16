@@ -148,6 +148,15 @@ class Table:
         `Nbre de décès suspects` over three rows and prints the block over six,
         and a cap of four truncated every heading to `Nbre de` and `Zones de`,
         so no column resolved and the whole vintage was rejected.
+
+        AN EMPTY ROW DOES NOT END THE HEADING. `Province /` and `Zone de santé`
+        are two rows of one heading with a blank row between them on sitrep 080,
+        because the heading cell is taller than its text. Treating the blank as
+        a terminator stopped the block at `Province /`, and the table then
+        failed to identify itself for want of the words `zone de santé` -- so a
+        report whose grid reads perfectly returned only its province rows.
+
+        Only a number ends the heading, because a heading never contains one.
         """
         n = 0
         for i in range(min(max_scan, self.nrows)):
@@ -156,8 +165,6 @@ class Table:
                 break
             if cells:
                 n = i + 1
-            elif n:
-                break
         return n
 
     def header(self, *, look_below: int = 4) -> list[str]:

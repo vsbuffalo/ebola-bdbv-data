@@ -179,7 +179,14 @@ class Resolved:
 # Column classification, from the data rather than the heading.
 # --------------------------------------------------------------------------
 
-_SPACES = "   "
+#: The three characters the reports use as a thousands separator: ASCII
+#: space, no-break space (U+00A0) and narrow no-break space (U+202F).
+#: WRITTEN AS ESCAPES ON PURPOSE. Spelled as literal characters these are
+#: indistinguishable from three ordinary spaces in every editor and diff,
+#: and they were silently flattened to `"   "` at some point -- which made
+#: `to_int` reject every count of a thousand or more that the source prints
+#: with a no-break separator, and those are most of them.
+_SPACES = "\u0020\u00a0\u202f"
 _NUMERIC = re.compile(rf"^-?[\d{_SPACES}]*\d\s*[,\.]?\d*\s*%?$")
 _SENTINEL = {"nd", "n/d", "na", "n/a", "-", "—", "–", "*", ""}
 
@@ -247,6 +254,21 @@ ZONE_TABLE = TableSpec(
     forbids=(
         P(r"gueri"),
         P(r"hospitalisation"),
+        # THE EARLY LAYOUT MUST NOT BE READ BY THIS SPEC. It also heads a zone
+        # column, a case count and a death count, so once `Létalité` stopped
+        # being required this spec matched it -- and because this spec is tried
+        # first, sitrep 005's SUSPECTED cases were written out as CONFIRMED
+        # ones. Mongbwalu was recorded with 309 confirmed cases where the page
+        # prints 309 suspected and 13 confirmed.
+        #
+        # Nothing else caught it: the figures were plausible, the columns were
+        # internally consistent, and the page's own arithmetic closed, because
+        # the whole table had been read one concept to the left. Only a test
+        # naming the report found it, which is the argument for having them.
+        #
+        # The cumulative confirmed table never carries a suspected column; the
+        # early table is built around one.
+        P(r"suspect"),
     ),
     values=(Role.CUM_CASES, Role.CUM_DEATHS, Role.LETALITY, Role.NEW_CASES,
             Role.DEATHS_COMMUNITY, Role.DEATHS_CTE, Role.DEATHS_TOTAL),
@@ -266,7 +288,12 @@ EARLY_ZONE_TABLE = TableSpec(
         P(r"confirmes?"),
         P(r"contacts?"),
     ),
-    forbids=(P(r"letalit"), P(r"alertes")),
+    # The early reports print a DAILY table beside this cumulative one, with the
+    # same vocabulary under `Nouveaux` -- new confirmed cases, new deaths, new
+    # suspected, new contacts -- and a `Guéris du jour` column. It is a real
+    # table and a useful one, but it is a flow where this is a stock, and
+    # reading one as the other would mix an increment into a cumulative series.
+    forbids=(P(r"letalit"), P(r"alertes"), P(r"gueri"), P(r"nouveau")),
     values=(Role.SUSPECTED, Role.SUSPECTED_DEATHS, Role.CUM_CASES, Role.CONTACTS),
 )
 
