@@ -32,6 +32,9 @@ verify:
 build:
 	uv run python scripts/extract_zone_table.py \
 		--pdfs data/raw/sitrep_pdfs --out data/build/series/zone_table.csv
+	uv run python scripts/extract_zone_table.py \
+		--pdfs data/raw/sitrep_pdfs --spec provincial_summary \
+		--out data/build/series/province_summary.csv --quiet
 	uv run python scripts/aggregate_provinces.py \
 		--panel data/build/series/zone_table.csv \
 		--pdfs data/raw/sitrep_pdfs \

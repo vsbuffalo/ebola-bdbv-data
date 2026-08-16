@@ -485,3 +485,36 @@ def test_every_registered_gap_is_the_gap_we_actually_measure():
         assert row[col[e["column"]]][0] == int(e["expected_gap"]), (
             f"sitrep {e['sitrep']} {e['unit']} {e['column']}: register says "
             f"{e['expected_gap']}, build measures {row[col[e['column']]][0]}")
+
+
+# --------------------------------------------------------------------------
+# The provincial summary route
+# --------------------------------------------------------------------------
+
+from lib.tablespec import PROVINCIAL_SUMMARY                      # noqa: E402
+from lib.pdftable import read as read_pdf                         # noqa: E402
+from lib.tablespec import select as select_spec                   # noqa: E402
+
+
+@needs_pdfs
+@pytest.mark.parametrize("n, ituri_cases", [
+    (84, 3563),   # no zone table exists; the summary is the only tabular case data
+    (85, 3636),
+    (86, 3704),
+])
+def test_summary_route_covers_the_tableless_vintage(n, ituri_cases):
+    """Sitreps 084-086 dropped the per-zone table; the summary is what remains.
+
+    The value asserted is Ituri's cumulative confirmed cases as printed. The
+    first attempt at this route matched the ALERTS table instead -- it also has
+    one row per province -- and read Ituri as 462 cumulative cases, its alert
+    count for the day. The zones-touched cell (`53/140 (37,8 %)`) is the
+    signature that separates them, and this test pins the corrected value.
+    """
+    got = select_spec(read_pdf(pdf(n)), PROVINCIAL_SUMMARY)
+    assert got is not None
+    m = got.pages[0]
+    t = m.table
+    rows = {m.label(t.row(i)): t.row(i) for i in range(t.header_rows(), t.nrows)}
+    ituri = next(v for k, v in rows.items() if k and norm(k) == "ituri")
+    assert E.to_int(m.get(ituri, Role.CUM_CASES)) == ituri_cases

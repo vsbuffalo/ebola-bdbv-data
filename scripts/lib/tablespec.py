@@ -112,6 +112,24 @@ class TableSpec:
     #: stays aligned.
     values: tuple[Role, ...] = ()
 
+    #: Names that identify the table by its ROWS rather than its heading. The
+    #: provincial summary is often headless -- its heading bleeds into the
+    #: dashboard above it -- so no heading vocabulary can find it. What is
+    #: distinctive about it instead is that a MAJORITY of its labelled rows are
+    #: province names, a closed set: five or six of its seven rows, against five
+    #: among fifty in the zone table. Heading identification still applies when
+    #: a heading exists; this is the route for tables that have none.
+    row_vocabulary: frozenset[str] = frozenset()
+
+    #: A pattern that must appear in the table's DATA cells (at least twice)
+    #: for row identification to accept it. Row vocabulary alone is not enough:
+    #: the alerts, contact-tracing and indicator tables also carry one row per
+    #: province, and on sitrep 084 the alerts table was read as the provincial
+    #: summary -- Ituri entered the series with 462 cumulative cases, which is
+    #: its ALERT count for that day. What no other per-province table prints is
+    #: the zones-touched cell, `53/140 (37,8 %)`: a count over a denominator.
+    row_requires: re.Pattern[str] | None = None
+
     def identifies(self, headings: Sequence[str]) -> bool:
         block = norm(" | ".join(h for h in headings if h))
         if not block:
@@ -322,7 +340,50 @@ MIXED_ZONE_TABLE = TableSpec(
             Role.CUM_CASES, Role.CUM_DEATHS, Role.RECOVERED, Role.CONTACTS),
 )
 
+#: THE PROVINCIAL SUMMARY -- one row per province, no zones. Until now this
+#: table was only ever something to keep OUT of the zone extraction; it is also
+#: a source in its own right, and for the reports that print no per-zone table
+#: at all (012, 014, 016, and the 084-086 vintage that dropped it) it is the
+#: only tabular case data on the page. Extracted separately, it gives those
+#: reports a province-level series and every other report an independent check
+#: on the zone-derived sums.
+#:
+#: `Zones de santé touchées` -- the COUNT of affected zones, printed like
+#: `28/36 (77,8 %)` -- is required, because it is the summary's signature.
+#: The slash-form label `Province / Zone de santé` is forbidden, because it is
+#: the zone table's signature: its rows are provinces AND zones, where this
+#: table's are provinces alone. The title text that bleeds into zone-table
+#: headings spells `par province et zone de santé` without the slash, so the
+#: two do not collide there.
+PROVINCIAL_SUMMARY = TableSpec(
+    name="provincial_summary",
+    requires=(
+        P(r"provinces?\b"),
+        P(r"\bcas\b"),
+        P(r"deces"),
+        P(r"zones?\s+de\s+sant\w*\s+touchee|touchee"),
+    ),
+    forbids=(
+        P(r"provinces?\s*/\s*zones?"),
+        P(r"gueri"),
+        P(r"hospitalisation"),
+        P(r"suspect"),
+    ),
+    values=(Role.CUM_CASES, Role.CUM_DEATHS, Role.LETALITY, Role.IGNORED,
+            Role.NEW_CASES),
+    row_vocabulary=frozenset({
+        "ituri", "nord-kivu", "nord kivu", "sud-kivu", "sud kivu",
+        "haut-uele", "haut uele", "tshopo", "bas-uele", "bas uele",
+        "kinshasa", "maniema"}),
+    row_requires=P(r"\d+\s*/\s*\d+"),
+)
+
+#: The zone-level specs, in order of preference. The provincial summary is NOT
+#: here: it is a separate route with its own output, because it answers a
+#: different question (province totals, not zone detail) and must never compete
+#: with the zone table for the same extraction.
 SPECS: tuple[TableSpec, ...] = (ZONE_TABLE, MIXED_ZONE_TABLE, EARLY_ZONE_TABLE)
+ALL_SPECS: tuple[TableSpec, ...] = SPECS + (PROVINCIAL_SUMMARY,)
 
 
 def spans_same(a, b, tol: float = 10.0) -> bool:
@@ -375,6 +436,30 @@ def same_label_heading(a, b) -> bool:
     return norm(ha[0]) == norm(hb[0])
 
 
+def rows_identify(table, spec: TableSpec) -> bool:
+    """A majority of the table's labelled rows belong to the spec's vocabulary."""
+    if not spec.row_vocabulary:
+        return False
+    labels, values = classify(table, start=table.header_rows())
+    if not values:
+        return False
+    col = labels[0] if labels else None
+    if col is None:
+        return False
+    names = [norm(table.row(i)[col]) for i in range(table.header_rows(), table.nrows)
+             if col < table.ncols and table.row(i)[col].strip()]
+    if len(names) < 3:
+        return False
+    hits = sum(1 for n in names if n in spec.row_vocabulary or n.startswith("total"))
+    if hits * 2 <= len(names):
+        return False
+    if spec.row_requires is not None:
+        cells = " | ".join(c for i in range(table.nrows) for c in table.row(i) if c)
+        if len(spec.row_requires.findall(cells)) < 2:
+            return False
+    return True
+
+
 def _map(table, spec: TableSpec) -> Mapped | None:
     labels, values = classify(table, start=table.header_rows())
     if not values:
@@ -406,7 +491,9 @@ def select(tables: Iterable, spec: TableSpec) -> Resolved | None:
     that way. A chain is scored whole, so both pages count together.
     """
     tabs = sorted(tables, key=lambda t: (t.page, t.ys[0]))
-    heads = [t for t in tabs if spec.identifies(t.header()) and _map(t, spec)]
+    heads = [t for t in tabs
+             if (spec.identifies(t.header()) or rows_identify(t, spec))
+             and _map(t, spec)]
     if not heads:
         return None
 

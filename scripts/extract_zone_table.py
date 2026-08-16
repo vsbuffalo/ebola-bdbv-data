@@ -46,7 +46,7 @@ import polars as pl
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from lib.pdftable import read
 from lib.report_date import FILENAME, report_key
-from lib.tablespec import Role, SPECS, TableSpec, norm, select
+from lib.tablespec import ALL_SPECS, Role, SPECS, TableSpec, norm, select
 
 #: The three characters the reports use as a thousands separator: ASCII
 #: space, no-break space (U+00A0) and narrow no-break space (U+202F).
@@ -306,7 +306,7 @@ def main() -> None:
 
     specs: tuple[TableSpec, ...] = SPECS
     if args.spec:
-        by_name = {s.name: s for s in SPECS}
+        by_name = {s.name: s for s in ALL_SPECS}
         missing = [n for n in args.spec if n not in by_name]
         if missing:
             sys.exit(f"unknown spec(s): {', '.join(missing)}; "
