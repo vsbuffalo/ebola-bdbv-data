@@ -2,7 +2,7 @@
 
 Date: 2026-08-16
 Project: ebola-bdbv-data
-Status: every report that prints a zone table is read; 3 residuals open
+Status: all 83 held reports contribute data; 3 residuals open
 Tags: architecture, pdf-extraction, table-geometry
 
 ## The one design decision everything follows from
@@ -223,11 +223,20 @@ forbidding any vocabulary.
 
 ## What is left
 
-**Every report that prints a per-zone table is now read: 77 of 83.** The other
-six — sitreps 12, 14, 16, 84, 85 and 86 — print no such table anywhere. The
-phrase does not occur in their text and the reference pipeline recovers nothing
-at zone level for them either. The 084–086 vintage dropped the table outright.
-That is a source fact, not a gap in the reading.
+**All 83 held reports now contribute case data, by the finest route each one
+prints.** 77 carry a per-zone table and all 77 are read. Sitreps 084–086, whose
+vintage dropped the zone table, and 033, whose zone data is narrative, are
+covered at province level by the provincial-summary route. Sitreps 012 and 016
+print their breakdown only in a prose sentence and are read by a route built for
+exactly that sentence — which is safe because the sentence checks itself, a
+total and its parts, and a breakdown that does not close is refused whole.
+Sitrep 014 states only a national cumulative, so that is what it contributes:
+`national_only` is what the page says, not a gap in the reading.
+
+The provincial summary also runs on every report that has one (70 of 83) as an
+independent within-document check: where it and the zone-derived sums both
+exist they agree exactly on 57 of 66 reports, and most of the differences are
+already in the exception register at the same values.
 
 Three layouts are in use, and each is a declared spec rather than a code path:
 

@@ -518,3 +518,39 @@ def test_summary_route_covers_the_tableless_vintage(n, ituri_cases):
     rows = {m.label(t.row(i)): t.row(i) for i in range(t.header_rows(), t.nrows)}
     ituri = next(v for k, v in rows.items() if k and norm(k) == "ituri")
     assert E.to_int(m.get(ituri, Role.CUM_CASES)) == ituri_cases
+
+
+# --------------------------------------------------------------------------
+# The prose route
+# --------------------------------------------------------------------------
+
+import extract_prose_provinces as PR                              # noqa: E402
+
+
+@needs_pdfs
+def test_prose_route_reads_the_self_checking_sentence():
+    """Sitrep 012's breakdown closes on its own arithmetic: 110+10+1 = 121."""
+    rows, st = PR.extract(pdf(12))
+    assert st == "ok"
+    by = {r["province"]: r["cum_cases"] for r in rows}
+    assert by == {"national": 121, "Ituri": 110, "Nord-Kivu": 10, "Sud-Kivu": 1}
+
+
+@needs_pdfs
+def test_prose_route_takes_only_what_the_page_states():
+    """Sitrep 014 prints a national cumulative and no breakdown; so do we."""
+    rows, st = PR.extract(pdf(14))
+    assert st == "national_only"
+    assert [r["level"] for r in rows] == ["national"]
+    assert rows[0]["cum_cases"] == 210
+
+
+def test_prose_route_refuses_a_breakdown_that_does_not_close(monkeypatch):
+    """The sentence's own arithmetic is the licence; without it, nothing ships."""
+    import subprocess as sp
+    fake = "Cumul des cas confirmés : 100 cas dont 90 en Ituri et 5 au Nord-Kivu."
+    class R: stdout = fake
+    monkeypatch.setattr(PR.subprocess, "run", lambda *a, **k: R())
+    rows, st = PR.extract(Path("/dev/null"))
+    assert rows == []
+    assert st.startswith("breakdown_does_not_close")

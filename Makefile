@@ -35,6 +35,9 @@ build:
 	uv run python scripts/extract_zone_table.py \
 		--pdfs data/raw/sitrep_pdfs --spec provincial_summary \
 		--out data/build/series/province_summary.csv --quiet
+	uv run python scripts/extract_prose_provinces.py \
+		--pdfs data/raw/sitrep_pdfs --only 12 14 16 \
+		--out data/build/series/prose_provinces.csv
 	uv run python scripts/aggregate_provinces.py \
 		--panel data/build/series/zone_table.csv \
 		--pdfs data/raw/sitrep_pdfs \
