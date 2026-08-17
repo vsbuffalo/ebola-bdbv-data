@@ -71,12 +71,14 @@ streams:
 		--geojson data/raw/health_zones.geojson \
 		--population data/raw/zone_population.csv \
 		--out-dir data/build/streams
-	# writes, one file per stream:
+	# writes, one file per stream (this list is load-bearing: the document
+	# guard derives the declared-artefact set from these paths):
 	#   data/build/streams/cases_ituri.tsv      data/build/streams/deaths_ituri.tsv
 	#   data/build/streams/cases_nord_kivu.tsv  data/build/streams/deaths_nord_kivu.tsv
 	#   data/build/streams/cases_haut_uele.tsv  data/build/streams/deaths_haut_uele.tsv
 	#   data/build/streams/community_deaths_ituri.tsv
 	#   data/build/streams/community_deaths_nord_kivu.tsv
+	#   data/build/streams/community_deaths_haut_uele.tsv
 	#   data/build/streams/meta.json
 	uv run python scripts/build_uganda_stream.py \
 		--uganda data/raw/uganda_cases.toml \

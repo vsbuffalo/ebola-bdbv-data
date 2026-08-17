@@ -124,6 +124,20 @@ the site renamed the series and the query silently stopped matching.
 different inputs. Everything under `data/build/` is regenerable from the
 committed inputs; delete it and `make build` returns it byte-identically.
 
+### The modelling contract
+
+The eleven files of `data/build/streams/` — ten stream TSVs plus `meta.json`
+(whose `population` and `day0` fields are read too) — are vendored by the
+modelling repository, pinned to a commit of this one and verified by
+per-file sha256 against a byte-identical rebuild. That makes their shape a
+**contract, not an implementation detail**: file renames, column changes,
+and the `uganda_exports` convention (cumulative counts at bulletin dates,
+deliberately unlike the weekly-incidence streams beside it) are coordinated
+changes, announced across both repositories — never refactors. Releases are
+tagged `data/<data-date>` (the newest report's data date), gated on: every
+accounting identity holding, the comparison figures rendering, and
+`make check` returning current-or-behind.
+
 ## How the extraction works
 
 The situation reports are Microsoft Word exports, and Word draws every table

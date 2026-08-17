@@ -367,7 +367,15 @@ def main() -> None:
             chk = (cum.join(printed, on="date", how="inner").sort("date")
                    .with_columns((pl.col("cum") - pl.col(col)).alias("gap")))
             if chk.height:
-                worst = chk.sort(pl.col("gap").abs(), descending=True).row(0)
+                # STABLE TIE-BREAK, FOR BYTE-DETERMINISM. polars' default
+                # sort is unstable under ties, and a stream whose gaps are
+                # all zero (cases_haut_uele: a 30-way tie) picked an
+                # arbitrary worst_gap_date per run -- the one nondeterminism
+                # in an otherwise byte-identical build, and the modelling
+                # repo verifies its vendored copy by hash. Earliest date
+                # wins among equals.
+                worst = chk.sort([pl.col("gap").abs(), pl.col("date")],
+                                 descending=[True, False]).row(0)
                 recon[name]["vs_printed"] = {
                     "n_compared": chk.height,
                     "n_equal": chk.filter(pl.col("gap") == 0).height,
@@ -401,10 +409,20 @@ def main() -> None:
                       f"{', '.join(asc_vs['dates_disagree'])}",
                       file=sys.stderr)
 
+    # The PDF text layer these streams ultimately came through; recorded so a
+    # future byte-reproducibility question can start from the tool version
+    # instead of archaeology. pdftotext prints its version to stderr.
+    import subprocess
+    pv = subprocess.run(["pdftotext", "-v"], capture_output=True, text=True)
+    pdftotext_version = (pv.stderr or pv.stdout).splitlines()[0].strip() \
+        if (pv.stderr or pv.stdout) else "unknown"
+
     last = panel.filter(pl.col("date") == panel["date"].max())
     meta = {
         "day0": str(DAY0),
         "bin_days": BIN_DAYS,
+        "tool_versions": {"pdftotext": pdftotext_version,
+                          "polars": pl.__version__},
         "n_days": int((dt.date.fromisoformat(panel["date"].max())
                        - DAY0).days) + 1,
         "provinces": list(STREAM_PROVINCES.values()),
