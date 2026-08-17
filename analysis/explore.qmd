@@ -1,0 +1,208 @@
+---
+title: "Explore"
+subtitle: "2026 DRC Bundibugyo outbreak — interactive companion to the data document"
+format:
+  html:
+    toc: false
+    page-layout: full
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+---
+
+```{python}
+#| output: false
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path.cwd()))
+import polars as pl
+import plotly.graph_objects as go
+from _guard import load, load_json, source
+
+# The document of record is data.html; this page is the instrument. Same
+# fail-closed inputs, same fixed identity->colour assignment as the static
+# figures -- colour follows the province, never its rank in any one chart.
+COLOR = {"Ituri": "#0072B2", "Nord-Kivu": "#D55E00", "Haut-Uélé": "#009E73",
+         "Tshopo": "#CC79A7", "Sud-Kivu": "#56B4E9", "Bas-Uélé": "#E69F00"}
+
+LAYOUT = dict(
+    template="plotly_white", height=520,
+    margin=dict(l=50, r=20, t=30, b=40),
+    hovermode="closest",
+    legend=dict(orientation="h", yanchor="bottom", y=1.01, x=0),
+)
+
+series = load("data/build/series/province_series.csv")
+zt = load("data/build/series/zone_table.csv")
+st = load("data/build/series/zone_table_status.csv")
+summ = load("data/build/series/province_summary.csv")
+cav = load("data/build/series/provisional_caveat.csv")
+caveat_reports = set(cav.filter(pl.col("kind") == "recent_data_provisional")["sitrep"])
+route = dict(st.select("sitrep", "table").iter_rows())
+```
+
+::: {.panel-tabset}
+
+## Cumulative by province
+
+Hover a point for the report it came from, its route, and both routes' values.
+The line is the sum of the printed health-zone rows; open rings are the
+printed provincial-summary row, a check — a gap between them is a finding.
+
+```{python}
+fig = go.Figure()
+for prov, c in COLOR.items():
+    d = (series.filter((pl.col("province") == prov)
+                       & pl.col("cum_cases").is_not_null()).sort("date"))
+    if d.height == 0:
+        continue
+    hover = [
+        f"<b>{prov}</b> — sitrep {r['sitrep']:03d} ({r['date']})<br>"
+        f"cases {r['cum_cases']:,} · deaths "
+        f"{'—' if r['cum_deaths'] is None else format(r['cum_deaths'], ',')}"
+        f"<br>zone rows summed: {r['n_parts']}"
+        f"<br>route: {route.get(r['sitrep'], '—')}"
+        + ("<br>⚠ source marks recent data provisional"
+           if r["sitrep"] in caveat_reports else "")
+        for r in d.iter_rows(named=True)]
+    fig.add_trace(go.Scatter(
+        x=d["date"].to_list(), y=d["cum_cases"].to_list(),
+        mode="lines+markers", name=prov, line=dict(color=c, width=2),
+        marker=dict(size=5), hovertext=hover, hoverinfo="text"))
+    s = (summ.filter((pl.col("level") == "province")
+                     & pl.col("cum_cases").is_not_null())
+         .with_columns(pl.col("zone_reported").str.strip_chars("*†‡ "))
+         .filter(pl.col("zone_reported") == prov))
+    if s.height:
+        fig.add_trace(go.Scatter(
+            x=s["date"].to_list(), y=s["cum_cases"].to_list(),
+            mode="markers", name=f"{prov} (printed summary)",
+            marker=dict(symbol="circle-open", size=8, color=c),
+            hovertext=[f"<b>{prov}</b> printed summary — sitrep "
+                       f"{r['sitrep']:03d}: {r['cum_cases']:,}"
+                       for r in s.iter_rows(named=True)],
+            hoverinfo="text", showlegend=False))
+fig.update_yaxes(type="log", title="cumulative confirmed cases")
+fig.update_layout(**LAYOUT)
+fig.show()
+```
+
+## Daily flows
+
+One point per report, at its reporting date, exactly as published. Zeros are
+real: reports whose cumulative did not move. Use the legend to isolate a
+province; the pink band along the bottom marks reports whose source cautions
+its recent figures are still consolidating.
+
+```{python}
+fig = go.Figure()
+for prov in ("Ituri", "Nord-Kivu"):
+    c = COLOR[prov]
+    d = (series.filter((pl.col("province") == prov)
+                       & pl.col("cum_cases").is_not_null()).sort("date")
+         .with_columns((pl.col("cum_cases") - pl.col("cum_cases").shift(1))
+                       .alias("inc")).drop_nulls("inc"))
+    fig.add_trace(go.Scatter(
+        x=d["date"].to_list(), y=d["inc"].to_list(),
+        mode="markers", name=f"{prov} cases/day",
+        marker=dict(size=6, color=c),
+        hovertext=[f"<b>{prov}</b> sitrep {r['sitrep']:03d} ({r['date']})<br>"
+                   f"+{r['inc']} cases since previous report"
+                   for r in d.iter_rows(named=True)],
+        hoverinfo="text"))
+cavd = cav.filter(pl.col("kind") == "recent_data_provisional")
+fig.add_trace(go.Scatter(
+    x=cavd["date"].to_list(), y=[0.4] * cavd.height, mode="markers",
+    marker=dict(symbol="line-ns-open", size=10, color="#d4699e"),
+    name="source: data still consolidating",
+    hovertext=[f"sitrep {s:03d}: source cautions recent data are provisional"
+               for s in cavd["sitrep"].to_list()],
+    hoverinfo="text"))
+fig.update_yaxes(type="log", title="new confirmed cases per report (log)")
+fig.update_layout(**LAYOUT)
+fig.show()
+```
+
+## Weekly fitted streams
+
+The exact series the models consume, from `data/build/streams/` — weekly
+binned incidence, revisions kept negative, every stream ending at a zero gap
+against the printed totals.
+
+```{python}
+meta = load_json("data/build/streams/meta.json")
+fig = go.Figure()
+slug2prov = {"ituri": "Ituri", "nord_kivu": "Nord-Kivu",
+             "haut_uele": "Haut-Uélé"}
+for slug, prov in slug2prov.items():
+    d = load(f"data/build/streams/cases_{slug}.tsv")
+    fig.add_trace(go.Bar(
+        x=d["time"].to_list(), y=d[f"cases_{slug}"].to_list(),
+        name=f"{prov} cases/wk", marker_color=COLOR[prov], opacity=0.85,
+        hovertemplate="week ending %{x}<br>%{y} cases<extra>" + prov + "</extra>"))
+    dd = load(f"data/build/streams/deaths_{slug}.tsv")
+    fig.add_trace(go.Bar(
+        x=dd["time"].to_list(), y=dd[f"deaths_{slug}"].to_list(),
+        name=f"{prov} deaths/wk", marker_color=COLOR[prov], opacity=0.45,
+        hovertemplate="week ending %{x}<br>%{y} deaths<extra>" + prov + "</extra>"))
+fig.update_layout(barmode="group", **LAYOUT)
+fig.update_yaxes(title="weekly count")
+fig.show()
+```
+
+## Ours vs INRB
+
+Every zone-day both lineages state, on the identity line. Agreement is
+evidence about transcription, never about the counts — all lineages read the
+same pages. Hover a red point for the full record of the disagreement.
+
+```{python}
+dis = load("data/build/compare/inrb_disagreements.csv")
+zz = (zt.filter(pl.col("level") == "zone")
+      .select("sitrep", "date", "zone_reported", "cum_cases"))
+fig = go.Figure()
+fig.add_trace(go.Scatter(x=[1, 5000], y=[1, 5000], mode="lines",
+                         line=dict(color="#cccccc", width=1),
+                         showlegend=False, hoverinfo="skip"))
+agree_x, agree_y = [], []
+diskeys = set(zip(dis["sitrep"], dis["date"]))
+fig.add_trace(go.Scatter(
+    x=dis["inrb_cases"].to_list(), y=dis["cum_cases"].to_list(),
+    mode="markers", name=f"disagree ({dis.height})",
+    marker=dict(size=10, color="#D55E00"),
+    hovertext=[f"<b>{r['zone_reported']}</b> — sitrep {r['sitrep']:03d} "
+               f"({r['date']})<br>ours {r['cum_cases']} · INRB "
+               f"{r['inrb_cases']} · Δ {r['diff_cases']:+d} cases"
+               + (f"<br>deaths Δ {r['diff_deaths']:+d}"
+                  if r["diff_deaths"] not in (None, 0) else "")
+               for r in dis.iter_rows(named=True)],
+    hoverinfo="text"))
+fig.update_xaxes(type="log", title="INRB-UMIE transcription")
+fig.update_yaxes(type="log", title="this extraction")
+fig.update_layout(**LAYOUT)
+fig.show()
+```
+
+## Report index
+
+```{python}
+ex = source("registers/reconciliation_exceptions.tsv")
+exset = set(ex["sitrep"].cast(pl.Int64))
+from IPython.display import Markdown
+rows = []
+for r in st.sort("sitrep").iter_rows(named=True):
+    flags = []
+    if r["sitrep"] in caveat_reports:
+        flags.append("caveat")
+    if r["sitrep"] in exset:
+        flags.append("exception")
+    rows.append(f"| {r['sitrep']:03d} | {r['date']} | {r['table'] or '—'} | "
+                f"{r['rows']} | {r['identity'] or '—'} | "
+                f"{'' if r['residual'] is None else r['residual']} | "
+                f"{', '.join(flags)} |")
+Markdown("| report | date | route | rows | identity | residual | flags |\n"
+         "|---|---|---|---|---|---|---|\n" + "\n".join(rows))
+```
+
+:::

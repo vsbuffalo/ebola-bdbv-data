@@ -62,7 +62,13 @@ streams:
 		--geojson data/raw/health_zones.geojson \
 		--population data/raw/zone_population.csv \
 		--out-dir data/build/streams
-	# also writes: data/build/streams/meta.json
+	# writes, one file per stream:
+	#   data/build/streams/cases_ituri.tsv      data/build/streams/deaths_ituri.tsv
+	#   data/build/streams/cases_nord_kivu.tsv  data/build/streams/deaths_nord_kivu.tsv
+	#   data/build/streams/cases_haut_uele.tsv  data/build/streams/deaths_haut_uele.tsv
+	#   data/build/streams/community_deaths_ituri.tsv
+	#   data/build/streams/community_deaths_nord_kivu.tsv
+	#   data/build/streams/meta.json
 	uv run python scripts/build_uganda_stream.py \
 		--uganda data/raw/uganda_cases.toml \
 		--out data/build/streams/uganda_exports.tsv
@@ -111,6 +117,8 @@ figures:
 doc:
 	cd analysis && QUARTO_PYTHON=$$(cd .. && uv run python -c 'import sys;print(sys.executable)') \
 		quarto render data.qmd --to html
+	cd analysis && QUARTO_PYTHON=$$(cd .. && uv run python -c 'import sys;print(sys.executable)') \
+		quarto render explore.qmd --to html
 
 ## test    -- the pure-function tests.
 test:
