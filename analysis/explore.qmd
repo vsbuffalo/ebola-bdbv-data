@@ -378,16 +378,28 @@ viewof resStream = Inputs.select(
                          strokeDasharray: "3,3"}),
     ]
   });
+  // Pre-aggregated in plain JS rather than via Plot's group transform: the
+  // medians are the statement, so they are computed once, inspectably, and
+  // the mark receives seven numbers per province -- nothing left for a
+  // transform to render weirdly.
+  const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  const wkMed = provs.flatMap(p => DAYS.map(day => {
+    const vs = res.filter(d => d.province === p && d.weekday === day)
+                  .map(d => d.res);
+    return {province: p, weekday: day, n: vs.length,
+            median: vs.length ? d3.median(vs) : null};
+  })).filter(d => d.median !== null);
   const wk = Plot.plot({
     width: 950, height: 220, marginLeft: 55,
     color: colorScale,
     fx: {domain: provs, label: null},
-    x: {domain: ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"], label: null},
+    x: {domain: DAYS, label: null},
     y: {label: "median residual", grid: true},
     marks: [
       Plot.ruleY([0], {stroke: "#999"}),
-      Plot.barY(res, Plot.groupX({y: "median"},
-        {x: "weekday", fx: "province", fill: "province", tip: true})),
+      Plot.barY(wkMed, {fx: "province", x: "weekday", y: "median",
+        fill: "province",
+        channels: {"reports that weekday": "n"}, tip: true}),
     ]
   });
   const line = stats.map(s =>
