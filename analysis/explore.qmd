@@ -104,6 +104,53 @@ for slug, prov in (("ituri", "Ituri"), ("nord_kivu", "Nord-Kivu"),
                                  "kind": kind,
                                  "count": r[f"{kind}_{slug}"]})
 
+sys.path.insert(0, str(Path.cwd().parent / "scripts"))
+from aggregate_provinces import carry_province  # noqa: E402
+
+panel = carry_province(load("data/build/series/zone_table.csv"))
+date2rep = dict(st.select("date", "sitrep").iter_rows())
+
+
+def _smooth(vals, days, window=7, max_gap=4):
+    """Centred rolling geometric mean, broken across reporting gaps -- the
+    same construction as the static figure, computed here so the page and the
+    PNG cannot drift apart in what their lines mean."""
+    import math
+    out = []
+    for i in range(len(vals)):
+        lo, hi = max(0, i - window // 2), min(len(vals), i + window // 2 + 1)
+        vs = [math.log1p(max(v, 0)) for v in vals[lo:hi] if v is not None]
+        if i > 0 and (days[i] - days[i - 1]).days > max_gap:
+            out.append(None)
+            continue
+        out.append(math.expm1(sum(vs) / len(vs)) if vs else None)
+    return out
+
+
+import datetime as _dt
+flows_long = []
+for prov in ("Ituri", "Nord-Kivu"):
+    per = {}
+    base = (series.filter((pl.col("province") == prov))
+            .sort("date"))
+    for col, name in (("cum_cases", "cases_diff"), ("cum_deaths", "deaths_diff")):
+        b = base.filter(pl.col(col).is_not_null())
+        vals = (b[col] - b[col].shift(1)).to_list()[1:]
+        per[name] = list(zip(b["date"].to_list()[1:], vals))
+    blk = (panel.filter((pl.col("province") == prov)
+                        & pl.col("level").is_in(["zone", "unassigned"])))
+    for col in ("new_cases", "deaths_community", "deaths_treatment_centre"):
+        b = (blk.filter(pl.col(col).is_not_null())
+             .group_by("date").agg(pl.col(col).sum()).sort("date"))
+        per[col] = list(zip(b["date"].to_list(), b[col].to_list()))
+    for name, rows in per.items():
+        days = [_dt.date.fromisoformat(d) for d, _ in rows]
+        sm = _smooth([v for _, v in rows], days)
+        for (d, v), m in zip(rows, sm):
+            flows_long.append({"stream": name, "province": prov, "date": d,
+                               "sitrep": date2rep.get(d), "value": v,
+                               "smooth": m})
+
 index_rows = [
     {"report": r["sitrep"], "date": r["date"], "route": r["table"] or "—",
      "rows": r["rows"], "identity": r["identity"] or "—",
@@ -121,6 +168,7 @@ ojs_define(
     streamsJ=streams_long,
     compJ=comp.to_dicts(),
     indexJ=index_rows,
+    flowsJ=flows_long,
 )
 ```
 
@@ -133,6 +181,7 @@ caveatsJ = DATA.caveatsJ
 streamsJ = DATA.streamsJ
 compJ = DATA.compJ
 indexJ = DATA.indexJ
+flowsJ = DATA.flowsJ
 parseD = d3.utcParse("%Y-%m-%d")
 cum = cumJ.map(d => ({...d, day: parseD(d.date)}))
 rings = ringsJ.map(d => ({...d, day: parseD(d.date)}))
@@ -220,6 +269,63 @@ did not move. Negative points are the source's own downward revisions, kept.
         channels: {report: "sitrep", route: "route"}, tip: true}),
     ]
   });
+}
+```
+
+## Every daily flow, by province
+
+The reference document's central grid, live: one row per extracted stream,
+the two main provinces sharing that row's scale. Grey points are the
+observations as published, one per report; the coloured line is the same
+gap-broken seven-day rolling geometric mean as the static figure. The five
+streams the reference reads from tables not yet ported here (laboratory,
+alerts, contacts, isolation) will appear as rows when they are.
+
+```{ojs}
+//| output: false
+flows = flowsJ.map(d => ({...d, day: parseD(d.date)}))
+FLOW_LABELS = new Map([
+  ["cases_diff", ["Confirmed cases / day", "differenced cumulative — the fitted stream"]],
+  ["new_cases", ["New confirmed cases / day", "the source's own 24 h figure, printed from 13 July"]],
+  ["deaths_diff", ["Confirmed deaths / day", "differenced cumulative"]],
+  ["deaths_community", ["Community deaths / day", "post-mortem swab — the ascertainment signal"]],
+  ["deaths_treatment_centre", ["Treatment-centre deaths / day", "the other half of the same split"]],
+])
+```
+
+```{ojs}
+{
+  const provs = ["Ituri", "Nord-Kivu"].filter(p => provinces.includes(p));
+  if (provs.length === 0) return html`<em>Select Ituri or Nord-Kivu above.</em>`;
+  const panels = [...FLOW_LABELS].map(([key, [title, sub]]) => {
+    const sel = flows.filter(d => d.stream === key && provs.includes(d.province));
+    if (sel.length === 0) return null;
+    const plot = Plot.plot({
+      width: 950, height: 190, marginLeft: 55,
+      color: colorScale,
+      fx: {domain: provs, label: null},
+      y: {type: logy ? "symlog" : "linear", grid: true, label: null},
+      x: {label: null},
+      marks: [
+        showCaveat ? caveatMarks() : null,
+        Plot.ruleY([0], {stroke: "#ddd"}),
+        Plot.dot(sel, {fx: "province", x: "day", y: "value", r: 2,
+          fill: "#a5a5a5",
+          channels: {report: "sitrep", stream: () => title}, tip: true}),
+        // The nulls in `smooth` ARE the gap-breakers -- Plot leaves a gap at
+        // an invalid y, so they must reach the mark, not be filtered out;
+        // filtering them reconnects the line across the reporting gaps it
+        // exists to break.
+        Plot.lineY(sel, {fx: "province", x: "day", y: "smooth",
+                         stroke: "province", strokeWidth: 1.7}),
+      ]
+    });
+    return html`<div style="margin-bottom:0.4rem">
+      <div style="font-size:0.86rem"><b>${title}</b>
+        <span style="color:#777"> — ${sub}</span></div>
+      ${plot}</div>`;
+  });
+  return html`${panels}`;
 }
 ```
 
