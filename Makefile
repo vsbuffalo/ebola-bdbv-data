@@ -2,7 +2,7 @@
 # by design: `build` and `doc` never touch the network, so a rebuild can never
 # silently change what the source says.
 
-.PHONY: check fetch verify build streams compare figures external test
+.PHONY: check fetch verify build streams compare figures external doc test
 
 ## check   -- is the archive current, and does the source still look the same?
 ##            Exit 0 current, 1 behind, 2 the source moved, 3 unreachable.
@@ -46,6 +46,11 @@ build:
 		--pdfs data/raw/sitrep_pdfs \
 		--exceptions registers/reconciliation_exceptions.tsv \
 		--out data/build/series/province_series.csv
+	# sibling outputs of the steps above:
+	#   data/build/series/zone_table_status.csv
+	#   data/build/series/province_summary_status.csv
+	#   data/build/series/prose_provinces_status.csv
+	#   data/build/series/province_series_reconciliation.csv
 
 ## streams -- OFFLINE. The weekly observation streams the models fit.
 ##            Fails unless every stream's emitted total equals what the
@@ -57,6 +62,10 @@ streams:
 		--geojson data/raw/health_zones.geojson \
 		--population data/raw/zone_population.csv \
 		--out-dir data/build/streams
+	# also writes: data/build/streams/meta.json
+	uv run python scripts/build_uganda_stream.py \
+		--uganda data/raw/uganda_cases.toml \
+		--out data/build/streams/uganda_exports.tsv
 
 ## compare -- ours against the two other extraction lineages of the same PDFs.
 ##            Paths default to sibling checkouts; override INRB_DIR / SCAN.
@@ -81,7 +90,10 @@ compare:
 		--zone-table data/build/series/zone_table.csv \
 		--summary data/build/series/province_summary.csv \
 		--inrb $(INRB_DIR) --scan $(SCAN) \
-		--out-dir data/build/compare
+		--out-dir data/build/compare \
+		--figure data/build/compare/comparison.png
+	# also writes: data/build/compare/inrb_disagreements.csv
+	#              data/build/compare/scan_comparison.csv
 
 ## figures -- OFFLINE. The EDA figures, from the built series.
 figures: 
@@ -91,6 +103,14 @@ figures:
 		--out data/build/figures/province_series.png
 	uv run python scripts/plot_figures.py --figure streams_detail \
 		--out data/build/figures/streams_detail.png
+
+## doc     -- render analysis/data.html against the built artefacts.
+##            Every read the document makes is fail-closed through _guard.py:
+##            an artefact no rule produces, or one not yet built, stops the
+##            render rather than shipping a stale page.
+doc:
+	cd analysis && QUARTO_PYTHON=$$(cd .. && uv run python -c 'import sys;print(sys.executable)') \
+		quarto render data.qmd --to html
 
 ## test    -- the pure-function tests.
 test:

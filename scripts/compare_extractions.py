@@ -142,6 +142,8 @@ def main() -> None:
     ap.add_argument("--scan", required=True, type=Path,
                     help="epiforecasts insp_sitrep_scanned.csv")
     ap.add_argument("--out-dir", required=True, type=Path)
+    ap.add_argument("--figure", type=Path, default=None,
+                    help="also draw the comparison figure to this path")
     args = ap.parse_args()
     args.out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -175,6 +177,85 @@ def main() -> None:
     if n_dis.height:
         with pl.Config(tbl_rows=20, fmt_str_lengths=60):
             print(n_dis)
+
+    if args.figure:
+        draw_figure(z, n, args.figure)
+        print(f"  figure -> {args.figure}")
+
+
+def draw_figure(z: pl.DataFrame, n: pl.DataFrame, out: Path) -> None:
+    """The three-lineage comparison, drawn.
+
+    Left: every (zone, date) pair, ours against INRB's, on the identity line --
+    log axes, so the whole four-orders-of-magnitude range is visible, and the
+    thirteen disagreeing pairs in colour with the rest in grey. A caption that
+    must travel with this figure: agreement here is evidence about
+    TRANSCRIPTION, never corroboration of the counts, because every lineage
+    read the same documents.
+
+    Right: the signed difference over time, which is where structure would
+    show -- a transcription slip is a lone point, a revised-report mismatch is
+    a run. The national-scan comparison is stated in the title rather than
+    plotted: sixty-seven reports at exactly zero difference draw as a line on
+    the axis, and a sentence carries it better.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.dates as mdates
+    import matplotlib.pyplot as plt
+
+    both = z.filter(pl.col("cum_cases").is_not_null()
+                    & pl.col("inrb_cases").is_not_null())
+    ok = both.filter((pl.col("diff_cases") == 0)
+                     & (pl.col("diff_deaths").fill_null(0) == 0))
+    bad = both.filter((pl.col("diff_cases") != 0)
+                      | (pl.col("diff_deaths").fill_null(0) != 0))
+
+    fig, (ax, at) = plt.subplots(1, 2, figsize=(11, 4.6),
+                                 constrained_layout=True)
+    ax.plot([1, 5000], [1, 5000], color="#bbbbbb", linewidth=1, zorder=1)
+    ax.scatter(ok["inrb_cases"], ok["cum_cases"], s=6, color="#c4c4c4",
+               zorder=2, label=f"agree exactly ({ok.height:,})")
+    ax.scatter(bad["inrb_cases"], bad["cum_cases"], s=22, color="#D55E00",
+               zorder=3, label=f"disagree ({bad.height})")
+    ax.set_xscale("log"); ax.set_yscale("log")
+    ax.set_xlabel("INRB-UMIE transcription (cumulative cases, zone-day)")
+    ax.set_ylabel("this extraction")
+    ax.legend(frameon=False, fontsize=8, loc="upper left")
+    ax.set_title("On the identity line", loc="left", fontsize=10)
+
+    xs = [mdates.datestr2num(d) for d in bad["date"].to_list()]
+    at.axhline(0, color="#bbbbbb", linewidth=1)
+    at.scatter(xs, bad["diff_cases"].to_list(), s=24, color="#D55E00",
+               label="cases (ours − INRB)")
+    xd = bad.filter(pl.col("diff_deaths").fill_null(0) != 0)
+    at.scatter([mdates.datestr2num(d) for d in xd["date"].to_list()],
+               xd["diff_deaths"].to_list(), s=24, facecolors="none",
+               edgecolors="#0072B2", label="deaths")
+    for r in bad.filter(pl.col("diff_cases").abs() > 5).iter_rows(named=True):
+        at.annotate(f"{r['zone_reported']} s{r['sitrep']:03d}",
+                    (mdates.datestr2num(r["date"]), r["diff_cases"]),
+                    xytext=(5, 0), textcoords="offset points",
+                    fontsize=7.5, va="center")
+    at.set_title("The disagreements, signed, over time", loc="left",
+                 fontsize=10)
+    at.legend(frameon=False, fontsize=8)
+    at.xaxis.set_major_formatter(mdates.DateFormatter("%d %b"))
+
+    eq = n.filter(pl.col("diff") == 0).height
+    fig.suptitle(
+        f"Two extractions of one source are not independent evidence — "
+        f"agreement is about transcription, disagreement is a finding\n"
+        f"Zone-day values vs INRB-UMIE; national cumulative vs the "
+        f"epiforecasts scan agrees on {eq} of {n.height} reports exactly.",
+        x=0.01, ha="left", fontsize=10, fontweight="bold")
+    for a in (ax, at):
+        a.grid(True, color="#e6e6e6", linewidth=0.6)
+        for sp in ("top", "right"):
+            a.spines[sp].set_visible(False)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out, dpi=160)
+    plt.close(fig)
 
 
 if __name__ == "__main__":

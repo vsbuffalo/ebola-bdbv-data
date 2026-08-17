@@ -18,3 +18,5 @@ data/trial/
 
 # Comparison sources, cloned by `make external`; pinned by the .commit file.
 external/
+analysis/data.html
+analysis/*_files/
