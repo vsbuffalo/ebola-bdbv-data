@@ -13,14 +13,29 @@ execute:
 
 ```{=html}
 <style>
+/* position:sticky dies silently if ANY ancestor has overflow hidden/auto/
+   scroll. Quarto's mobile layout sets overflow-x:hidden on its containers,
+   which is why the bar scrolled away on phones. overflow-x:clip contains
+   horizontal scroll WITHOUT creating a scroll container, so sticky survives. */
+html, body, #quarto-content, .page-columns, main.content {
+  overflow-x: clip !important;
+  overflow-y: visible !important;
+}
 .controls {
   position: sticky; top: 0; z-index: 20;
   background: var(--bs-body-bg, #fff);
   padding: 0.5rem 0 0.6rem 0; margin-bottom: 0.5rem;
   border-bottom: 1px solid #e3e3e3;
-  display: flex; gap: 2rem; align-items: center; flex-wrap: wrap;
+  display: flex; gap: 1.25rem; row-gap: 0.25rem;
+  align-items: center; flex-wrap: wrap;
 }
+/* Quarto wraps every chunk in a .cell with its own bottom margin, which made
+   the bar tall and gappy; inside the bar those margins are noise. */
+.controls .cell, .controls .cell-output-display { margin: 0 !important; }
 .controls form { margin: 0; }
+@media (max-width: 600px) {
+  .controls { gap: 0.75rem; padding: 0.35rem 0 0.45rem 0; font-size: 0.9rem; }
+}
 h2 { margin-top: 2.2rem; border-bottom: none; }
 .note { color: #666; font-size: 0.85rem; margin: 0.1rem 0 0.6rem 0; }
 </style>
