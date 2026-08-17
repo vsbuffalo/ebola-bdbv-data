@@ -17,9 +17,22 @@ make build      # OFFLINE: PDFs -> zone extraction -> province aggregation
 make streams    # OFFLINE: the weekly observation series the models fit
 make figures    # OFFLINE: the EDA figures
 make compare    # ours vs the two other extraction lineages (see `make external`)
-make doc        # render analysis/data.html, fail-closed
+make doc        # render analysis/data.html + explore.html, fail-closed
+make serve      # serve both pages (default port 8790; PORT=n to override)
 make test       # the tests, each pinned to a named report
 ```
+
+Two rendered pages, both self-contained single files:
+
+- **`data.html`** — the document of record: what exists, what reconciles, and
+  every number read from an artefact at render time.
+- **`explore.html`** — the interactive companion: shared province/log/caveat
+  controls, per-report hover provenance on every mark, the per-stream flow
+  grid, reporting-noise diagnostics, and a searchable report index.
+
+`make serve` starts a detached `http.server` on port 8790 (it checks the port
+first and tells you if something else holds it). After a re-render the pages
+update in place — refresh the browser, no restart needed.
 
 **Run `make check` first.** It is the only step that looks *outward* — every
 other check asks whether the reports we hold are internally consistent, and

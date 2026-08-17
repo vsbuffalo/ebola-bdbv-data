@@ -2,7 +2,7 @@
 # by design: `build` and `doc` never touch the network, so a rebuild can never
 # silently change what the source says.
 
-.PHONY: check fetch verify build streams compare figures external doc test
+.PHONY: check fetch verify build streams compare figures external doc serve test
 
 ## check   -- is the archive current, and does the source still look the same?
 ##            Exit 0 current, 1 behind, 2 the source moved, 3 unreachable.
@@ -122,6 +122,18 @@ doc:
 		quarto render data.qmd --to html
 	cd analysis && QUARTO_PYTHON=$$(cd .. && uv run python -c 'import sys;print(sys.executable)') \
 		quarto render explore.qmd --to html
+
+## serve   -- serve the rendered pages on PORT (default 8790).
+##            Check the port first; if something else holds it, override:
+##            `make serve PORT=8791`. Serves analysis/ only; both pages are
+##            self-contained, so nothing else needs to resolve.
+PORT ?= 8790
+serve:
+	@lsof -iTCP:$(PORT) -sTCP:LISTEN -n -P >/dev/null 2>&1 \
+		&& echo "port $(PORT) is already in use -- reuse it if it is ours, or: make serve PORT=<other>" \
+		|| (nohup python3 -m http.server $(PORT) --bind 0.0.0.0 \
+			--directory analysis </dev/null >/tmp/ebola-bdbv-serve.log 2>&1 & \
+			echo "serving: http://thuja:$(PORT)/data.html and /explore.html")
 
 ## test    -- the pure-function tests.
 test:
