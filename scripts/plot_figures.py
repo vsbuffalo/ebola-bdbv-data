@@ -234,7 +234,208 @@ def draw_province_series(inputs: dict[str, Path], out: Path) -> None:
     plt.close(fig)
 
 
+def _caveat_rug(ax, caveat: pl.DataFrame) -> None:
+    """One pink bar per report whose SOURCE says its recent data are still
+    consolidating -- one day wide, at the panel's foot. A bar per report rather
+    than a shaded period, because the sentence is a rolling statement about
+    each report's own trailing edge: shading the whole span would assert that
+    late July is still provisional when most of it has since consolidated.
+    """
+    flagged = caveat.filter(pl.col("kind") == "recent_data_provisional")
+    for d in flagged["date"].to_list():
+        x = mdates.datestr2num(d)
+        ax.axvspan(x - 0.45, x + 0.45, ymin=0.0, ymax=0.045,
+                   color="#d4699e", linewidth=0)
+
+
+def _roll_geomean(xs, ys, window=7, max_gap=4.0):
+    """Centred rolling geometric mean, BROKEN across reporting gaps.
+
+    A line drawn across a gap asserts a level on days the source said nothing
+    about: sitrep 015 prints one early 24-hour figure and the next is 13 July,
+    and joining them drew a six-week plateau out of a single point. Where
+    consecutive observations are more than `max_gap` days apart the line is
+    interrupted instead.
+    """
+    import math
+    out = []
+    for i in range(len(ys)):
+        lo, hi = max(0, i - window // 2), min(len(ys), i + window // 2 + 1)
+        vals = [math.log1p(max(v, 0)) for v in ys[lo:hi] if v is not None]
+        v = math.expm1(sum(vals) / len(vals)) if vals else None
+        if i > 0 and xs[i] - xs[i - 1] > max_gap:
+            out.append(None)
+            continue
+        out.append(v)
+    return out
+
+
+def draw_streams_detail(inputs: dict[str, Path], out: Path) -> None:
+    """Every flow we extract, by province -- and the national-only series,
+    separated. Grey points are observations as published, one per report at its
+    own reporting date; the line is a centred seven-day rolling geometric mean.
+    The pink strip marks reports whose source cautions its own recent data are
+    still consolidating; a gap in the strip is a report that did not say it.
+    """
+    import sys as _sys
+    _sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from aggregate_provinces import carry_province
+    from build_streams import daily_cumulative, ALIASES, load_aliases
+
+    ALIASES.update(load_aliases(Path("data/raw/zone_aliases.csv"),
+                                Path("registers/zone_aliases_local.csv")))
+    panel = carry_province(pl.read_csv(inputs["zone_table"],
+                                       infer_schema_length=None))
+    caveat = pl.read_csv(inputs["caveat"], infer_schema_length=None)
+    summary = pl.read_csv(inputs["summary"], infer_schema_length=None)
+    prose = pl.read_csv(inputs["prose"], infer_schema_length=None)
+
+    provinces = ["Ituri", "Nord-Kivu"]
+    rows = [
+        ("cases_diff", "Confirmed cases / day\ndifferenced cumulative"),
+        ("new_cases", "New confirmed cases / day\nthe source's own 24 h figure"),
+        ("deaths_diff", "Confirmed deaths / day\ndifferenced cumulative"),
+        ("deaths_community", "Community deaths / day\npost-mortem swab"),
+        ("deaths_treatment_centre",
+         "Treatment-centre deaths / day\nthe other half of the split"),
+    ]
+
+    fig = plt.figure(figsize=(11, 3.1 * len(rows) + 3.7),
+                     constrained_layout=True)
+    fig.get_layout_engine().set(rect=(0, 0, 1, 0.965))
+    all_axes: list = []
+    gs = fig.add_gridspec(len(rows) + 1, 2,
+                          height_ratios=[1.0] * len(rows) + [1.25])
+
+    for ri, (kind, label) in enumerate(rows):
+        axs = []
+        for ci, prov in enumerate(provinces):
+            ax = fig.add_subplot(gs[ri, ci])
+            axs.append(ax)
+            if kind.endswith("_diff"):
+                col = "cum_cases" if kind.startswith("cases") else "cum_deaths"
+                cum = daily_cumulative(panel, prov, col)
+                if cum.is_empty():
+                    continue
+                d = cum.with_columns(
+                    (pl.col("cum") - pl.col("cum").shift(1)).alias("v")
+                ).drop_nulls("v")
+                xs = [mdates.date2num(x) for x in d["date"].to_list()]
+                ys = d["v"].to_list()
+            else:
+                d = (panel.filter((pl.col("province") == prov)
+                                  & pl.col("level").is_in(["zone", "unassigned"])
+                                  & pl.col(kind).is_not_null())
+                     .group_by("date").agg(pl.col(kind).sum().alias("v"))
+                     .sort("date"))
+                if d.is_empty():
+                    continue
+                xs = _dates(d["date"])
+                ys = d["v"].to_list()
+            color = PROVINCE_COLOR[prov]
+            ax.scatter(xs, ys, s=7, color="#9a9a9a", zorder=2)
+            smoothed = _roll_geomean(xs, ys)
+            ax.plot(xs, smoothed, color=color, linewidth=1.7, zorder=3)
+            neg = [v for v in ys if v is not None and v < 0]
+            if neg:
+                ax.set_yscale("symlog", linthresh=1)
+                ax.set_ylim(bottom=min(neg) * 2)
+            else:
+                ax.set_yscale("symlog", linthresh=1)
+                ax.set_ylim(bottom=-0.4)
+            ax.grid(True, **GRID)
+            _caveat_rug(ax, caveat)
+            for sp in ("top", "right"):
+                ax.spines[sp].set_visible(False)
+            ax.xaxis.set_major_formatter(mdates.DateFormatter("%d %b"))
+            if ri == 0:
+                ax.set_title(prov, loc="left", fontsize=11, fontweight="bold",
+                             color=color)
+            if ci == 0:
+                ax.text(-0.16, 0.5, label, transform=ax.transAxes,
+                        ha="right", va="center", fontsize=8.5)
+        if len(axs) == 2:
+            lo = min(a.get_ylim()[0] for a in axs)
+            hi = max(a.get_ylim()[1] for a in axs)
+            for a in axs:
+                a.set_ylim(lo, hi)
+        all_axes.extend(axs)
+
+    # ---- The national-only section, deliberately separated. --------------
+    axn = fig.add_subplot(gs[len(rows), 0])
+    axs2 = fig.add_subplot(gs[len(rows), 1])
+
+    nat = (panel.filter((pl.col("level") == "national")
+                        & pl.col("cum_cases").is_not_null())
+           .group_by("date").agg(pl.col("cum_cases").last(),
+                                 pl.col("cum_deaths").last()))
+    nat_s = summary.filter((pl.col("level") == "national")
+                           & pl.col("cum_cases").is_not_null())         .select("date", "cum_cases", "cum_deaths")
+    nat_p = prose.filter(pl.col("level") == "national")         .select("date", "cum_cases").with_columns(cum_deaths=None)
+    allnat = (pl.concat([nat, nat_s, nat_p.with_columns(
+        pl.col("cum_deaths").cast(pl.Int64))])
+        .group_by("date").agg(pl.col("cum_cases").max(),
+                              pl.col("cum_deaths").max()).sort("date"))
+    axn.plot(_dates(allnat["date"]), allnat["cum_cases"].to_list(),
+             color="#333333", linewidth=1.7)
+    dd = allnat.filter(pl.col("cum_deaths").is_not_null())
+    axn.plot(_dates(dd["date"]), dd["cum_deaths"].to_list(),
+             color="#888888", linewidth=1.4)
+    axn.annotate("cases", xy=(0.99, 0.93), xycoords="axes fraction",
+                 ha="right", fontsize=8, color="#333333")
+    axn.annotate("deaths", xy=(0.99, 0.60), xycoords="axes fraction",
+                 ha="right", fontsize=8, color="#888888")
+    axn.set_yscale("log")
+    axn.set_title("NATIONAL ONLY — cumulative confirmed",
+                  loc="left", fontsize=10, fontweight="bold")
+    _caveat_rug(axn, caveat)
+
+    susp = (panel.filter((pl.col("level") == "national")
+                         & pl.col("suspected").is_not_null())
+            .group_by("date").agg(pl.col("suspected").last()).sort("date"))
+    if susp.height:
+        axs2.plot(_dates(susp["date"]), susp["suspected"].to_list(),
+                  color="#333333", linewidth=1.7, marker="o", markersize=3)
+    axs2.set_title("NATIONAL ONLY — cumulative suspected, a stock\n"
+                   "(printed to 1 June only; not comparable to any flow)",
+                   loc="left", fontsize=9.5, fontweight="bold")
+    axs2.margins(x=0.05)
+    axs2.set_xlim(axn.get_xlim())
+    _caveat_rug(axs2, caveat)
+    for a in (axn, axs2):
+        a.grid(True, **GRID)
+        for sp in ("top", "right"):
+            a.spines[sp].set_visible(False)
+        a.xaxis.set_major_formatter(mdates.DateFormatter("%d %b"))
+
+    # ONE CALENDAR FOR EVERY PANEL. A stream that starts on 13 July must show
+    # ten empty weeks before it, or its late start reads as a full history.
+    xlim = (min(a.get_xlim()[0] for a in all_axes + [axn]),
+            max(a.get_xlim()[1] for a in all_axes + [axn]))
+    for a in all_axes + [axn, axs2]:
+        a.set_xlim(xlim)
+
+    fig.suptitle(
+        "Every extracted flow by province, and the national-only series",
+        x=0.01, y=0.997, ha="left", fontsize=12, fontweight="bold")
+    fig.text(0.01, 0.985,
+             "Grey points: one observation per report, at its reporting date. "
+             "Line: centred 7-day rolling geometric mean, broken across "
+             "reporting gaps.\nPink strip: reports whose source cautions its "
+             "recent data are still consolidating — one bar per report, so a "
+             "gap is a report that did not say it.",
+             ha="left", va="top", fontsize=8.5, color="#444444")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out, dpi=150)
+    plt.close(fig)
+
+
 FIGURES = {
+    "streams_detail": (draw_streams_detail,
+                       {"zone_table": "data/build/series/zone_table.csv",
+                        "caveat": "data/build/series/provisional_caveat.csv",
+                        "summary": "data/build/series/province_summary.csv",
+                        "prose": "data/build/series/prose_provinces.csv"}),
     "availability": (draw_availability,
                      {"zone_table": "data/build/series/zone_table.csv",
                       "zone_status": "data/build/series/zone_table_status.csv",

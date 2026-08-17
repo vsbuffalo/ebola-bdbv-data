@@ -358,6 +358,20 @@ def test_sitrep_005_reads_the_early_layout():
 
 
 @needs_pdfs
+def test_mixed_layout_suspected_is_a_flow_not_the_stock():
+    """Sitrep 015 prints `Nouveaux cas suspects` -- the day's new suspected.
+
+    Mapped to the same role as the early layout's cumulative, it ended a stock
+    series with a one-day flow: the national suspected panel showed 1,077
+    falling to 51 overnight. A flow and a stock never share a column.
+    """
+    rows, _ = E.extract(pdf(15))
+    bunia = next(r for r in rows if r["zone_reported"] == "Bunia")
+    assert bunia.get("suspected") is None
+    assert bunia["new_suspected"] == 19
+
+
+@needs_pdfs
 def test_sitrep_092_tshopo_province_and_zone_are_distinguished():
     rows, _ = E.extract(pdf(92))
     tsh = [r for r in rows if norm(r["zone_reported"]).strip("*† ") == "tshopo"]

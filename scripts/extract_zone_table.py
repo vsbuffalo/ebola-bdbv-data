@@ -91,7 +91,8 @@ UNASSIGNED = re.compile(
 
 VALUE_ROLES = (Role.CUM_CASES, Role.CUM_DEATHS, Role.NEW_CASES,
                Role.DEATHS_COMMUNITY, Role.DEATHS_CTE, Role.DEATHS_TOTAL,
-               Role.SUSPECTED, Role.SUSPECTED_DEATHS, Role.CONTACTS)
+               Role.SUSPECTED, Role.NEW_SUSPECTED, Role.SUSPECTED_DEATHS,
+               Role.CONTACTS)
 
 
 def to_int(s: str) -> int | None:

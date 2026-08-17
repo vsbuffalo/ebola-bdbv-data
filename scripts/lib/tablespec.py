@@ -64,7 +64,8 @@ class Role(StrEnum):
     DEATHS_COMMUNITY = "deaths_community"    # community deaths confirmed by post-mortem swab
     DEATHS_CTE = "deaths_treatment_centre"   # deaths inside an Ebola treatment centre
     DEATHS_TOTAL = "deaths_total"            # confirmed deaths in the last 24 h
-    SUSPECTED = "suspected"                  # suspected cases
+    SUSPECTED = "suspected"                  # suspected cases, cumulative (a stock)
+    NEW_SUSPECTED = "new_suspected"          # suspected cases in 24 h (a flow)
     SUSPECTED_DEATHS = "suspected_deaths"    # suspected deaths
     CONTACTS = "contacts"                    # contacts listed
     RECOVERED = "recovered"                  # recoveries
@@ -336,7 +337,12 @@ MIXED_ZONE_TABLE = TableSpec(
         P(r"cumul\s+de\s+cas"),
     ),
     forbids=(P(r"letalit"), P(r"alertes")),
-    values=(Role.SUSPECTED, Role.SUSPECTED_DEATHS, Role.NEW_CASES,
+    # THE SUSPECTED COLUMN HERE IS A FLOW, NOT THE STOCK. This layout prints
+    # `Nouveaux cas suspects` -- the day's new suspected -- where the early
+    # layout prints a cumulative. Mapping both to one role mixed a flow into a
+    # stock series: the national suspected panel showed 1,077 falling to 51 in
+    # a day, which was sitrep 015's daily figure ending a cumulative series.
+    values=(Role.NEW_SUSPECTED, Role.SUSPECTED_DEATHS, Role.NEW_CASES,
             Role.CUM_CASES, Role.CUM_DEATHS, Role.RECOVERED, Role.CONTACTS),
 )
 

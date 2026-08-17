@@ -35,6 +35,9 @@ build:
 	uv run python scripts/extract_zone_table.py \
 		--pdfs data/raw/sitrep_pdfs --spec provincial_summary \
 		--out data/build/series/province_summary.csv --quiet
+	uv run python scripts/parse_provisional_caveat.py \
+		--pdfs data/raw/sitrep_pdfs \
+		--out data/build/series/provisional_caveat.csv
 	uv run python scripts/extract_prose_provinces.py \
 		--pdfs data/raw/sitrep_pdfs --only 12 14 16 \
 		--out data/build/series/prose_provinces.csv
@@ -86,6 +89,8 @@ figures:
 		--out data/build/figures/availability.png
 	uv run python scripts/plot_figures.py --figure province_series \
 		--out data/build/figures/province_series.png
+	uv run python scripts/plot_figures.py --figure streams_detail \
+		--out data/build/figures/streams_detail.png
 
 ## test    -- the pure-function tests.
 test:
