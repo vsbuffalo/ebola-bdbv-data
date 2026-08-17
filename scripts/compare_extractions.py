@@ -36,10 +36,28 @@ import polars as pl
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 
+#: One canonical key per PLACE across lineages, applied to BOTH sides after
+#: folding. A zone the two lineages spell differently never joins, so it can
+#: never DISAGREE -- the divergence vanishes from the comparison instead of
+#: appearing in it, which is precisely backwards: a cross-lineage spelling
+#: difference is itself a transcription disagreement. Mapping the four known
+#: divergent spellings recovered eight zone-days, one of which is a genuine
+#: value disagreement no earlier run ever saw (sitrep 064, Lubunga, deaths).
+#: These mappings exist for the COMPARISON only; they assert the two spellings
+#: name one place, not that either spelling is correct.
+CROSS_ALIASES = {
+    "manguripa": "manguredjipa",
+    "rimba": "rumba",
+    "nainia": "niania",
+    "lubungatshopo": "lubunga",
+}
+
+
 def fold(s: str) -> str:
     s = unicodedata.normalize("NFKD", s or "")
     s = "".join(c for c in s if not unicodedata.combining(c))
-    return re.sub(r"[^a-z0-9]+", "", s.lower())
+    k = re.sub(r"[^a-z0-9]+", "", s.lower())
+    return CROSS_ALIASES.get(k, k)
 
 
 def load_ours_zone(path: Path) -> pl.DataFrame:
@@ -103,7 +121,8 @@ def compare_zone(ours: pl.DataFrame, inrb: pl.DataFrame) -> pl.DataFrame:
 
 
 def compare_national(ours_zone_path: Path, summary_path: Path,
-                     scan_path: Path) -> pl.DataFrame:
+                     scan_path: Path,
+                     prose_path: Path | None = None) -> pl.DataFrame:
     d = pl.read_csv(ours_zone_path, infer_schema_length=None)
     nat = (d.filter(pl.col("level") == "national")
            .group_by("sitrep", "date")
@@ -113,6 +132,17 @@ def compare_national(ours_zone_path: Path, summary_path: Path,
              .group_by("sitrep", "date")
              .agg(pl.col("cum_cases").cast(pl.Int64, strict=False).last()
                   .alias("cum_cases_summary")))
+    # THE PROSE ROUTE JOINS THE COMPARISON. The three prose-only reports are
+    # the route with the weakest internal guard, and they were the only route
+    # with an independent check available and unused -- the scan carries
+    # their national figures.
+    nat_p = None
+    if prose_path is not None and prose_path.exists():
+        pr = pl.read_csv(prose_path, infer_schema_length=None)
+        nat_p = (pr.filter(pl.col("level") == "national")
+                 .group_by("sitrep", "date")
+                 .agg(pl.col("cum_cases").cast(pl.Int64, strict=False).last()
+                      .alias("cum_cases_prose")))
     scan = pl.read_csv(scan_path, infer_schema_length=None)
     # `012_v2` and kin: a revised re-issue is a separate row in the scan. Our
     # archive holds one version per report, so compare against the LAST row per
@@ -123,8 +153,14 @@ def compare_national(ours_zone_path: Path, summary_path: Path,
             .agg(pl.col("confirmed_cases").cast(pl.Int64, strict=False).last()
                  .alias("scan_cases"),
                  pl.col("notes").last()))
-    out = (nat.join(nat_s, on=["sitrep", "date"], how="full", coalesce=True)
-           .with_columns(pl.coalesce("cum_cases", "cum_cases_summary")
+    out = nat.join(nat_s, on=["sitrep", "date"], how="full", coalesce=True)
+    if nat_p is not None:
+        out = out.join(nat_p, on=["sitrep", "date"], how="full", coalesce=True)
+    else:
+        out = out.with_columns(pl.lit(None, pl.Int64).alias("cum_cases_prose"))
+    out = (out
+           .with_columns(pl.coalesce("cum_cases", "cum_cases_summary",
+                                     "cum_cases_prose")
                          .alias("ours_national"))
            .join(scan, on="sitrep", how="inner")
            .with_columns((pl.col("ours_national") - pl.col("scan_cases"))
@@ -141,6 +177,9 @@ def main() -> None:
                     help="directory of INRB-UMIE insp_sitrep__*.csv extractions")
     ap.add_argument("--scan", required=True, type=Path,
                     help="epiforecasts insp_sitrep_scanned.csv")
+    ap.add_argument("--prose", type=Path, default=None,
+                    help="prose_provinces.csv, so the prose-only reports "
+                         "enter the national comparison")
     ap.add_argument("--out-dir", required=True, type=Path)
     ap.add_argument("--figure", type=Path, default=None,
                     help="also draw the comparison figure to this path")
@@ -166,9 +205,44 @@ def main() -> None:
      .sort(["date", "zone_reported"])
      .write_csv(args.out_dir / "zone_comparison.csv"))
 
-    n = compare_national(args.zone_table, args.summary, args.scan)
+    n = compare_national(args.zone_table, args.summary, args.scan, args.prose)
     n.write_csv(args.out_dir / "scan_comparison.csv")
     n_dis = n.filter(pl.col("diff").fill_null(0) != 0)
+
+    # THE DENOMINATOR IS DISCLOSED, MACHINE-READABLY. "2,118 of 2,127 agree"
+    # is a statement about the inner join, and the inner join is a
+    # survivorship set: our newest reports have no INRB counterpart yet (their
+    # series currently ends earlier than ours), and those rows -- the most
+    # recent, least-reviewed fifth of the data -- are outside every agreement
+    # figure. The meta file states the compared mass AND the uncompared mass,
+    # and the document reads its numbers from here rather than typing them.
+    import json
+    ours_keys = ours.select("key", "date").unique()
+    inrb_keys = inrb.select("key", "date").unique()
+    joined = ours_keys.join(inrb_keys, on=["key", "date"], how="inner")
+    meta = {
+        "inrb": {
+            "ours_zone_days": ours.height,
+            "inrb_zone_days": inrb.height,
+            "joined": joined.height,
+            "ours_unmatched": ours.height - joined.height,
+            "inrb_unmatched": inrb.height - joined.height,
+            "cases_compared": z_cases.height,
+            "cases_equal": z_cases.filter(pl.col("diff_cases") == 0).height,
+            "deaths_compared": z_deaths.height,
+            "deaths_equal": z_deaths.filter(pl.col("diff_deaths") == 0).height,
+            "rows_disagreeing": dis.height,
+            "ours_last_date": str(ours["date"].max()),
+            "inrb_last_date": str(inrb["date"].max()),
+        },
+        "scan": {
+            "compared": n.height,
+            "equal": n.filter(pl.col("diff") == 0).height,
+            "differ": n_dis.height,
+        },
+    }
+    (args.out_dir / "compare_meta.json").write_text(
+        json.dumps(meta, indent=2, sort_keys=True) + "\n")
 
     print("== ours vs INRB-UMIE, per (zone, date) ==")
     print(f"  cases : {z_cases.height} compared, "

@@ -43,9 +43,10 @@ because the site renamed the series and the query silently stopped matching.
 | exit | meaning | what to do |
 | ---- | ------------------------------------------------ | ---------- |
 | 0 | `CURRENT` — we hold everything the source lists | nothing |
-| 1 | `BEHIND` — new reports published | `make fetch && make build` |
+| 1 | `BEHIND` — new reports published | `make refresh` |
 | 2 | `CHANGED` — the source moved under us | **look first** |
 | 3 | `UNREACHABLE` — the API did not answer | retry |
+| 4 | `STALE` — current, but the source has published no situation report for days | worth knowing; nothing to fetch |
 
 `make build` touches no network, so a rebuild can never silently acquire
 different inputs. Everything under `data/build/` is regenerable from the
@@ -84,10 +85,17 @@ and every held report is covered by the finest one its pages print:
 
 | Route | Reports | What it reads |
 | --- | --- | --- |
-| zone table (three declared layouts) | 77 | cumulative cases & deaths per health zone; from 13 July the daily ascertainment split |
+| zone table (three declared layouts) | 74 | cumulative cases & deaths per health zone; from 13 July the daily ascertainment split |
+| zone daily table | 1 | sitrep 087 prints only the day's flows per zone, no cumulative anywhere — a fourth layout with its own declared column order |
 | provincial summary | 70 | one row per province — the only tabular data on the reports whose vintage dropped the zone table |
 | prose sentence | 3 | `"121 cas dont 110 en Ituri, 10 au Nord-Kivu et 1 au Sud-Kivu"` — read only because the sentence checks itself |
 | *(national dashboard)* | — | not yet read; the daily suspected inflow after 12 July is the known gap |
+
+The source's own caveats are read too: the first six weeks' reports footnote
+their headline cumulative as undergoing harmonisation — from 9 June stating
+outright that it omits confirmed cases still in the community and escapees,
+i.e. is an undercount — and sitrep 011 footnotes the deaths as
+underestimated. One row per statement in `provisional_caveat.csv`.
 
 ## How it is validated
 
@@ -97,10 +105,12 @@ cannot.
 **1. The page's own arithmetic.** Every report prints totals beside its parts:
 zone rows plus unassigned rows must equal the printed province row, provinces
 the printed national `Total`. The extraction is accepted only where this
-closes. Currently 250 province-reports reconcile exactly, 7 carry a
-hand-verified exception (below), and 2 remain open — named in the status
-files, never dropped. These counts are as of the current build; the rendered
-document reads them live and is the authoritative statement.
+closes. Currently 256 province-reports reconcile exactly, 9 carry a
+hand-verified exception (below), and none remain open; the same identity now
+runs over the four daily-flow columns too, where 7 province-days disagree with
+their printed row — reported loudly, page reads pending. These counts are as
+of the current build; the rendered document reads them live and is the
+authoritative statement.
 
 **2. What the identity cannot see, tests pin.** A table read one concept to
 the left — suspected cases as confirmed — closes perfectly, because both sides
@@ -112,8 +122,16 @@ the report that produced them: `tests/test_extraction.py` names sitreps 005,
 carry two gates: the emitted total must equal what the cumulative moved,
 *exactly*, and the forward-filled grid is compared against every printed
 province row — the check that caught duplicate zone spellings inflating both
-sides of gate one at once. Every stream ends at a final gap of **zero**, and
-the per-date tallies live in `data/build/streams/meta.json`.
+sides of gate one at once. Every stream ends at a final gap of **zero**;
+`cases_ituri` now agrees with the printed row on 65 of 67 dates, and the
+two that differ are the source's own registered self-disagreement (sitrep
+059's note). Each bin's observation `time` is its **last report day**, so an
+engine that accumulates between observations scores every window against
+exactly the days its count covers — the trailing partial week included. The
+unassigned pool is summed within a report and zeroed when a report stops
+printing it; the ascertainment streams read the printed province rows and
+carry a per-date check against the zone breakdown. Per-date tallies live in
+`data/build/streams/meta.json`.
 
 **4. The registers.** When a page itself does not add up, that is a finding
 about the document, and it is recorded — not silenced — in `registers/`: one
@@ -125,21 +143,35 @@ that changes un-excuses itself. An unverifiable register (no archive to hash
 against) is refused outright.
 
 **5. The other lineages.** Two independent readings of the same PDFs exist:
-INRB-UMIE's transcription (cloned by `make external`, pinned by commit) and the
-epiforecasts scan. `make compare` sets ours against both — currently **2,118 of
-2,127** zone-day case values agree with INRB exactly, **67 of 67** national
-cumulatives agree with the scan, and every disagreement lands in a CSV with
-both values. Agreement here is evidence about *transcription*, never
-corroboration of the counts (all three lineages read the same pages); a
-disagreement is always a finding. The largest one is upstream's: sitrep 032
-prints Rwampara at 159 in both its table and its narrative, and the INRB file
-carries 192.
+INRB-UMIE's transcription (cloned by `make external` at exactly the commit in
+the committed `external.lock`) and the epiforecasts scan (a pinned copy under
+`data/raw/scan/`). `make compare` sets ours against both — currently **2,130
+of 2,139** zone-day case values agree with INRB exactly and **70 of 70**
+national cumulatives agree with the scan — and every disagreement lands in a
+CSV with both values. Two disclosures travel with those numbers, in
+`compare_meta.json`: the denominator is the inner join, and 584 of our
+zone-day rows (the newest reports — INRB's series currently ends four days
+before ours) have no counterpart and sit outside every agreement figure; and
+zones the lineages spell differently are mapped onto one key precisely so a
+spelling divergence can *disagree* instead of vanishing. Agreement here is
+evidence about *transcription*, never corroboration of the counts (all three
+lineages read the same pages); a disagreement is always a finding. The
+largest one is upstream's: sitrep 032 prints Rwampara at 159 in both its
+table and its narrative, and the INRB file carries 192.
 
 **6. The archive itself.** The PDFs are not committed (~145 MB); what pins
 them is a committed SHA-256 manifest, and `make verify` proves the copy on
 disk is the copy the manifest describes — distinguishing *missing* from
 *stray* from *corrupt*, because a hash mismatch can mean a damaged file or a
 report the source revised in place, and the second is worth knowing about.
+Revision is watched for in both directions the source can produce it: the
+fetcher re-checks every held report's pick URL against the held byte count
+(a re-picked correction usually shares the data date, so it maps to a name
+we already hold and a name-based skip would never fetch it), and
+`make check` spot-checks committed URLs across the whole archive comparing
+Content-Length against the manifest — a revision in place at an unchanged
+URL. Either finding stops the fetch and asks for adjudication, because every
+hash-keyed register judgement is about one version of a document.
 
 **7. The document.** `make doc` renders `analysis/data.html`, and every number
 in its prose and every figure it embeds is read from a pipeline artefact at

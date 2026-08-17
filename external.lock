@@ -1,0 +1,6 @@
+# Pins for the comparison sources cloned into external/ (which is gitignored).
+# `make external` clones and checks out exactly these commits and FAILS if it
+# cannot; `make external-update` moves a pin to the remote head and rewrites
+# this file, and the diff is the record of what upstream changed.
+name	url	commit	locked
+BDBV2026-Data	https://github.com/INRB-UMIE/BDBV2026-Data	df7d1c58840427c25b9cdaaa4a5ee878ba6e089e	2026-08-17

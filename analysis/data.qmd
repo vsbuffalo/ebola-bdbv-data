@@ -66,12 +66,25 @@ community deaths by post-mortem swab against deaths in treatment centres —
 begins 13 July; and the 084–086 vintage prints no per-zone table at all, so
 those reports carry province totals only.
 
+The source annotates its own early numbers, and those annotations are data:
+nearly every report from 005 through 033 footnotes its headline cumulative as
+undergoing harmonisation, and from sitrep 026 (9 June) the footnote is
+**directional** — the count is stated to omit confirmed cases still in the
+community and escapees from care, i.e. to be an undercount. Sitrep 011
+footnotes the death count itself as underestimated. Each such statement is a
+row in `provisional_caveat.csv` (kinds `harmonisation_pending`,
+`harmonisation_undercount`, `deaths_underestimated`), flagged per report in
+the index below: anyone fitting the first four weeks is fitting numbers the
+source itself declared provisional, and from 9 June declared biased low.
+
 ## Index of situation reports
 
 ```{python}
 ex = source("registers/reconciliation_exceptions.tsv")
 rej = source("registers/rejected_routes.tsv")
-cavd = dict(cav.select("sitrep", "kind").iter_rows())
+cavd: dict[int, set] = {}
+for s, k in cav.select("sitrep", "kind").iter_rows():
+    cavd.setdefault(s, set()).add(k)
 exset = set(ex["sitrep"].cast(pl.Int64))
 rejset = set(rej["sitrep"].cast(pl.Int64))
 
@@ -79,8 +92,15 @@ rows = []
 for r in st.sort("sitrep").iter_rows(named=True):
     n = r["sitrep"]
     marks = []
-    if cavd.get(n) == "recent_data_provisional":
+    kinds = cavd.get(n, set())
+    if "recent_data_provisional" in kinds:
         marks.append("caveat")
+    if "harmonisation_undercount" in kinds:
+        marks.append("stated undercount")
+    elif "harmonisation_pending" in kinds:
+        marks.append("harmonisation")
+    if "deaths_underestimated" in kinds:
+        marks.append("deaths understated")
     if n in exset:
         marks.append("exception")
     if n in rejset:
@@ -115,15 +135,23 @@ two versions of a revised report were read.
 ```{python}
 dis = load("data/build/compare/inrb_disagreements.csv")
 scan = load("data/build/compare/scan_comparison.csv")
+cm = load_json("data/build/compare/compare_meta.json")["inrb"]
 figure("data/build/compare/comparison.png")
 Markdown(f"""
-Against INRB-UMIE, per zone-day: **{stat(2127 - dis.height)} of
-{stat(2127)}** case values agree exactly; **{stat(dis.height)}** rows disagree
-on cases or deaths, each recorded with both values. Against the epiforecasts
-scan, the national cumulative agrees on **{stat(scan.filter(pl.col('diff') == 0).height)}
-of {stat(scan.height)}** reports exactly. The largest disagreement is not
-ours: sitrep 032 prints Rwampara at 159 twice over — in its table and its
-narrative — where the INRB file carries 192.
+Against INRB-UMIE, per zone-day: **{stat(cm["cases_equal"])} of
+{stat(cm["cases_compared"])}** case values agree exactly and
+{stat(cm["deaths_equal"])} of {stat(cm["deaths_compared"])} death values;
+**{stat(dis.height)}** rows disagree on either, each recorded with both
+values. The denominator is the inner join of the two lineages —
+**{stat(cm["ours_unmatched"])} of our {stat(cm["ours_zone_days"])} zone-day
+rows have no INRB counterpart** and sit outside every agreement figure, and
+they are not random: the INRB series currently ends {cm["inrb_last_date"]},
+ours {cm["ours_last_date"]}, so the most recent reports are uncompared by
+construction. Against the epiforecasts scan, the national cumulative agrees
+on **{stat(scan.filter(pl.col('diff') == 0).height)} of {stat(scan.height)}**
+reports exactly. The largest disagreement is not ours: sitrep 032 prints
+Rwampara at 159 twice over — in its table and its narrative — where the INRB
+file carries 192.
 """)
 ```
 ![Ours against INRB-UMIE on the identity line; the disagreements, signed, over
@@ -182,6 +210,16 @@ every printed province row.
 ```{python}
 lines = []
 for name, r in sorted(meta["reconciliation"].items()):
+    if "difference" not in r:
+        # An ascertainment stream: community deaths of total split deaths,
+        # read from the printed province rows and checked per-date against
+        # the zone breakdown where the table prints one.
+        av = r["vs_printed_daily"]
+        lines.append(
+            f"| `{name}` | {r['n_obs']} | {stat(r['emitted'])} of "
+            f"{stat(r['emitted_total'])} | — | "
+            f"{av['n_equal']}/{av['n_compared']} daily | — |")
+        continue
     vp = r.get("vs_printed", {})
     lines.append(
         f"| `{name}` | {r['n_obs']} | {stat(r['emitted'])} | "
