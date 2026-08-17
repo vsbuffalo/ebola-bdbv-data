@@ -168,11 +168,28 @@ class Mapped:
         `Zones de santé`, where the province is printed once against a merged
         cell spanning its zones. The rightmost filled label is therefore the
         row's own name and anything to its left is its parent.
+
+        THE RIGHTMOST CELL CAN BE A FRAGMENT. Word sometimes draws one printed
+        name across two label columns -- `Sous total` as `Sous | total`,
+        `TOTAL NATIONAL` as `TOTAL | NATIONAL`, `Haut Uélé` as `Haut | Uélé` --
+        and the rightmost cell alone then misnames the row: sitrep 013's three
+        provincial subtotals were all levelled `national` from the fragment
+        `total`, and sitrep 087's national total entered the series as a health
+        zone named `NATIONAL`. Whether the cells are one split name or a parent
+        beside a child is a question about the VOCABULARY of the joined text,
+        which this module does not know -- so `label_cells` exposes all the
+        fragments and the caller decides.
         """
         for j in reversed(self.labels):
             if j < len(row) and row[j].strip():
                 return row[j].strip()
         return ""
+
+    def label_cells(self, row: Sequence[str]) -> tuple[str, ...]:
+        """Every filled label cell, left to right, for callers that must decide
+        whether they are one split name or a parent beside a child."""
+        return tuple(row[j].strip() for j in self.labels
+                     if j < len(row) and row[j].strip())
 
     def parent(self, row: Sequence[str]) -> str:
         """The province printed against this row, when the table prints one separately."""
@@ -223,6 +240,20 @@ def _is_value(cell: str) -> bool | None:
     return bool(_NUMERIC.match(t))
 
 
+def _cell_counts(table, start: int) -> tuple[list[int], list[int]]:
+    """Per column: how many data cells are numeric, and how many are text."""
+    numeric = [0] * table.ncols
+    textual = [0] * table.ncols
+    for i in range(start, table.nrows):
+        for j, cell in enumerate(table.row(i)):
+            got = _is_value(cell)
+            if got is True:
+                numeric[j] += 1
+            elif got is False:
+                textual[j] += 1
+    return numeric, textual
+
+
 def classify(table, *, start: int, min_rows: int = 3) -> tuple[list[int], list[int]]:
     """Split a table's columns into labels and values, by what its data rows hold.
 
@@ -232,15 +263,7 @@ def classify(table, *, start: int, min_rows: int = 3) -> tuple[list[int], list[i
     vintages print a trailing comment column.
     """
     ncols = table.ncols
-    numeric = [0] * ncols
-    textual = [0] * ncols
-    for i in range(start, table.nrows):
-        for j, cell in enumerate(table.row(i)):
-            got = _is_value(cell)
-            if got is True:
-                numeric[j] += 1
-            elif got is False:
-                textual[j] += 1
+    numeric, textual = _cell_counts(table, start)
 
     values = [j for j in range(ncols)
               if numeric[j] >= min_rows and numeric[j] > textual[j]]
@@ -288,6 +311,16 @@ ZONE_TABLE = TableSpec(
         # The cumulative confirmed table never carries a suspected column; the
         # early table is built around one.
         P(r"suspect"),
+        # SITREP 087 PRINTS A DAILY TABLE AND NO CUMULATIVE ONE -- six 24-hour
+        # columns, no cumulative column anywhere -- and this spec read it:
+        # every requirement matched, and the day's 57 new Ituri cases were
+        # written into `cum_cases` (the true cumulative that day was 4,381).
+        # `cumul` cannot be required (sitreps 038, 039, 080 print real
+        # cumulative tables whose headings never say it) and `du jour` cannot
+        # be forbidden (title bleed puts `situation du jour` into 089-091's
+        # headings). What only the daily table says is `dont décès parmi les
+        # nouveaux confirmés` -- checked against all 83 reports.
+        P(r"parmi\s+les\s+nouveaux"),
     ),
     values=(Role.CUM_CASES, Role.CUM_DEATHS, Role.LETALITY, Role.NEW_CASES,
             Role.DEATHS_COMMUNITY, Role.DEATHS_CTE, Role.DEATHS_TOTAL),
@@ -346,6 +379,26 @@ MIXED_ZONE_TABLE = TableSpec(
             Role.CUM_CASES, Role.CUM_DEATHS, Role.RECOVERED, Role.CONTACTS),
 )
 
+#: SITREP 087'S TABLE: the day's flows per zone, with NO cumulative column at
+#: all. One report in the corpus prints it (in place of the cumulative table,
+#: not beside it), and before this spec existed the cumulative spec claimed it
+#: and stored the day's new cases as `cum_cases`. Its signature is the column
+#: the daily-block vintage never prints: `Dont décès parmi les nouveaux
+#: confirmés`, the deaths among the day's newly confirmed. That column has no
+#: role of ours -- it is a subset of `deaths_total` we do not model -- so it is
+#: IGNORED, which keeps the sequence aligned.
+ZONE_DAILY = TableSpec(
+    name="zone_daily",
+    requires=(
+        P(r"zones?\s+de\s+sant"),
+        P(r"nouveaux?\s+cas\s+confirmes?"),
+        P(r"parmi\s+les\s+nouveaux"),
+    ),
+    forbids=(P(r"cumul"), P(r"gueri"), P(r"hospitalisation"), P(r"suspect")),
+    values=(Role.NEW_CASES, Role.IGNORED, Role.LETALITY,
+            Role.DEATHS_COMMUNITY, Role.DEATHS_CTE, Role.DEATHS_TOTAL),
+)
+
 #: THE PROVINCIAL SUMMARY -- one row per province, no zones. Until now this
 #: table was only ever something to keep OUT of the zone extraction; it is also
 #: a source in its own right, and for the reports that print no per-zone table
@@ -375,20 +428,28 @@ PROVINCIAL_SUMMARY = TableSpec(
         P(r"hospitalisation"),
         P(r"suspect"),
     ),
-    values=(Role.CUM_CASES, Role.CUM_DEATHS, Role.LETALITY, Role.IGNORED,
-            Role.NEW_CASES),
+    # THE ZONES-TOUCHED COLUMN NEVER CLASSIFIES AS A VALUE. It prints
+    # `28/36 (77,8 %)`, which `_NUMERIC` rejects, so it never consumes a slot
+    # in this sequence -- an `IGNORED` placed for it here swallowed the NEXT
+    # column instead, and `Nouveaux cas confirmés (24h)` came out null on all
+    # 348 summary rows. The value sequence is what the classifier actually
+    # detects: cases, deaths, letality, then the day's new cases.
+    values=(Role.CUM_CASES, Role.CUM_DEATHS, Role.LETALITY, Role.NEW_CASES),
     row_vocabulary=frozenset({
         "ituri", "nord-kivu", "nord kivu", "sud-kivu", "sud kivu",
         "haut-uele", "haut uele", "tshopo", "bas-uele", "bas uele",
         "kinshasa", "maniema"}),
-    row_requires=P(r"\d+\s*/\s*\d+"),
+    # `21 sur 36 (58,3 %)` is the same zones-touched cell in words -- the 033
+    # vintage spells the slash out.
+    row_requires=P(r"\d+\s*(?:/|sur)\s*\d+"),
 )
 
 #: The zone-level specs, in order of preference. The provincial summary is NOT
 #: here: it is a separate route with its own output, because it answers a
 #: different question (province totals, not zone detail) and must never compete
 #: with the zone table for the same extraction.
-SPECS: tuple[TableSpec, ...] = (ZONE_TABLE, MIXED_ZONE_TABLE, EARLY_ZONE_TABLE)
+SPECS: tuple[TableSpec, ...] = (ZONE_TABLE, MIXED_ZONE_TABLE, EARLY_ZONE_TABLE,
+                                ZONE_DAILY)
 ALL_SPECS: tuple[TableSpec, ...] = SPECS + (PROVINCIAL_SUMMARY,)
 
 
@@ -466,6 +527,29 @@ def rows_identify(table, spec: TableSpec) -> bool:
     return True
 
 
+def rows_are_provinces(table) -> bool:
+    """A majority of this table's own row names are provinces or totals -- the
+    structural signature of the provincial summary, whatever its heading says.
+
+    The name tested is the RIGHTMOST label column. The early layout's leftmost
+    label column is a merged province cell, so testing that column would call
+    every early zone table a summary by construction; a row's own name is
+    always the rightmost label, and in the summary the two coincide.
+    """
+    labels, values = classify(table, start=table.header_rows())
+    if not values or not labels:
+        return False
+    col = labels[-1]
+    names = [norm(table.row(i)[col]) for i in range(table.header_rows(), table.nrows)
+             if col < table.ncols and table.row(i)[col].strip()]
+    if len(names) < 3:
+        return False
+    vocab = PROVINCIAL_SUMMARY.row_vocabulary
+    hits = sum(1 for n in names
+               if n in vocab or n.startswith("total") or n.startswith("sous"))
+    return hits * 2 > len(names)
+
+
 def _map(table, spec: TableSpec) -> Mapped | None:
     labels, values = classify(table, start=table.header_rows())
     if not values:
@@ -473,6 +557,80 @@ def _map(table, spec: TableSpec) -> Mapped | None:
     roles = {role: col for role, col in zip(spec.values, values)
              if role is not Role.IGNORED}
     return Mapped(table=table, roles=roles, labels=tuple(labels))
+
+
+#: How far a column's centre may sit from its counterpart on a sibling page and
+#: still be the same printed column. Pages of one chain share their outer edges
+#: to within 10 pt (`spans_same`), and the data columns are 40-70 pt wide, so
+#: 15 pt separates "the same column, drawn a little differently" from "the
+#: neighbouring column" with a wide margin either way.
+_ALIGN_TOL = 15.0
+
+
+def _remap_by_x(table, spec: TableSpec, ref: Mapped) -> Mapped | None:
+    """Map a page's columns by aligning them, in x, to a sibling page of the
+    same table -- for pages where order alone misassigns them.
+
+    A chain is ONE table split by page breaks, so its columns line up in x
+    across pages even when the drawn grid does not repeat exactly. Mapping each
+    page by zip order instead assumes every page RESOLVES the same columns, and
+    on sitreps 090-093 the head page does not: it carries only the short Ituri
+    block, the intra-CTE deaths column has a single numeric cell there --
+    below the classifier's threshold -- and the zip slid `Total décès` into
+    `deaths_treatment_centre` and left `deaths_total` null. Only Ituri was
+    affected, invisible beside five correct sibling rows, and the emitted
+    community-death fraction for the final week read 1.000 against a printed
+    0.55.
+
+    So when a page resolves a DIFFERENT number of value columns than the
+    chain's best-resolved page, its columns take their roles from that
+    reference page by x-position, not by order. A column matching nothing
+    within tolerance carries no role, which is honest: better a null than a
+    neighbour's meaning.
+    """
+    # CANDIDATES ARE ANY COLUMN WITH A NUMBER IN IT, not the columns the
+    # classifier kept -- the classifier is exactly what failed on this page.
+    # Its verdict is majority-based, and two shapes of page defeat it: thin
+    # data (sitrep 090's head page holds one numeric intra-CTE cell, below the
+    # threshold) and a grid region that sweeps in narrative prose below the
+    # table (sitrep 058's last seven rows sit above three paragraphs of text,
+    # which outvote them column by column). The x-match against the reference
+    # page is what keeps a label column out: labels sit under no value
+    # column's centre. Prose that survives into a value column self-filters
+    # later -- none of its cells parses as a number.
+    numeric, textual = _cell_counts(table, table.header_rows())
+    cand = [j for j in range(table.ncols) if numeric[j] >= 1]
+
+    def center(t, j: int) -> float:
+        return (t.xs[j] + t.xs[j + 1]) / 2.0
+
+    roles: dict[Role, int] = {}
+    used: set[int] = set()
+    for role, rj in sorted(ref.roles.items(), key=lambda kv: kv[1]):
+        cx = center(ref.table, rj)
+        got = min(((abs(center(table, j) - cx), j) for j in cand
+                   if j not in used), default=None)
+        if got is None or got[0] > _ALIGN_TOL:
+            continue
+        roles[role] = got[1]
+        used.add(got[1])
+    if not roles:
+        return None
+    # LABELS COME FROM THE REFERENCE PAGE TOO. Deriving them from this page's
+    # own text ("everything textual left of the first value column") swept in
+    # prose fragments as a second label column on sitrep 058's last page --
+    # every row's own name then doubled as its printed parent, the carry took
+    # those names for province anchors, and forty zones landed in Haut-Uélé.
+    # One table, one label set: each reference label column maps to this
+    # page's nearest column by x.
+    labels = []
+    for rj in ref.labels:
+        cx = center(ref.table, rj)
+        got = min(((abs(center(table, j) - cx), j) for j in range(table.ncols)
+                   if j not in used), default=None)
+        if got is not None and got[0] <= _ALIGN_TOL:
+            labels.append(got[1])
+    return Mapped(table=table, roles=roles, labels=tuple(sorted(labels)))
 
 
 def select(tables: Iterable, spec: TableSpec) -> Resolved | None:
@@ -497,9 +655,15 @@ def select(tables: Iterable, spec: TableSpec) -> Resolved | None:
     that way. A chain is scored whole, so both pages count together.
     """
     tabs = sorted(tables, key=lambda t: (t.page, t.ys[0]))
+    # A HEAD NEED NOT MAP ITS OWN COLUMNS. Requiring `_map` here excluded any
+    # head too thin to classify -- sitrep 067's table opens with a fragment
+    # holding a heading and ONE data row, the Ituri province row, and a single
+    # row cannot meet the classifier's threshold. Excluded from the chain, the
+    # row vanished and all 29 zones beneath it lost their province. Mapping is
+    # the chain's problem now: a page that cannot classify its own columns
+    # takes them from the chain's best page by x-position.
     heads = [t for t in tabs
-             if (spec.identifies(t.header()) or rows_identify(t, spec))
-             and _map(t, spec)]
+             if spec.identifies(t.header()) or rows_identify(t, spec)]
     if not heads:
         return None
 
@@ -547,11 +711,41 @@ def select(tables: Iterable, spec: TableSpec) -> Resolved | None:
     def weight(chain) -> int:
         return sum(t.nrows - t.header_rows() for t in chain)
 
-    best = max(chains, key=weight)
-    pages = tuple(m for m in (_map(t, spec) for t in best) if m)
+    # THE WINNING CHAIN MUST BE READABLE. Now that a head need not map its own
+    # columns, a grid that merely TALKS like the table -- title bleed carrying
+    # the right vocabulary over rows that classify to nothing -- can form a
+    # heavy chain of pure junk, and on sitrep 061 one outweighed the real
+    # summary and emptied the extraction. A chain with no mappable page has no
+    # reference to remap against and nothing to read; the heaviest chain that
+    # can actually be read wins.
+    raw, ok = [], []
+    for chain in sorted(chains, key=weight, reverse=True):
+        raw = [(t, _map(t, spec)) for t in chain]
+        ok = [m for _, m in raw if m]
+        if ok:
+            break
+    if not ok:
+        return None
+    # ONE TABLE, ONE COLUMN SET. A page that resolves fewer (or more) value
+    # columns than the chain's best-resolved page has NOT lost those columns
+    # on the page -- the classifier lost them in that page's thin or
+    # prose-contaminated data -- and a page that resolves none at all is still
+    # a page of the same table: sitrep 067's head fragment carries the one
+    # Ituri province row (a single data row cannot meet the classifier's
+    # threshold), and dropping it orphaned all 29 zones beneath it. Any page
+    # that does not resolve exactly the reference set is aligned to the
+    # reference page by x instead of by order; pages that match keep the
+    # ordered zip unchanged.
+    ref = max(ok, key=lambda m: len(m.roles))
+    pages = []
+    for t, m in raw:
+        if m is None or len(m.roles) != len(ref.roles):
+            m = _remap_by_x(t, spec, ref) or m
+        if m:
+            pages.append(m)
     if not pages:
         return None
-    return Resolved(spec=spec, pages=pages)
+    return Resolved(spec=spec, pages=tuple(pages))
 
 
 def select_any(tables: Iterable, specs: Sequence[TableSpec] = SPECS) -> Resolved | None:

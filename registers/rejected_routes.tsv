@@ -17,3 +17,10 @@
 #
 sitrep	date	sha256_16	route	fallback	verified_by	note
 33	2026-06-16	b70cd26f0bceba7e	zone_cumulative	provincial_summary	read against the page 2026-08-16, with the provincial summary and the narrative	Sitrep 033 prints NO per-zone table: its zone data is a narrative list. The zone route matches a fragment of the PROVINCIAL SUMMARY instead and emits its rows as health zones -- including a row literally named "Nord-Kivu1" carrying 73 cases, which then enters Ituri's zone series and persists there by forward-fill. The summary route reads the same page correctly (Ituri 799, Nord-Kivu 73, Sud-Kivu 3, Total 875, matching the narrative "Province de l'Ituri (799 cas)").
+#
+# NOTE 2026-08-17: the extraction now refuses structurally any zone-route
+# selection whose row names are majority provinces (`rows_are_provinces`),
+# which catches this document -- and sitrep 017, the same shape uncaught for
+# three weeks -- before the register is consulted. The entry above stands as
+# the record of the original judgement and as defence in depth should the
+# structural guard ever regress.

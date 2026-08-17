@@ -429,21 +429,26 @@ def test_exception_excuses_only_its_own_gap():
     same = A.apply_exceptions(pl.DataFrame([_check_row(53, "Nord-Kivu", 5, 7)]), ex)
     assert same["reconciled"][0] == "verified_exception"
 
-    moved = A.apply_exceptions(pl.DataFrame([_check_row(53, "Nord-Kivu", 6, 7)]), ex)
-    assert moved["reconciled"][0] == "fails", "a gap that moved is not excused"
+    # A gap that moved is not excused -- and since 2026-08-17 the entry it
+    # strands is itself an error: an unused licence is a trap for the next
+    # defect that happens to produce the same number, so the build stops.
+    with pytest.raises(SystemExit, match="NO LONGER MATCH"):
+        A.apply_exceptions(pl.DataFrame([_check_row(53, "Nord-Kivu", 6, 7)]), ex)
 
 
 def test_exception_does_not_leak_to_another_province():
     ex = _register([_entry(53, "Nord-Kivu", "cum_cases", 5)])
-    other = A.apply_exceptions(pl.DataFrame([_check_row(53, "Ituri", 5, 0)]), ex)
-    assert other["reconciled"][0] == "fails"
+    with pytest.raises(SystemExit, match="NO LONGER MATCH"):
+        A.apply_exceptions(pl.DataFrame([_check_row(53, "Ituri", 5, 0)]), ex)
 
 
-def test_a_reconciling_row_is_left_alone():
+def test_a_reconciling_row_strands_its_entry():
+    """A row that now reconciles leaves its licence unused -- an error, not a
+    quiet success: the entry describes a state that no longer exists."""
     ex = _register([_entry(53, "Nord-Kivu", "cum_cases", 5)])
-    good = A.apply_exceptions(
-        pl.DataFrame([_check_row(53, "Nord-Kivu", 0, 0, verdict="ok")]), ex)
-    assert good["reconciled"][0] == "ok"
+    with pytest.raises(SystemExit, match="NO LONGER MATCH"):
+        A.apply_exceptions(
+            pl.DataFrame([_check_row(53, "Nord-Kivu", 0, 0, verdict="ok")]), ex)
 
 
 @needs_pdfs
@@ -582,3 +587,129 @@ def test_more_unassigned_spellings(name):
     rows. They are pool spellings: counted, but not places.
     """
     assert E.level_of(name) == "unassigned"
+
+
+# --------------------------------------------------------------------------
+# The 2026-08-17 adversarial-review fixes, each pinned to the report that
+# exposed it.
+# --------------------------------------------------------------------------
+
+def test_ordinal_strips_leading_footnote_marker():
+    """Sitrep 090 prints its Haut-Uélé summary row as `* Haut Uélé`; the
+    marker is typography, and requiring a letter first dropped 119 cases."""
+    assert E.strip_ordinal("* Haut Uélé") == "Haut Uélé"
+    assert E.strip_ordinal("1- Bunia") == "Bunia"
+    assert E.strip_ordinal("– Nizi") == "Nizi"
+
+
+@needs_pdfs
+def test_087_daily_table_reads_as_daily_not_cumulative():
+    """Sitrep 087 prints ONLY a daily table; the cumulative spec once claimed
+    it and wrote the day's 57 new Ituri cases into `cum_cases`."""
+    rows, st = E.extract(pdf(87))
+    assert st == "ok"
+    assert rows[0]["table"] == "zone_daily"
+    assert all(r["cum_cases"] is None for r in rows)
+    nat = [r for r in rows if r["level"] == "national"]
+    assert len(nat) == 1 and nat[0]["new_cases"] == 87
+    subs = [r for r in rows if r["level"] == "province"]
+    assert sorted(s["new_cases"] for s in subs) == [15, 15, 57]
+    chk = E.reconcile(rows, column="new_cases")
+    assert chk["identity"] == "ok" and chk["residual"] == 0
+
+
+@needs_pdfs
+def test_013_split_subtotal_labels_are_provinces():
+    """`Sous total` drawn as two cells read as the fragment `total` and all
+    three provincial subtotals were levelled national."""
+    rows, _ = E.extract(pdf(13))
+    subs = [r for r in rows if r["level"] == "province"]
+    assert [s["cum_cases"] for s in subs] == [110, 14, 1]
+    nat = [r for r in rows if r["level"] == "national"]
+    assert len(nat) == 1 and nat[0]["cum_cases"] == 125
+    chk = E.reconcile(rows)
+    assert chk["identity"] == "ok" and chk["basis"] == "provinces"
+
+
+@needs_pdfs
+@pytest.mark.parametrize("n, expect_total", [(9, 101), (13, 125)])
+def test_wrapped_pool_row_is_recovered(n, expect_total):
+    """`Echantillons sans fiche` wraps its name onto neighbouring grid rows;
+    the value row had no label and was silently dropped, visible only as a
+    -6 residual on sitreps 009 and 013."""
+    rows, _ = E.extract(pdf(n))
+    pool = [r for r in rows if "chantillons" in r["zone_reported"]]
+    assert len(pool) == 1 and pool[0]["level"] == "unassigned"
+    assert pool[0]["cum_cases"] == 6
+    assert E.reconcile(rows)["identity"] == "ok"
+
+
+@needs_pdfs
+def test_093_intra_cte_column_survives_the_thin_head_page():
+    """Pages 090-093 carry only the Ituri block on the head page; the intra-CTE
+    column has one numeric cell there, the classifier dropped it, and the zip
+    slid `Total décès` into `deaths_treatment_centre`. The printed row is
+    89 / 30 / 17 / 47."""
+    rows, _ = E.extract(pdf(93))
+    itu = [r for r in rows if r["level"] == "province"
+           and "ituri" in norm(r["zone_reported"])][0]
+    assert (itu["new_cases"], itu["deaths_community"],
+            itu["deaths_treatment_centre"], itu["deaths_total"]) == (89, 30, 17, 47)
+
+
+@needs_pdfs
+def test_058_headless_prose_contaminated_continuation_is_read():
+    """Sitrep 058's page-5 continuation sits above three paragraphs of prose
+    that outvote its seven data rows in the classifier; the page mapped to
+    nothing and two provinces plus the national total vanished."""
+    rows, _ = E.extract(pdf(58))
+    nat = [r for r in rows if r["level"] == "national"]
+    assert len(nat) == 1 and nat[0]["cum_cases"] == 1926
+    assert E.reconcile(rows)["identity"] == "ok"
+    names = {norm(r["zone_reported"]) for r in rows}
+    assert {"wamba", "makiso-kisangani", "lubunga"} <= names
+
+
+@needs_pdfs
+def test_067_one_row_head_fragment_is_kept():
+    """Sitrep 067's table opens with a heading plus ONE data row -- the Ituri
+    province row -- at the foot of page 2. A single row cannot classify, the
+    head was excluded, and all 29 zones beneath it lost their province."""
+    rows, _ = E.extract(pdf(67))
+    itu = [r for r in rows if r["level"] == "province"
+           and norm(r["zone_reported"]) == "ituri"]
+    assert len(itu) == 1 and itu[0]["cum_cases"] == 2202
+    assert E.reconcile(rows)["identity"] == "ok"
+
+
+@needs_pdfs
+@pytest.mark.parametrize("n", [17, 33])
+def test_summary_shaped_rows_refuse_the_zone_route(n):
+    """Sitreps 017 and 033 print no per-zone table; the provincial summary was
+    the only candidate left and was emitted as `zone_cumulative` -- provinces
+    posing as zones. The row-shape guard refuses it structurally."""
+    rows, st = E.extract(pdf(n))
+    assert st == "no_matching_table" and not rows
+
+
+@needs_pdfs
+def test_092_split_province_labels_in_summary():
+    """`Haut Uélé` and `Bas Uélé` drawn across two label cells came out as a
+    zone named `Uélé` in provinces named `Haut` and `Bas` -- and both
+    provinces collapsed onto one label in the same report."""
+    from lib.tablespec import PROVINCIAL_SUMMARY
+    rows, _ = E.extract(pdf(92), specs=(PROVINCIAL_SUMMARY,))
+    names = [r["zone_reported"] for r in rows if r["level"] == "province"]
+    assert "Haut Uélé" in names and "Bas Uélé" in names
+    assert not any(r["zone_reported"] == "Uélé" for r in rows)
+
+
+@needs_pdfs
+def test_summary_new_cases_column_is_read():
+    """`IGNORED` placed for the zones-touched column (which never classifies
+    as a value) swallowed `Nouveaux cas confirmés (24h)` instead: null on all
+    348 summary rows. Sitrep 020 prints Ituri 18."""
+    from lib.tablespec import PROVINCIAL_SUMMARY
+    rows, _ = E.extract(pdf(20), specs=(PROVINCIAL_SUMMARY,))
+    itu = [r for r in rows if norm(r["zone_reported"]) == "ituri"][0]
+    assert itu["new_cases"] == 18

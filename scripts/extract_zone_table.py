@@ -46,7 +46,15 @@ import polars as pl
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from lib.pdftable import read
 from lib.report_date import FILENAME, report_key
-from lib.tablespec import ALL_SPECS, Role, SPECS, TableSpec, norm, select
+from lib.tablespec import (ALL_SPECS, PROVINCIAL_SUMMARY, Role, SPECS,
+                           TableSpec, norm, rows_are_provinces, select)
+
+#: Register paths resolve against the REPOSITORY, not the working directory.
+#: A relative path here made `load_rejected_routes` return {} when the script
+#: ran from anywhere but the repo root -- no error, and sitrep 033's rejected
+#: route was silently re-admitted. A register that cannot be found must stop
+#: the build, and one that can must be found from any directory.
+ROOT = Path(__file__).resolve().parents[1]
 
 #: The three characters the reports use as a thousands separator: ASCII
 #: space, no-break space (U+00A0) and narrow no-break space (U+202F).
@@ -122,13 +130,16 @@ def to_int(s: str) -> int | None:
     return int(re.sub(f"[{SPACES}]", "", t))
 
 
-#: A row's ordinal or bullet, which is numbering rather than name. Some reports
-#: number their zone rows -- `1- Bunia`, `2- Rwampara` -- and others prefix them
-#: with a dash. Requiring a row name to begin with a letter therefore discarded
-#: EVERY zone row on those reports: sitrep 020 kept only its unallocated row and
-#: its three subtotals, five rows out of twenty-eight, and Ituri came up 265
-#: cases short. The ordinal carries no information and is dropped, not captured.
-ORDINAL = re.compile(r"^\s*(?:\d{1,2}\s*[-.\)]\s*|[-•·–]\s*)")
+#: A row's ordinal, bullet or footnote marker, which is numbering rather than
+#: name. Some reports number their zone rows -- `1- Bunia`, `2- Rwampara` --
+#: and others prefix them with a dash or a footnote star: sitrep 090 prints its
+#: Haut-Uélé summary row as `* Haut Uélé`, and requiring a row name to begin
+#: with a letter discarded it whole -- 119 cases visible only as a -119
+#: residual. (The same letter requirement once discarded EVERY numbered zone
+#: row: sitrep 020 kept five rows out of twenty-eight and Ituri came up 265
+#: cases short.) The prefix carries no information and is dropped, not
+#: captured.
+ORDINAL = re.compile(r"^\s*(?:\d{1,2}\s*[-.\)]\s*|[-•·–*†‡]\s*)+")
 
 
 def strip_ordinal(name: str) -> str:
@@ -156,7 +167,9 @@ def load_rejected_routes(path: Path, pdfs: Path) -> dict[int, str]:
     """
     import hashlib
     if not path.exists():
-        return {}
+        sys.exit(f"register not found: {path} -- a register that cannot be "
+                 "read cannot be applied, and applying nothing silently is "
+                 "how a rejected route comes back")
     out: dict[int, str] = {}
     d = pl.read_csv(path, separator="\t", comment_prefix="#",
                     infer_schema_length=None)
@@ -165,6 +178,10 @@ def load_rejected_routes(path: Path, pdfs: Path) -> dict[int, str]:
         if not hits:
             sys.exit(f"rejected-route register names sitrep {e['sitrep']}, "
                      "which is not in the archive")
+        if len(hits) > 1:
+            sys.exit(f"sitrep {e['sitrep']} matches {len(hits)} archive files "
+                     f"({', '.join(h.name for h in hits)}); the register "
+                     "cannot know which document its judgement is about")
         got = hashlib.sha256(hits[0].read_bytes()).hexdigest()[:16]
         if got != e["sha256_16"]:
             sys.exit(f"REJECTED-ROUTE ENTRY IS STALE for sitrep {e['sitrep']}: "
@@ -174,25 +191,62 @@ def load_rejected_routes(path: Path, pdfs: Path) -> dict[int, str]:
     return out
 
 
+def row_name(page, cells) -> tuple[str, str]:
+    """The row's own name and its printed parent, rejoining a name that Word
+    split across two label columns.
+
+    Two filled label cells are usually a parent beside a child -- the early
+    layout's merged province cell against a zone name -- and the rightmost cell
+    is then the row's name. But `Sous total`, `TOTAL NATIONAL` and `Haut Uélé`
+    are each ONE name that the grid sometimes splits in two, and the rightmost
+    fragment alone misnames the row: sitrep 013's provincial subtotals were
+    levelled `national` from the fragment `total`, sitrep 087's national total
+    became a health zone named `NATIONAL`, and the provincial summary filed
+    Haut-Uélé's 135 cases under a zone called `Uélé` in a province called
+    `Haut`. The joined text decides: if it names a level -- a subtotal, a
+    total, a province, an unassigned pool -- it is one split name with no
+    parent; otherwise the cells keep their parent/child reading.
+    """
+    parts = page.label_cells(cells)
+    if len(parts) >= 2:
+        joined = strip_ordinal(" ".join(parts))
+        if level_of(joined) != "zone":
+            return joined, ""
+    return strip_ordinal(page.label(cells)), page.parent(cells)
+
+
 def extract(pdf: Path, specs=SPECS) -> tuple[list[dict], str]:
     tables = read(pdf)
     if not tables:
         return [], "no_tables"
     for spec in specs:
         got = select(tables, spec)
-        if got:
-            break
+        if not got:
+            continue
+        # A ZONE SPEC MUST NOT WIN A DOCUMENT WHOSE ONLY TABLE IS THE SUMMARY.
+        # The provincial summary's heading satisfies the zone table's
+        # vocabulary (both name a province, a case count, a death count), and
+        # on 62 reports only the row-count ranking keeps it out of the zone
+        # series. On a report that prints NO per-zone table that defence
+        # vanishes: sitreps 017 and 033 print their zone data as narrative
+        # prose, the summary was the only candidate left, and it was emitted
+        # as `zone_cumulative` -- rows of provinces posing as zones. What the
+        # heading cannot decide, the rows can: a table whose own row names are
+        # mostly provinces is the summary whatever spec claimed it.
+        if (spec.name != PROVINCIAL_SUMMARY.name
+                and rows_are_provinces(got.pages[0].table)):
+            continue
+        break
     else:
         return [], "no_matching_table"
 
     rows: list[dict] = []
     for page in got.pages:
         t = page.table
+        recs: list[dict] = []
         for i in range(t.header_rows(), t.nrows):
             cells = t.row(i)
-            name = strip_ordinal(page.label(cells))
-            if not name or not re.match(r"^[A-Za-zÀ-ÿ]", name):
-                continue
+            name, parent = row_name(page, cells)
             # EVERY VALUE COLUMN IS EMITTED, present in this table or not, and
             # the distinction is carried by null. Emitting only the roles this
             # spec resolved makes the row schema depend on which table matched,
@@ -203,15 +257,47 @@ def extract(pdf: Path, specs=SPECS) -> tuple[list[dict], str]:
             # it is a quantity that table does not report, and null says so.
             vals = {r.value: (to_int(page.get(cells, r)) if r in page.roles else None)
                     for r in VALUE_ROLES}
-            if all(v is None for v in vals.values()):
+            recs.append({"name": name, "parent": parent, "vals": vals,
+                         "empty": all(v is None for v in vals.values())})
+
+        # A NAME CAN WRAP ONTO ITS OWN GRID ROWS. The row snap is tight enough
+        # that a wrapped label becomes name-fragment / numbers / name-fragment,
+        # or the label lands entirely on the row below its numbers (sitrep
+        # 090's `Haut Uélé` summary row). The numbers row then has no label,
+        # and dropping it silently lost `Echantillons sans fiche` -- 6 cases on
+        # sitreps 009 and 013, each visible only as a -6 residual. A value row
+        # with no name therefore adopts its adjacent value-less label
+        # fragments, joined in print order. Donors are short (a footnote line
+        # is a sentence, a wrapped name is not) and each donates once.
+        def named(r: dict) -> bool:
+            # A bare footnote marker in the label cell is typography, not a
+            # name: sitrep 090's Haut-Uélé summary row prints `*` beside its
+            # numbers with the name on the row below.
+            return bool(r["name"]) and bool(re.match(r"^[A-Za-zÀ-ÿ]", r["name"]))
+
+        for k, r in enumerate(recs):
+            if named(r) or r["empty"]:
+                continue
+            frags = [(kk, recs[kk]["name"]) for kk in (k - 1, k + 1)
+                     if 0 <= kk < len(recs) and recs[kk]["empty"]
+                     and named(recs[kk]) and len(recs[kk]["name"]) <= 40
+                     and not recs[kk].get("donated")]
+            if frags:
+                r["name"] = " ".join(n for _, n in sorted(frags))
+                for kk, _ in frags:
+                    recs[kk]["donated"] = True
+
+        for r in recs:
+            name = r["name"]
+            if r["empty"] or not name or not re.match(r"^[A-Za-zÀ-ÿ]", name):
                 continue
             rows.append({
                 "zone_reported": name,
-                "province_printed": page.parent(cells),
+                "province_printed": r["parent"],
                 "level": level_of(name),
                 "table": got.spec.name,
                 "page": t.page,
-                **vals,
+                **r["vals"],
             })
     return demote_repeats(rows), "ok" if rows else "no_rows"
 
@@ -249,6 +335,15 @@ def demote_repeats(rows: list[dict]) -> list[dict]:
     out: list[dict] = []
     for r in rows:
         if r["level"] != "province":
+            out.append(r)
+            continue
+        # A BARE `Sous total` IS NOT A NAME. The early layout labels every
+        # province's closing row the same way, so all of them share one key
+        # here -- and treating the second as a repeat of the first either
+        # dropped it or demoted a province total to a health zone. Which
+        # province each subtotal closes is the carry's question, not this
+        # function's; subtotals are never namesakes and pass through.
+        if SUBTOTAL.match(norm(r["zone_reported"])):
             out.append(r)
             continue
         key = norm(r["zone_reported"]).strip(MARKERS + " ")
@@ -345,8 +440,25 @@ def main() -> None:
                      f"known: {', '.join(by_name)}")
         specs = tuple(by_name[n] for n in args.spec)
 
-    rejected = load_rejected_routes(Path("registers/rejected_routes.tsv"),
+    rejected = load_rejected_routes(ROOT / "registers/rejected_routes.tsv",
                                     args.pdfs)
+
+    # A PDF THE PATTERN CANNOT NAME IS A REPORT THE EXTRACTION CANNOT SEE.
+    # An upload with no parseable date is archived as `sitrep_NNN_undated.pdf`,
+    # which passes the manifest and `make verify` -- and then silently skipped
+    # here, so a held report contributed nothing with no message anywhere.
+    # Five reports (10, 11, 21, 38, 59) have already needed date overrides for
+    # exactly this shape. The skip is now a hard failure: fix the index's date
+    # override, do not lose the report.
+    strays = sorted(p.name for p in args.pdfs.glob("*.pdf")
+                    if not FILENAME.search(p.stem))
+    if strays:
+        sys.exit("archive holds PDFs the extraction cannot recognise "
+                 "(no `sitrep_NNN_YYYY-MM-DD` name):\n  "
+                 + "\n  ".join(strays)
+                 + "\nAdd a date override in registers/sitrep_number_overrides"
+                   ".tsv and re-run the fetch; these reports would otherwise "
+                   "be silently absent from every series.")
 
     out, status = [], []
     for pdf in sorted(args.pdfs.glob("*.pdf")):
@@ -358,7 +470,12 @@ def main() -> None:
         rows, st = extract(pdf, specs)
         if rows and rejected.get(num) == rows[0]["table"]:
             rows, st = [], f"route_rejected_by_register"
-        chk = reconcile(rows) if rows else {}
+        # THE IDENTITY RUNS ON THE COLUMN THE TABLE ACTUALLY PRINTS. The daily
+        # table (sitrep 087) has no cumulative column, but its parts must still
+        # sum to its printed totals -- in the day's new cases.
+        col = ("new_cases" if rows and all(r.get("cum_cases") is None
+                                           for r in rows) else "cum_cases")
+        chk = reconcile(rows, column=col) if rows else {}
         status.append({"sitrep": num, "date": date, "status": st,
                        "rows": len(rows),
                        "table": rows[0]["table"] if rows else None,

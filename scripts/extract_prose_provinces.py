@@ -61,7 +61,17 @@ def extract(pdf: Path) -> tuple[list[dict], str]:
     text = subprocess.run(["pdftotext", "-q", "-layout", str(pdf), "-"],
                           capture_output=True, text=True).stdout
     flat = re.sub(r"\s+", " ", text)
-    m = TOTAL.search(flat)
+    # A NATIONAL TOTAL NAMES NO PROVINCE BEFORE ITS NUMBER. The same sentence
+    # shape also writes province subtotals -- sitrep 008 prints "Cumul de cas
+    # confirmés EN ITURI au 22 Mai 2026 : 82 cas", and taking the first match
+    # blindly emitted Ituri's 82 as the national figure (the true national 88
+    # is printed later on the same page). The 60-character window between the
+    # phrase and the colon is exactly where such a qualifier lives, so a match
+    # whose window names a province is a subtotal and is skipped.
+    _PROV = re.compile(r"itu?ri|kivu|u[ée]l[ée]|tshopo", re.IGNORECASE)
+    m = next((c for c in TOTAL.finditer(flat)
+              if not _PROV.search(flat[c.start():c.end() - len(c.group(1))])),
+             None)
     if not m:
         return [], "no_cumulative_sentence"
     total = _int(m.group(1))
