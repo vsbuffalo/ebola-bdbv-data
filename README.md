@@ -1,8 +1,10 @@
 # ebola-bdbv-data
 
-Extraction layer for the 2026 DRC Bundibugyo virus outbreak: from the INSP
-situation-report PDFs to analysis-ready, per-health-zone case series — every
-step a build target, every number checked against the page that printed it.
+A reproducible, automated extraction layer for the 2026 DRC Bundibugyo virus
+outbreak. This pipeline processes the raw INSP situation-report PDFs to
+analysis-ready, per-health-zone case series. Every step a build
+[Snakemake](https://snakemake.readthedocs.io/en/stable/) target, every number
+checked against the page that printed it.
 
 The companion modelling repository consumes exactly seven small TSVs from this
 one (`data/build/streams/`). Everything else here exists to make those seven
@@ -10,18 +12,18 @@ files trustworthy, and to show the work.
 
 ## Why this much care
 
-The quantity the models most need from these reports is not the case count —
-it is the fraction of confirmed deaths found in the community rather than in
-a treatment centre, the closest thing the source prints to a measurement of
-how much transmission the surveillance system is missing. In mid-August a
-plausible-looking extraction of that fraction read **1.00** for the most
-recent week: every death found in the community, isolation effectively over.
-The pages print **0.55**. The whole difference was one silently shifted
-column on one page of four consecutive reports — invisible to any reader
-that trusts a table's shape, and caught only by summing each page's rows
-against the totals the page itself prints. An epidemiological conclusion of
-the first order — *isolation has collapsed* — would have been a parsing
-artefact, at maximum leverage on the most recent data.
+The quantity the models most need from these reports is not the case count, it
+is the *fraction of confirmed deaths found in the community rather than in a
+treatment centre*, the closest thing the source prints to a measurement of how
+much transmission the surveillance system is missing. In mid-August a
+plausible-looking extraction of that fraction read **1.00** for the most recent
+week: every death found in the community, isolation effectively over. The pages
+print **0.55**. The whole difference was one silently shifted column on one
+page of four consecutive reports — invisible to any reader that trusts a
+table's shape, and caught only by summing each page's rows against the totals
+the page itself prints. An epidemiological conclusion of the first order —
+*isolation has collapsed* — would have been a parsing artefact, at maximum
+leverage on the most recent data.
 
 That is the failure class this repository is built against, and it sets the
 two rules everything else follows. Every extracted number must survive the
@@ -122,6 +124,27 @@ their headline cumulative as undergoing harmonisation — from 9 June stating
 outright that it omits confirmed cases still in the community and escapees,
 i.e. is an undercount — and sitrep 011 footnotes the deaths as
 underestimated. One row per statement in `provisional_caveat.csv`.
+
+### What each lineage carries
+
+Three machine-readable renderings of the INSP reports exist; this table is
+what each one holds, and it is why the comparison below can only run where
+coverage overlaps. The bold row is the series no other lineage has — and the
+one the ascertainment models fit.
+
+| Series | this repository | INRB-UMIE transcription | epiforecasts scan |
+| --- | --- | --- | --- |
+| cumulative confirmed cases | health zone; all 83 held reports, same-day (15 Aug) | health zone; ends 11 Aug | national only |
+| cumulative confirmed deaths | health zone, from 29 May | health zone | — |
+| daily new confirmed cases (24 h) | zone table + provincial summary column | zone, sparse (212 zone-days) | — |
+| **daily community vs treatment-centre death split** | **province rows + zone breakdown, from 13 Jul — the ascertainment streams** | **absent** | — |
+| suspected cases & deaths (early vintage) | zone; stock and flow kept as distinct roles | zone, sparse | — |
+| contact-tracing indicators (early vintage) | zone | zone, sparse | — |
+| province-level series | built from zone rows, checked against every printed province row | none — zone or national only | — |
+| national cumulative | via zone, summary and prose routes | separate national files, **including sitreps 001–004** (14–18 May; no other lineage has the first week) | cases for 70 reports, with revision notes |
+| the source's own caveats | per report, three kinds | — | partly, in free-text notes |
+| hospitalisation & point-of-entry blocks | not yet ported | zone, sparse (6–8 facility zones) | — |
+| weekly model-ready streams, identity-gated | 10 TSVs (Ituri, Nord-Kivu, **and Haut-Uélé**) + Uganda exports | — | — |
 
 ## How it is validated
 

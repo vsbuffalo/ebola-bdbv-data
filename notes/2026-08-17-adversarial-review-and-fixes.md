@@ -179,3 +179,19 @@ files from abandoned layouts, and its writer is append-only on (path, hash)
 Render pages are live on thuja:8790. The modelling repo should re-pull the
 streams: the newest observation moved on every stream (time and value), and
 the ascertainment series changed shape materially.
+
+## Addendum (model-contract check, 17 Aug)
+
+Verified against ../ebola-camdl: every observation stream the four models
+consume exists here under the same name, column layout, and file shape
+(including `deaths_split_*` as the beta-binomial denominator and
+`uganda_exports`). All current fits use PMMH/PGAS, whose particle filter
+lands EXACTLY on each observation time and scores `(previous obs, this obs]`
+-- confirmed against the camdl run spec (§14) -- so the last-report-day
+observation times are not merely compatible, they are the convention the
+engine implements. One caveat recorded: the ODE likelihood path requires the
+output schedule to contain every observation time; a future ODE fit needs
+`output { at = [...] }` aligned to the data. Obs counts are equal or better
+than the reference streams everywhere (deaths gain one early bin per
+province), values differ only where the reference disagreed with the printed
+series, and three Haut-Uele streams plus the caveat/summary series are new.
