@@ -5,10 +5,27 @@ outbreak. This pipeline processes the raw INSP situation-report PDFs to
 analysis-ready, per-health-zone case series. Every step a build (`make`)
 target, every number checked against the page that printed it.
 
-The companion modelling repository consumes seven small TSVs from this one
-(`data/build/streams/`); three more, for Haut-Uélé, are built and waiting on a
-modelling decision. Everything else here exists to make those files
+The companion modelling repository consumes the stream TSVs of
+`data/build/streams/`. Everything else here exists to make those files
 trustworthy, and to show the work.
+
+## Releases
+
+Data ships as **git tags**, named by the newest report's data date:
+`data/2026-08-15`. A tag is a claim with a gate behind it — it is cut only
+when every accounting identity holds, the full test suite passes, the
+comparison figures render, and the upstream check reports us current. A
+re-release whose newest data date is unchanged (a mid-series report the
+source listed late, a revised register judgement) appends a revision:
+`data/2026-08-15-r2`, `-r3`, … `git tag -l 'data/*'` lists what exists;
+each tag's message records the gate results it shipped under.
+
+Because everything under `data/build/` rebuilds byte-identically from the
+committed inputs, a tag pins the *data* even though the data files are not
+themselves committed: check out the tag, run `make build streams`, and you
+hold the release, verifiable file by file against the consumer's recorded
+hashes. The modelling repository vendors the streams exactly this way —
+pinned to a tag, verified by per-file sha256.
 
 ## The approach
 
@@ -138,12 +155,9 @@ a finding. That makes their shape a
 **contract, not an implementation detail**: file renames, column changes,
 and the `uganda_exports` convention (cumulative counts at bulletin dates,
 deliberately unlike the weekly-incidence streams beside it) are coordinated
-changes, announced across both repositories — never refactors. Releases are
-tagged `data/<data-date>` (the newest report's data date), gated on: every
-accounting identity holding, the comparison figures rendering, and
-`make check` returning current-or-behind. A re-release whose newest data
-date is unchanged — a mid-series report the source listed late, a register
-judgement revised — appends `-r2`, `-r3`, …
+changes, announced across both repositories — never refactors. Contract
+changes ship through the release tags described at the top, with the change
+named in the tag message.
 
 ## How the extraction works
 
