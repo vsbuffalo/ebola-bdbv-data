@@ -329,6 +329,85 @@ FLOW_LABELS = new Map([
 }
 ```
 
+## Reporting-noise diagnostics
+
+Residuals of each per-report observation against the smoothed line, computed
+in the space the smoother lives in — `log1p(observed) − log1p(smoothed)` — so
+they are centred by construction and any asymmetry that survives is real.
+**Right skew is the batching signature**: strings of under-filled reports,
+then a catch-up dump. Two caveats travel with this: the centred window smears
+(a dump drags its own smooth up and pushes its neighbours negative), and
+negative increments are the source's own revisions — they cannot enter a log
+histogram and are counted beside it instead.
+
+```{ojs}
+viewof resStream = Inputs.select(
+  ["cases_diff", "deaths_diff", "new_cases"],
+  {label: "stream", format: k => FLOW_LABELS.get(k)[0]})
+```
+
+```{ojs}
+{
+  const provs = ["Ituri", "Nord-Kivu"].filter(p => provinces.includes(p));
+  if (provs.length === 0) return html`<em>Select Ituri or Nord-Kivu above.</em>`;
+  const base = flows.filter(d => d.stream === resStream
+                            && provs.includes(d.province)
+                            && d.smooth != null && d.value != null);
+  const neg = base.filter(d => d.value < 0);
+  const res = base.filter(d => d.value >= 0)
+    .map(d => ({...d, res: Math.log1p(d.value) - Math.log1p(d.smooth),
+                weekday: d.day.toLocaleDateString("en", {weekday: "short", timeZone: "UTC"})}));
+  const stats = provs.map(p => {
+    const r = res.filter(d => d.province === p).map(d => d.res).sort(d3.ascending);
+    return {province: p, n: r.length,
+            median: d3.median(r), mean: d3.mean(r),
+            above: r.filter(v => v > 0).length / r.length};
+  });
+  const hist = Plot.plot({
+    width: 950, height: 300, marginLeft: 55,
+    color: colorScale,
+    fx: {domain: provs, label: null},
+    x: {label: "log1p(observed) − log1p(smoothed)"},
+    y: {label: "reports", grid: true},
+    marks: [
+      Plot.rectY(res, Plot.binX({y: "count"},
+        {x: "res", fx: "province", fill: "province", thresholds: 25,
+         tip: true})),
+      Plot.ruleX([0], {stroke: "#555"}),
+      Plot.ruleX(stats, {x: "median", fx: "province", stroke: "#555",
+                         strokeDasharray: "3,3"}),
+    ]
+  });
+  const wk = Plot.plot({
+    width: 950, height: 220, marginLeft: 55,
+    color: colorScale,
+    fx: {domain: provs, label: null},
+    x: {domain: ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"], label: null},
+    y: {label: "median residual", grid: true},
+    marks: [
+      Plot.ruleY([0], {stroke: "#999"}),
+      Plot.barY(res, Plot.groupX({y: "median"},
+        {x: "weekday", fx: "province", fill: "province", tip: true})),
+    ]
+  });
+  const line = stats.map(s =>
+    `<b>${s.province}</b>: n=${s.n}, median ${s.median.toFixed(3)}, ` +
+    `mean ${s.mean.toFixed(3)}, ${(100 * s.above).toFixed(0)}% above the line`)
+    .join(" · ");
+  const negline = neg.length
+    ? `<br><span style="color:#a33">${neg.length} negative increment(s) — ` +
+      `the source's own downward revisions — excluded from the histogram.</span>`
+    : "";
+  return html`<div>
+    <div class="note">${line}${negline}</div>
+    ${hist}
+    <div class="note" style="margin-top:0.8rem">Median residual by weekday —
+    a consistent weekday dip or bump is a reporting-cycle artefact, not
+    epidemiology.</div>
+    ${wk}</div>`;
+}
+```
+
 ## Weekly fitted streams
 
 The exact series the models consume, from `data/build/streams/` — weekly
