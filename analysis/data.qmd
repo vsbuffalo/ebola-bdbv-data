@@ -157,6 +157,18 @@ file carries 192.
 ![Ours against INRB-UMIE on the identity line; the disagreements, signed, over
 time.](../data/build/compare/comparison.png)
 
+```{python}
+figure("data/build/compare/comparison_series.png")
+```
+![The three lineages as series: our summed zone rows, INSP's own printed
+totals (rings), and INRB-UMIE's transcription summed through the same
+zone-to-province mapping. The bottom row is where they differ: ours − INRB
+mixes value disagreements with row-coverage gaps in their file; ours − printed
+is pure arithmetic against the page, zero except the registered source
+self-disagreements. INRB's national file agrees with ours exactly wherever
+both exist, and carries five days from sitreps 001–004 that no other lineage
+has.](../data/build/compare/comparison_series.png)
+
 ## The identity method
 
 Every extracted table is checked against the page's own arithmetic: a

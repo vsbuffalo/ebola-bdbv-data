@@ -126,9 +126,12 @@ compare:
 		--zone-table data/build/series/zone_table.csv \
 		--summary data/build/series/province_summary.csv \
 		--prose data/build/series/prose_provinces.csv \
+		--province-series data/build/series/province_series_reconciliation.csv \
+		--geojson data/raw/health_zones.geojson \
 		--inrb $(INRB_DIR) --scan $(SCAN) \
 		--out-dir data/build/compare \
-		--figure data/build/compare/comparison.png
+		--figure data/build/compare/comparison.png \
+		--series-figure data/build/compare/comparison_series.png
 	# also writes: data/build/compare/inrb_disagreements.csv
 	#              data/build/compare/scan_comparison.csv
 	#              data/build/compare/zone_comparison.csv
