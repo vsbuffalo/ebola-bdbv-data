@@ -276,6 +276,75 @@ def ascertainment(panel: pl.DataFrame,
     return weekly, vs
 
 
+#: The provinces whose streams are NOT emitted; their per-bin movement is the
+#: named remainder in the national-vs-provinces reconciliation below.
+DROPPED_PROVINCES = ("Tshopo", "Sud-Kivu", "Bas-Uélé")
+
+
+def national_printed(panel: pl.DataFrame, summary: pl.DataFrame | None,
+                     prose: pl.DataFrame | None, col: str) -> pl.DataFrame:
+    """The printed national cumulative, one value per report date, coalesced
+    zone route -> provincial summary -> prose -- the same precedence the
+    national comparison uses. BUILT FROM THE PRINTED ROWS, not by summing the
+    emitted province streams: those deliberately exclude three small
+    provinces and whatever the source has not attributed, and a national
+    series must not inherit that exclusion.
+    """
+    frames = []
+    for prio, d in enumerate(x for x in (panel, summary, prose)
+                             if x is not None and col in x.columns):
+        n = (d.filter((pl.col("level") == "national")
+                      & pl.col(col).is_not_null())
+             .group_by("date").agg(pl.col(col).last().alias("v"))
+             .with_columns(pl.lit(prio).alias("prio")))
+        frames.append(n)
+    allv = pl.concat(frames)
+    if allv.is_empty():
+        return pl.DataFrame({"date": [], "cum": []},
+                            schema={"date": pl.Date, "cum": pl.Int64})
+    return (allv.sort("prio").group_by("date").agg(pl.col("v").first())
+            .with_columns(pl.col("date").str.to_date())
+            .sort("date").rename({"v": "cum"}))
+
+
+def national_cumulative_grid(printed: pl.DataFrame) -> pl.DataFrame:
+    """The printed national values forward-filled onto a daily grid."""
+    if printed.is_empty():
+        return printed
+    lo, hi = printed["date"].min(), printed["date"].max()
+    grid = pl.DataFrame({"date": pl.date_range(lo, hi, "1d", eager=True)})
+    return (grid.join(printed, on="date", how="left")
+            .with_columns(pl.col("cum").fill_null(strategy="forward")))
+
+
+def orphan_pool_increments(panel: pl.DataFrame, col: str) -> pl.DataFrame:
+    """Per-bin movement of rows the source counts nationally but assigns to
+    no province -- the early `Echantillons sans fiche` pool, judged `none` in
+    the override register. Inside the printed national total, outside every
+    province stream; when sitrep 013 folds the pool into Ituri's subtotal its
+    exit here (-6) mirrors its entry in the Ituri stream, so the remainder
+    accounting stays closed across the hand-off. Absence on a report day is
+    zero: the pool exists only while printed.
+    """
+    dates = (panel.filter(pl.col(col).is_not_null())
+             .select(pl.col("date").str.to_date()).unique().sort("date"))
+    if dates.is_empty():
+        return pl.DataFrame({"bin": [], "count": []},
+                            schema={"bin": pl.Int64, "count": pl.Int64})
+    pool = (panel.filter((pl.col("level") == "unassigned")
+                         & pl.col("province").is_null()
+                         & pl.col(col).is_not_null())
+            .group_by("date").agg(pl.col(col).sum().alias("v"))
+            .with_columns(pl.col("date").str.to_date()))
+    d = (dates.join(pool, on="date", how="left")
+         .with_columns(pl.col("v").fill_null(0))
+         .with_columns((pl.col("v") - pl.col("v").shift(1)).alias("inc"))
+         .drop_nulls("inc")
+         .with_columns((((pl.col("date") - pl.lit(DAY0)).dt.total_days() - 1)
+                        // BIN_DAYS).alias("bin")))
+    return d.group_by("bin").agg(pl.col("inc").sum().alias("count")).sort("bin")
+
+
 def populations(geojson: Path, pop_csv: Path) -> dict[str, float]:
     """Full-province denominators: every zone in the province, affected or not.
 
@@ -314,6 +383,11 @@ def main() -> None:
     ap.add_argument("--geojson", required=True, type=Path)
     ap.add_argument("--population", required=True, type=Path)
     ap.add_argument("--out-dir", required=True, type=Path)
+    ap.add_argument("--summary", type=Path, default=None,
+                    help="province_summary.csv, so the national series covers "
+                         "the reports whose vintage dropped the zone table")
+    ap.add_argument("--prose", type=Path, default=None,
+                    help="prose_provinces.csv, for the three prose-only reports")
     args = ap.parse_args()
     args.out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -326,8 +400,14 @@ def main() -> None:
                             & pl.col("cum_cases").is_not_null())
                .group_by("province").agg(pl.col("cum_cases").max()))
 
+    summary = (pl.read_csv(args.summary, infer_schema_length=None)
+               if args.summary and args.summary.exists() else None)
+    prose = (pl.read_csv(args.prose, infer_schema_length=None)
+             if args.prose and args.prose.exists() else None)
+
     recon: dict[str, dict] = {}
     failures: list[str] = []
+    weekly_by_name: dict[str, pl.DataFrame] = {}
     for prov, slug in STREAM_PROVINCES.items():
         for col, stem in (("cum_cases", "cases"), ("cum_deaths", "deaths")):
             cum = daily_cumulative(panel, prov, col)
@@ -340,6 +420,7 @@ def main() -> None:
                 .select(pl.col("date").str.to_date()).unique()["date"])
             weekly = weekly_increments(cum, rep)
             name = f"{stem}_{slug}"
+            weekly_by_name[name] = weekly
             emitted = int(weekly["count"].sum())
             source_delta = int(cum["cum"][-1] - cum["cum"][0])
             recon[name] = {
@@ -416,6 +497,146 @@ def main() -> None:
     pv = subprocess.run(["pdftotext", "-v"], capture_output=True, text=True)
     pdftotext_version = (pv.stderr or pv.stdout).splitlines()[0].strip() \
         if (pv.stderr or pv.stdout) else "unknown"
+
+    # ------------------------------------------------------------------
+    # NATIONAL STREAMS, from the printed national rows -- never from summing
+    # the emitted province streams, which deliberately exclude the three
+    # small provinces and the unattributed pool. Same gates: emitted must
+    # equal the printed cumulative's movement exactly. And the relationship
+    # to the province streams is CHECKED, not assumed: per bin,
+    #   national = emitted provinces + dropped provinces + orphan pool
+    # is recorded in the meta file with any unattributed residue, which is
+    # the signature of an attribution or double-count defect.
+    for col, stem in (("cum_cases", "cases"), ("cum_deaths", "deaths")):
+        printed = national_printed(panel, summary, prose, col)
+        cum = national_cumulative_grid(printed)
+        if cum.is_empty():
+            continue
+        weekly = weekly_increments(cum, printed["date"])
+        name = f"{stem}_national"
+        weekly_by_name[name] = weekly
+        emitted = int(weekly["count"].sum())
+        source_delta = int(cum["cum"][-1] - cum["cum"][0])
+        recon[name] = {
+            "emitted": emitted, "source_delta": source_delta,
+            "difference": emitted - source_delta,
+            "first_date": str(cum["date"][0]),
+            "last_date": str(cum["date"][-1]),
+            "n_obs": weekly.height,
+        }
+        if emitted != source_delta:
+            failures.append(name)
+
+        # The per-bin identity against the emitted province streams.
+        prov_names = [f"{stem}_{s}" for s in STREAM_PROVINCES.values()]
+        psum = None
+        for pn in prov_names:
+            w = weekly_by_name[pn].select("bin", pl.col("count").alias(pn))
+            psum = w if psum is None else psum.join(w, on="bin", how="full",
+                                                   coalesce=True)
+        psum = psum.with_columns(
+            pl.sum_horizontal([pl.col(c).fill_null(0) for c in prov_names])
+            .alias("provinces"))
+        dropped_w = None
+        for dprov in DROPPED_PROVINCES:
+            dcum = daily_cumulative(panel, dprov, col)
+            if dcum.is_empty():
+                continue
+            drep = (panel.filter((pl.col("province") == dprov)
+                                 & pl.col("level").is_in(["zone", "unassigned"])
+                                 & pl.col(col).is_not_null())
+                    .select(pl.col("date").str.to_date()).unique()["date"])
+            dw = (weekly_increments(dcum, drep)
+                  .select("bin", pl.col("count").alias(dprov)))
+            dropped_w = dw if dropped_w is None else dropped_w.join(
+                dw, on="bin", how="full", coalesce=True)
+        dcols = [c for c in (dropped_w.columns if dropped_w is not None else [])
+                 if c != "bin"]
+        orphan = orphan_pool_increments(panel, col).rename({"count": "orphan"})
+
+        chk = (weekly.select("bin", "time", pl.col("count").alias("national"))
+               .join(psum.select("bin", "provinces"), on="bin", how="left")
+               .join(dropped_w.select(["bin"] + dcols) if dropped_w is not None
+                     else pl.DataFrame({"bin": []}, schema={"bin": pl.Int64}),
+                     on="bin", how="left")
+               .join(orphan, on="bin", how="left")
+               .with_columns([pl.col(c).fill_null(0)
+                              for c in ["provinces", "orphan"] + dcols])
+               .with_columns(
+                   (pl.col("national") - pl.col("provinces")
+                    - pl.sum_horizontal([pl.col(c) for c in dcols] or [pl.lit(0)])
+                    - pl.col("orphan")).alias("unattributed"))
+               .sort("bin"))
+        recon[name]["vs_province_sum"] = [
+            {"bin": int(r["bin"]), "time": str(r["time"]),
+             "national": int(r["national"]),
+             "emitted_provinces": int(r["provinces"]),
+             "dropped_provinces": int(sum(r[c] for c in dcols)),
+             "orphan_pool": int(r["orphan"]),
+             "unattributed": int(r["unattributed"])}
+            for r in chk.iter_rows(named=True)]
+        bad = chk.filter(pl.col("unattributed") != 0)
+        if bad.height:
+            print(f"  {name}: {bad.height} bin(s) where national != provinces "
+                  f"+ named remainder -- unattributed movement:", file=sys.stderr)
+            for r in bad.iter_rows(named=True):
+                print(f"    bin {r['bin']} ({r['time']}): "
+                      f"unattributed {r['unattributed']:+d}", file=sys.stderr)
+
+        (weekly.select(pl.col("time").dt.to_string("%Y-%m-%d"),
+                       pl.col("count").alias(name))
+         .write_csv(args.out_dir / f"{name}.tsv", separator="\t"))
+
+    # National ascertainment, from the printed national row's daily split --
+    # checked per date against the sum of the printed PROVINCE rows, the
+    # national-level identity the aggregation step does not run.
+    nat_daily = (panel.filter((pl.col("level") == "national")
+                              & pl.col("deaths_community").is_not_null()
+                              & pl.col("deaths_total").is_not_null())
+                 .with_columns(pl.col("date").str.to_date())
+                 .group_by("date")
+                 .agg(pl.col("deaths_community").last(),
+                      pl.col("deaths_total").last()))
+    if not nat_daily.is_empty():
+        prov_daily = (panel.filter((pl.col("level") == "province")
+                                   & pl.col("deaths_community").is_not_null()
+                                   & pl.col("deaths_total").is_not_null())
+                      .with_columns(pl.col("date").str.to_date())
+                      .group_by("date")
+                      .agg(pl.col("deaths_community").sum().alias("comm_p"),
+                           pl.col("deaths_total").sum().alias("total_p")))
+        chk = nat_daily.join(prov_daily, on="date", how="inner").sort("date")
+        bad = chk.filter((pl.col("deaths_community") != pl.col("comm_p"))
+                         | (pl.col("deaths_total") != pl.col("total_p")))
+        weekly = (nat_daily.with_columns(
+                      (((pl.col("date") - pl.lit(DAY0)).dt.total_days() - 1)
+                       // BIN_DAYS).alias("bin"))
+                  .group_by("bin")
+                  .agg(pl.col("deaths_community").sum(),
+                       pl.col("deaths_total").sum(),
+                       pl.col("date").max().alias("time"))
+                  .sort("bin"))
+        (weekly.select(pl.col("time").dt.to_string("%Y-%m-%d"),
+                       pl.col("deaths_community")
+                       .alias("community_deaths_national"),
+                       pl.col("deaths_total").alias("deaths_split_national"))
+         .write_csv(args.out_dir / "community_deaths_national.tsv",
+                    separator="\t"))
+        recon["community_deaths_national"] = {
+            "n_obs": weekly.height,
+            "emitted": int(weekly["deaths_community"].sum()),
+            "emitted_total": int(weekly["deaths_total"].sum()),
+            "vs_printed_daily": {
+                "n_compared": chk.height,
+                "n_equal": chk.height - bad.height,
+                "dates_disagree": [str(x) for x in bad["date"].to_list()]},
+        }
+        if bad.height:
+            print(f"  community_deaths_national: the printed national daily "
+                  f"split disagrees with the sum of the printed province rows "
+                  f"on {bad.height} of {chk.height} dates: "
+                  f"{', '.join(str(x) for x in bad['date'].to_list())}",
+                  file=sys.stderr)
 
     last = panel.filter(pl.col("date") == panel["date"].max())
     meta = {

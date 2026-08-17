@@ -87,6 +87,8 @@ build:
 streams:
 	uv run python scripts/build_streams.py \
 		--panel data/build/series/zone_table.csv \
+		--summary data/build/series/province_summary.csv \
+		--prose data/build/series/prose_provinces.csv \
 		--geojson data/raw/health_zones.geojson \
 		--population data/raw/zone_population.csv \
 		--out-dir data/build/streams
@@ -95,9 +97,11 @@ streams:
 	#   data/build/streams/cases_ituri.tsv      data/build/streams/deaths_ituri.tsv
 	#   data/build/streams/cases_nord_kivu.tsv  data/build/streams/deaths_nord_kivu.tsv
 	#   data/build/streams/cases_haut_uele.tsv  data/build/streams/deaths_haut_uele.tsv
+	#   data/build/streams/cases_national.tsv   data/build/streams/deaths_national.tsv
 	#   data/build/streams/community_deaths_ituri.tsv
 	#   data/build/streams/community_deaths_nord_kivu.tsv
 	#   data/build/streams/community_deaths_haut_uele.tsv
+	#   data/build/streams/community_deaths_national.tsv
 	#   data/build/streams/meta.json
 	uv run python scripts/build_uganda_stream.py \
 		--uganda data/raw/uganda_cases.toml \

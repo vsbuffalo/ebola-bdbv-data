@@ -126,10 +126,15 @@ committed inputs; delete it and `make build` returns it byte-identically.
 
 ### The modelling contract
 
-The eleven files of `data/build/streams/` — ten stream TSVs plus `meta.json`
-(whose `population` and `day0` fields are read too) — are vendored by the
-modelling repository, pinned to a commit of this one and verified by
-per-file sha256 against a byte-identical rebuild. That makes their shape a
+The fourteen files of `data/build/streams/` — thirteen stream TSVs (three
+provinces plus national, and the Uganda exports) plus `meta.json` (whose
+`population` and `day0` fields are read too) — are vendored by the modelling
+repository, pinned to a commit of this one and verified by per-file sha256
+against a byte-identical rebuild. The national streams are built from the
+printed national rows, never by summing the province streams; the per-bin
+identity *national = emitted provinces + dropped provinces + orphan pool +
+unattributed* is recorded in `meta.json`, and a nonzero unattributed term is
+a finding. That makes their shape a
 **contract, not an implementation detail**: file renames, column changes,
 and the `uganda_exports` convention (cumulative counts at bulletin dates,
 deliberately unlike the weekly-incidence streams beside it) are coordinated
@@ -204,7 +209,7 @@ ascertainment models fit.
 | national cumulative                                 | via zone, summary and prose routes                                          | separate national files, **including sitreps 001–004** (14–18 May; no other lineage has the first week) | cases for 70 reports, with revision notes |
 | the source's own caveats                            | per report, three kinds                                                     | —                                                                                                       | partly, in free-text notes                |
 | hospitalisation & point-of-entry blocks             | not yet ported                                                              | zone, sparse (6–8 facility zones)                                                                       | —                                         |
-| weekly model-ready streams, accounting-checked      | 10 TSVs (Ituri, Nord-Kivu, **and Haut-Uélé**) + Uganda exports              | —                                                                                                       | —                                         |
+| weekly model-ready streams, accounting-checked      | 13 TSVs (Ituri, Nord-Kivu, **Haut-Uélé, and national**) + Uganda exports    | —                                                                                                       | —                                         |
 
 ## How it is validated
 
