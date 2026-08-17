@@ -100,6 +100,7 @@ compare:
 		--figure data/build/compare/comparison.png
 	# also writes: data/build/compare/inrb_disagreements.csv
 	#              data/build/compare/scan_comparison.csv
+	#              data/build/compare/zone_comparison.csv
 
 ## figures -- OFFLINE. The EDA figures, from the built series.
 figures: 

@@ -21,3 +21,4 @@ external/
 analysis/data.html
 analysis/*_files/
 analysis/explore.html
+analysis/_explore_data.json

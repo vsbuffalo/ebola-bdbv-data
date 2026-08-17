@@ -158,6 +158,13 @@ def main() -> None:
     dis = z.filter((pl.col("diff_cases").fill_null(0) != 0)
                    | (pl.col("diff_deaths").fill_null(0) != 0))
     dis.sort(["date", "key"]).write_csv(args.out_dir / "inrb_disagreements.csv")
+    # The FULL join too, not only the disagreements: an identity-line scatter
+    # needs the agreeing mass behind the disagreeing points, or thirteen red
+    # dots float in space with no sense of the two thousand that matched.
+    (z.select("sitrep", "date", "zone_reported", "cum_cases", "inrb_cases",
+              "cum_deaths", "inrb_deaths", "diff_cases", "diff_deaths")
+     .sort(["date", "zone_reported"])
+     .write_csv(args.out_dir / "zone_comparison.csv"))
 
     n = compare_national(args.zone_table, args.summary, args.scan)
     n.write_csv(args.out_dir / "scan_comparison.csv")
