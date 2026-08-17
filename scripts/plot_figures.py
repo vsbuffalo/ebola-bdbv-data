@@ -317,9 +317,22 @@ def draw_streams_detail(inputs: dict[str, Path], out: Path) -> None:
                 cum = daily_cumulative(panel, prov, col)
                 if cum.is_empty():
                     continue
-                d = cum.with_columns(
-                    (pl.col("cum") - pl.col("cum").shift(1)).alias("v")
-                ).drop_nulls("v")
+                # ONE POINT PER REPORT, NEVER PER GRID DAY. Differencing the
+                # forward-filled daily grid manufactures a zero on every day
+                # with no report -- the fill is flat, so the difference is 0 --
+                # and those are not observations of zero, they are days the
+                # source said nothing. A zero that survives here is real: a
+                # report that printed an unchanged cumulative. The increment
+                # between consecutive reports is attributed to the report's own
+                # date, exactly as the source published it.
+                rep_dates = (panel.filter(
+                    (pl.col("province") == prov)
+                    & pl.col("level").is_in(["zone", "unassigned"])
+                    & pl.col(col).is_not_null())
+                    .select(pl.col("date").str.to_date()).unique().sort("date"))
+                d = (rep_dates.join(cum, on="date", how="inner")
+                     .with_columns((pl.col("cum") - pl.col("cum").shift(1))
+                                   .alias("v")).drop_nulls("v"))
                 xs = [mdates.date2num(x) for x in d["date"].to_list()]
                 ys = d["v"].to_list()
             else:

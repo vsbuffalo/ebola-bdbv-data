@@ -144,20 +144,41 @@ def daily_cumulative(panel: pl.DataFrame, province: str, col: str) -> pl.DataFra
                                    for c in value_cols]).alias("cum"))
 
 
-def weekly_increments(cum: pl.DataFrame) -> pl.DataFrame:
-    """Daily differences of the cumulative, binned into 7-day totals from day 0."""
+def weekly_increments(cum: pl.DataFrame,
+                      report_dates: pl.Series | None = None) -> pl.DataFrame:
+    """Daily differences of the cumulative, binned into 7-day totals from day 0.
+
+    AN EMPTY WEEK IS NOT A ZERO WEEK. The daily grid is forward-filled, so a
+    week containing no report at all would difference to a sum of exactly 0 --
+    a fabricated observation of no transmission, when the truth is no
+    observation. Each bin therefore records how many REPORT days fed it, and a
+    bin fed by none is dropped rather than emitted as 0. In the current corpus
+    every bin has reports (the widest gap is three days); the guard exists for
+    the corpus this becomes when the source pauses.
+    """
     d = cum.with_columns(
         (pl.col("cum") - pl.col("cum").shift(1)).alias("inc")).drop_nulls("inc")
     d = d.with_columns(
         (((pl.col("date") - pl.lit(DAY0)).dt.total_days() - 1)
          // BIN_DAYS).alias("bin"))
-    return (d.group_by("bin")
-            .agg(pl.col("inc").sum().alias("count"), pl.col("date").max())
-            .with_columns(
-                (pl.lit(DAY0)
-                 + pl.duration(days=(pl.col("bin") + 1) * BIN_DAYS))
-                .alias("time"))
-            .sort("bin"))
+    if report_dates is not None:
+        d = d.with_columns(pl.col("date").is_in(report_dates)
+                           .alias("_isrep"))
+    else:
+        d = d.with_columns(pl.lit(True).alias("_isrep"))
+    out = (d.group_by("bin")
+           .agg(pl.col("inc").sum().alias("count"), pl.col("date").max(),
+                pl.col("_isrep").sum().alias("n_report_days"))
+           .with_columns(
+               (pl.lit(DAY0)
+                + pl.duration(days=(pl.col("bin") + 1) * BIN_DAYS))
+               .alias("time"))
+           .sort("bin"))
+    empty = out.filter(pl.col("n_report_days") == 0)
+    if empty.height:
+        print(f"  NOTE: {empty.height} week(s) contained no report at all "
+              "and are omitted rather than emitted as zero")
+    return out.filter(pl.col("n_report_days") > 0)
 
 
 def ascertainment(panel: pl.DataFrame, province: str) -> pl.DataFrame:
@@ -232,7 +253,12 @@ def main() -> None:
             cum = daily_cumulative(panel, prov, col)
             if cum.is_empty():
                 continue
-            weekly = weekly_increments(cum)
+            rep = (parts := panel.filter(
+                (pl.col("province") == prov)
+                & pl.col("level").is_in(["zone", "unassigned"])
+                & pl.col(col).is_not_null())) \
+                .select(pl.col("date").str.to_date()).unique()["date"]
+            weekly = weekly_increments(cum, rep)
             name = f"{stem}_{slug}"
             emitted = int(weekly["count"].sum())
             source_delta = int(cum["cum"][-1] - cum["cum"][0])
