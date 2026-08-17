@@ -13,15 +13,23 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 mkdir -p logs
 
+# launchd's login shell loads .zprofile, not .zshrc, and uv lives on the
+# interactive PATH -- the first scheduled run died with `uv: No such file`.
+export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+
 TS="$(date '+%Y-%m-%d %H:%M:%S')"
-OUT="$(make check 2>&1)"
+# The checker is invoked DIRECTLY, not through make: make exits 2 on any
+# recipe failure, which is indistinguishable from the checker's own exit 2
+# (CHANGED) -- the first run's PATH failure was logged as the source moving.
+OUT="$(uv run python scripts/check_upstream.py 2>&1)"
 CODE=$?
-LABEL="CURRENT"
 case $CODE in
+  0) LABEL="CURRENT" ;;
   1) LABEL="BEHIND" ;;
   2) LABEL="CHANGED" ;;
   3) LABEL="UNREACHABLE" ;;
   4) LABEL="STALE" ;;
+  *) LABEL="ERROR" ;;
 esac
 
 {
