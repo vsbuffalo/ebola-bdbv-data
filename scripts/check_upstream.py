@@ -35,6 +35,10 @@ EXIT CODES, so a cron job or a Makefile can branch on this:
     1  behind -- new reports available
     2  changed -- the source moved; a human should look
     3  unreachable -- the API did not answer
+    4  stale -- current AND the source has published no situation report for
+       longer than --stale-days. Distinct so a --quiet cron run can see it:
+       a finding that never reached the exit code was invisible in exactly
+       the mode the docstring promised it for.
 """
 
 from __future__ import annotations
@@ -53,7 +57,7 @@ from fetch_sitrep_index import (API, EPIDEMIC_START, QUERY, _BARE, _NUM,
                                 parse_row)
 from lib.provenance import REPO_ROOT, UA
 
-OK, BEHIND, CHANGED, UNREACHABLE = 0, 1, 2, 3
+OK, BEHIND, CHANGED, UNREACHABLE, STALE = 0, 1, 2, 3, 4
 
 
 def _fetch(start: str) -> list[dict]:
@@ -79,20 +83,27 @@ def _committed(index: Path) -> tuple[set[int], dict[str, str]]:
             if r["sitrep"]:
                 nums.add(int(r["sitrep"]))
             if r["pick"] == "yes":
-                urls[r["filename"]] = r["url"]
+                urls[r["filename"]] = (r["url"],
+                                       int(r["sitrep"]) if r["sitrep"] else None)
     return nums, urls
 
 
-def _head(url: str) -> int:
-    """Status for one URL. A dead link in the committed index is a CHANGE."""
+def _head(url: str) -> tuple[int, int]:
+    """(status, content_length) for one URL; (0, -1) when the request itself
+    failed. A dead link in the committed index is a CHANGE, and a link whose
+    byte count no longer matches the manifest is a REVISION IN PLACE -- the
+    server sends Content-Length, ETag and Last-Modified on every HEAD, and
+    throwing them away made an in-place revision invisible end to end. A
+    network failure is UNVERIFIED, never 'alive': treating an exception as a
+    pass let a timeout wave a dead link through."""
     req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": UA})
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
-            return r.status
+            return r.status, int(r.headers.get("Content-Length") or -1)
     except urllib.error.HTTPError as e:
-        return e.code
+        return e.code, -1
     except Exception:
-        return 0
+        return 0, -1
 
 
 def main() -> None:
@@ -134,18 +145,26 @@ def main() -> None:
     # the same table the fetch applies, they read here as "no longer listed",
     # which is a false alarm on precisely the check that must not cry wolf.
     ov = REPO_ROOT / "registers/sitrep_number_overrides.tsv"
-    if ov.exists():
-        table = {}
-        for line in ov.read_text().splitlines():
-            if line.startswith("#") or not line.strip() or line.startswith("filename\t"):
-                continue
-            fn, num, date = line.split("\t")
-            table[fn] = (num, date)
-        for r in rows:
-            if r["filename"] in table:
-                r["sitrep"], r["data_date"] = table[r["filename"]]
+    if not ov.exists():
+        # The index fetch refuses to run without this register, and this
+        # check must not be softer than the fetch it gatekeeps.
+        say(f"CHANGED  the overrides register is missing: {ov}")
+        raise SystemExit(CHANGED)
+    table = {}
+    for line in ov.read_text().splitlines():
+        if line.startswith("#") or not line.strip() or line.startswith("filename\t"):
+            continue
+        fn, num, date = line.split("\t")
+        table[fn] = (num, date)
+    for r in rows:
+        if r["filename"] in table:
+            r["sitrep"], r["data_date"] = table[r["filename"]]
     listed = {int(r["sitrep"]) for r in rows if r["sitrep"]}
-    newest = max((e.get("date", "")[:10] for e in entries), default="")
+    # THE STALENESS CLOCK RUNS ON SITUATION REPORTS, not on uploads of any
+    # kind -- a necrology notice or a measles bulletin must not reset it.
+    # "The sitrep series stopped" and "the site is still posting other
+    # things" is exactly the discrimination this check exists to make.
+    newest = max((r["published"] for r in rows), default="")
 
     # A SITUATION REPORT WE CANNOT NUMBER -- not merely a PDF we do not want.
     # The site hosts necrology notices, infodemic bulletins and the previous
@@ -171,11 +190,36 @@ def main() -> None:
             f"FAILURE MODE THAT HID FOR ELEVEN DAYS -- do not assume the "
             f"reports were withdrawn.")
 
-    dead = []
-    for name, url in list(have_urls.items())[-args.spot_check:]:
-        code = _head(url)
-        if code not in (200, 301, 302, 0):
+    # THE SPOT-CHECK SAMPLES THE WHOLE RANGE, not only the newest picks --
+    # `items[-n:]` HEADed reports 89-93 forever and never once revisited the
+    # early archive. The newest three are always checked (they move most);
+    # the rest of the budget walks the older picks at an even stride.
+    items = list(have_urls.items())
+    sample = items[-3:]
+    older = items[:-3]
+    budget = max(0, args.spot_check - len(sample))
+    if older and budget:
+        step = max(1, len(older) // budget)
+        sample = older[::step][:budget] + sample
+
+    mf_bytes: dict[int, int] = {}
+    mf = REPO_ROOT / "data/raw/sitrep_pdfs.manifest.tsv"
+    if mf.exists():
+        for line in mf.read_text().splitlines()[1:]:
+            f, b, _sha = line.split("\t")
+            m = re.match(r"sitrep_(\d+)_", f)
+            if m:
+                mf_bytes[int(m.group(1))] = int(b)
+
+    dead, unverified, resized = [], [], []
+    for name, (url, num) in sample:
+        code, clen = _head(url)
+        if code == 0:
+            unverified.append(name)
+        elif code not in (200, 301, 302):
             dead.append((name, code))
+        elif num in mf_bytes and clen not in (-1, mf_bytes[num]):
+            resized.append((name, mf_bytes[num], clen))
     if dead:
         verdict = CHANGED
         findings.append(
@@ -183,6 +227,19 @@ def main() -> None:
             + ", ".join(f"{n} -> HTTP {c}" for n, c in dead)
             + "\n      The source re-uploads reports under new names; the old "
               "URL dies and the media entry stays. Re-run the index fetch.")
+    if resized:
+        verdict = CHANGED
+        findings.append(
+            "committed URLs whose byte count no longer matches the manifest: "
+            + ", ".join(f"{n} ({old} -> {new})" for n, old, new in resized)
+            + "\n      A REPORT REVISED IN PLACE at an unchanged URL. Every "
+              "hash-keyed register judgement is about the version we hold; "
+              "fetch the revision beside it and adjudicate.")
+    if unverified:
+        findings.append(
+            f"{len(unverified)} spot-checked URL(s) could not be reached "
+            f"({', '.join(unverified[:4])}): UNVERIFIED, not alive. Retry; a "
+            "network failure must not wave a dead link through.")
 
     if unclassified:
         verdict = max(verdict, CHANGED)
@@ -209,13 +266,16 @@ def main() -> None:
         import datetime as dt
         age = (dt.date.today() - dt.date.fromisoformat(newest)).days
         if age > args.stale_days:
+            if verdict == OK:
+                verdict = STALE
             findings.append(
-                f"the SOURCE itself has published nothing for {age} days "
-                f"(newest upload {newest}).\n"
+                f"the source has published no SITUATION REPORT for {age} days "
+                f"(newest sitrep upload {newest}).\n"
                 f"      Either reporting has paused or the site changed in a "
                 f"way that hides it. Those want different responses.")
 
-    label = {OK: "CURRENT", BEHIND: "BEHIND", CHANGED: "CHANGED"}[verdict]
+    label = {OK: "CURRENT", BEHIND: "BEHIND", CHANGED: "CHANGED",
+             STALE: "STALE"}[verdict]
     say(f"{label}  --  {len(listed)} reports listed by INSP, "
         f"{len(have_nums)} in our index, {len(on_disk)} PDFs on disk")
     say(f"          newest upload {newest or 'unknown'}; "
@@ -224,7 +284,7 @@ def main() -> None:
         say(f"\n  * {f}")
     if verdict == BEHIND:
         say("\n  To update:  make refresh      "
-            "(fetch the index, the PDFs, then rebuild)")
+            "(fetch the index and PDFs, then rebuild everything offline)")
     elif verdict == CHANGED:
         say("\n  A human should look before fetching. `make refresh` may "
             "silently do the wrong thing while the source is in this state.")

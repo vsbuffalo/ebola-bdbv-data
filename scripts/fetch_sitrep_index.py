@@ -35,6 +35,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
 import urllib.request
 from pathlib import Path
 
@@ -71,6 +72,11 @@ _NUM = re.compile(
     r"(?<![A-Za-z])N[°ºoA]*[_\s°]*(\d{1,3})(?!\d)"
     r"|MVE?BDB[_\s-]*(\d{2,3})(?!\d)", re.I)
 _DATE = re.compile(r"(?<!\d)(\d{2})[-_](\d{2})[-_](20\d{2})(?!\d)")   # 04_08_2026
+#: ISO, tried FIRST: if INSP ever standardises on YYYY-MM-DD, every report
+#: would otherwise parse as having no date at all, be archived as
+#: `sitrep_NNN_undated.pdf`, and (before that name became a hard failure)
+#: silently vanish from every series.
+_DATE_ISO = re.compile(r"(?<!\d)(20\d{2})-(\d{2})-(\d{2})(?!\d)")
 _DATE8 = re.compile(r"(?<!\d)(20\d{2})(\d{2})(\d{2})(?!\d)")          # 20260512
 _DATE_COMPACT = re.compile(r"(?<!\d)(\d{2})(\d{2})(20\d{2})(?!\d)")   # 26052026
 # DDMMYY, introduced with the MVEBDB naming: `..._086_080826.pdf` is 8 Aug 2026.
@@ -84,7 +90,13 @@ _DATE6 = re.compile(r"(?<!\d)(\d{2})(\d{2})(2[0-9])(?!\d)")           # 080826
 # boundary match silently misses those. SitRep 12's corrected re-issue is
 # exactly such a case, and it differs from the original on a real figure.
 _DRAFT = re.compile(r"draft|daft", re.I)
-_FINAL = re.compile(r"final|vf\d*|fv\d*|_ok|revised|corrige|corrigé", re.I)
+# The marker vocabulary errs BROAD: a revision marker this pattern misses
+# classifies the corrected upload as `plain`, and a plain later upload loses
+# to an earlier `final` with no warning -- the pick stays on the superseded
+# version. `corrected`, `rev`, `v2`, `MAJ` (mise à jour), `bis` and `update`
+# are all markers WordPress uploads use in the wild.
+_FINAL = re.compile(r"final|vf\d*|fv\d*|_ok|revised|corrig[eé]|corrected"
+                    r"|[_-]rev\d*\b|[_-]v\d+\b|maj|bis|update", re.I)
 
 # Non-MVE-2026 reports that the `sitrep` search also returns.
 _BARE = re.compile(r"\d{1,3}\.pdf", re.I)
@@ -139,7 +151,9 @@ def parse_row(entry: dict) -> dict | None:
     m_num = _NUM.search(name)
     num = next((g for g in m_num.groups() if g), None) if m_num else None
     date = ""
-    if m := _DATE.search(name):
+    if m := _DATE_ISO.search(name):
+        date = f"{m.group(1)}-{m.group(2)}-{m.group(3)}"
+    elif m := _DATE.search(name):
         date = f"{m.group(3)}-{m.group(2)}-{m.group(1)}"
     elif m := _DATE8.search(name):
         date = f"{m.group(1)}-{m.group(2)}-{m.group(3)}"
@@ -196,6 +210,20 @@ def choose(rows: list[dict]) -> list[str]:
         if len(group) > 1 and rank[group[0]["status"]] == rank[group[1]["status"]] \
                 and group[0]["published"] == group[1]["published"]:
             ambiguous.append(num)
+        # A LATER UPLOAD THAT LOSES ON THE MARKER IS SAID OUT LOUD. When the
+        # markers do not tie, the ranked winner may predate a newer upload --
+        # usually correctly (a re-typeset final beside an old draft), but a
+        # correction whose marker the vocabulary missed would lose silently
+        # here, and silence is the failure mode. This is a warning, not a
+        # different pick.
+        losers = [r for r in group[1:] if r["published"] > group[0]["published"]]
+        for r in losers:
+            print(f"  NOTE SitRep {num}: picked "
+                  f"{group[0]['filename']} ({group[0]['published']}, "
+                  f"{group[0]['status']}) over the LATER upload "
+                  f"{r['filename']} ({r['published']}, {r['status']}) -- "
+                  "verify the later one is not a correction",
+                  file=sys.stderr)
     return ambiguous
 
 

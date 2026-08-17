@@ -36,14 +36,21 @@ import sys
 from pathlib import Path
 
 # The reports spell the month in French, with inconsistent capitalisation and
-# accents ("31 mai 2026", "01 Juin 2026", "03 juillet 2026").
+# accents ("31 mai 2026", "01 Juin 2026", "03 juillet 2026") -- and the
+# standard abbreviations, against the day the source starts using them:
+# sitrep 048 already prints the bare "1 juillet 2026", so "1er" and "sept."
+# are one typesetting decision away, and either would have stopped the whole
+# build (a failure here is total, deliberately).
 MONTHS = {
-    "janvier": 1, "fevrier": 2, "février": 2, "mars": 3, "avril": 4, "mai": 5,
-    "juin": 6, "juillet": 7, "aout": 8, "août": 8, "septembre": 9,
-    "octobre": 10, "novembre": 11, "decembre": 12, "décembre": 12,
+    "janvier": 1, "janv": 1, "fevrier": 2, "février": 2, "fevr": 2, "févr": 2,
+    "mars": 3, "avril": 4, "avr": 4, "mai": 5, "juin": 6, "juillet": 7,
+    "juil": 7, "aout": 8, "août": 8, "septembre": 9, "sept": 9,
+    "octobre": 10, "oct": 10, "novembre": 11, "nov": 11,
+    "decembre": 12, "décembre": 12, "dec": 12, "déc": 12,
 }
 
-_DATE = r"(\d{1,2})\s+([A-Za-zÀ-ÿ]+)\.?\s+(\d{4})"
+# `1er juin` is standard French for the first of the month.
+_DATE = r"(\d{1,2})(?:er)?\s+([A-Za-zÀ-ÿ]+)\.?\s+(\d{4})"
 RAPPORTAGE = re.compile(rf"date\s+de\s+rapportage\s*:?\s*{_DATE}", re.I)
 PUBLICATION = re.compile(rf"date\s+de\s+publication\s*:?\s*{_DATE}", re.I)
 

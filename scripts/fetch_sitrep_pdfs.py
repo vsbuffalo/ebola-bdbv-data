@@ -60,11 +60,41 @@ def main() -> None:
         held[hashlib.sha256(f.read_bytes()).hexdigest()] = f
 
     got = skipped = renamed = failed = 0
+    revised: list[str] = []
     for r in rows:
         date = r["data_date"] or "undated"
         dest = out / f"sitrep_{int(r['sitrep']):03d}_{date}.pdf"
         if dest.exists():
-            skipped += 1
+            # A HELD NAME IS NOT A HELD DOCUMENT. Skipping on the filename
+            # alone is blind to revision in both of its forms: a corrected
+            # upload re-picked under a NEW url usually shares the data date,
+            # so it maps to this same canonical name -- the committed index
+            # already has that exact shape for sitrep 012 -- and a report
+            # revised IN PLACE keeps its url entirely. The held file is
+            # therefore checked against what the pick URL currently serves,
+            # by size first (a HEAD request; the server sends Content-Length)
+            # and by bytes if the size matches nothing we can rule out. A
+            # difference is never silently resolved in either direction: a
+            # revision changes what every register judgement was ABOUT, so it
+            # stops the fetch and asks for adjudication.
+            try:
+                import urllib.request
+                req = urllib.request.Request(r["url"], method="HEAD")
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    clen = int(resp.headers.get("Content-Length") or -1)
+            except Exception as exc:  # noqa: BLE001
+                print(f"  SitRep {r['sitrep']}: held, but the pick URL could "
+                      f"not be checked ({type(exc).__name__}) -- treating as "
+                      "unverified, NOT as current", file=sys.stderr)
+                failed += 1
+                continue
+            if clen == dest.stat().st_size:
+                skipped += 1
+                continue
+            revised.append(
+                f"  sitrep {r['sitrep']}: held {dest.name} is "
+                f"{dest.stat().st_size} bytes; the pick URL now serves "
+                f"{clen} bytes ({r['url']})")
             continue
         try:
             payload = fetch(r["url"], dest)
@@ -99,6 +129,19 @@ def main() -> None:
     print(f"downloaded {got}, already present {skipped}, "
           f"already held under another name {renamed}, failed {failed}")
     print(f"  {total} PDFs in {out.relative_to(REPO_ROOT)}")
+    if revised:
+        sys.exit("THE SOURCE HAS REVISED REPORTS WE HOLD:\n"
+                 + "\n".join(revised)
+                 + "\nNothing was replaced. Download the revision beside the "
+                   "held copy, read both, and adjudicate: every hash-keyed "
+                   "register judgement is about ONE version of a document.")
+    undated = sorted(f.name for f in out.glob("sitrep_*_undated.pdf"))
+    if undated:
+        sys.exit("archive holds reports with no data date: "
+                 + ", ".join(undated)
+                 + "\nAdd a date override in registers/sitrep_number_overrides"
+                   ".tsv -- the extraction refuses undated names, so these "
+                   "reports contribute nothing until dated.")
     if failed:
         raise SystemExit(1)
 
@@ -131,21 +174,28 @@ def _write_manifest(out_dir: Path, want_nums: set[int], manifest: Path) -> None:
     import hashlib
     import re as _re
     files = sorted(out_dir.glob("*.pdf"))
-    rows, by_num = [], {}
+    rows, by_num, unnamed = [], {}, []
     for f in files:
         h = hashlib.sha256(f.read_bytes()).hexdigest()
         rows.append({"file": f.name, "bytes": f.stat().st_size, "sha256": h})
         m = _re.match(r"sitrep_(\d+)_", f.name)
         if m:
             by_num.setdefault(int(m.group(1)), []).append(f.name)
+        else:
+            # A file the pattern cannot NAME would escape both directions of
+            # this reconciliation -- in the manifest (so `verify` blesses it)
+            # yet in no number bucket (so it is never stray) -- and the
+            # extraction would then read or skip it unchecked.
+            unnamed.append(f.name)
     missing = sorted(want_nums - by_num.keys())
     stray = sorted(n for n in by_num if n not in want_nums)
     doubled = {n: v for n, v in by_num.items() if len(v) > 1}
-    if missing or stray or doubled:
+    if missing or stray or doubled or unnamed:
         sys.exit(f"archive does not match the index.\n"
                  f"  in the index, no file: {missing}\n"
                  f"  file, not in the index: {stray}\n"
-                 f"  report held more than once: {doubled}")
+                 f"  report held more than once: {doubled}\n"
+                 f"  file the naming pattern cannot place: {unnamed}")
     manifest.parent.mkdir(parents=True, exist_ok=True)
     with manifest.open("w", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=["file", "bytes", "sha256"],

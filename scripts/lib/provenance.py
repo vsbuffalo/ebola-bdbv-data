@@ -64,22 +64,25 @@ def record(dest: Path, url: str) -> None:
 
 
 def _record(dest: Path, url: str, payload: bytes) -> None:
+    """Append-only, keyed on (path, sha256).
+
+    The log used to overwrite on path alone -- so re-fetching a path REPLACED
+    the previous hash, and the one place a revised document would have left a
+    trace destroyed it. Now a path re-fetched with the same bytes refreshes
+    its row, and one re-fetched with DIFFERENT bytes gains a second row: the
+    pair of rows is the record that the source changed.
+    """
     rel = dest.resolve().relative_to(REPO_ROOT).as_posix()
-    row = "\t".join(
-        [
-            rel,
-            url,
-            hashlib.sha256(payload).hexdigest(),
-            str(len(payload)),
-            dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d"),
-        ]
-    )
+    sha = hashlib.sha256(payload).hexdigest()
+    row = "\t".join([rel, url, sha, str(len(payload)),
+                     dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d")])
     PROVENANCE.parent.mkdir(parents=True, exist_ok=True)
-    existing = {}
+    existing: dict[tuple[str, str], str] = {}
     if PROVENANCE.exists():
-        lines = PROVENANCE.read_text().splitlines()
-        for line in lines[1:]:
+        for line in PROVENANCE.read_text().splitlines()[1:]:
             if line.strip():
-                existing[line.split("\t", 1)[0]] = line
-    existing[rel] = row
-    PROVENANCE.write_text(_HEADER + "\n".join(existing[k] for k in sorted(existing)) + "\n")
+                parts = line.split("\t")
+                existing[(parts[0], parts[2] if len(parts) > 2 else "")] = line
+    existing[(rel, sha)] = row
+    PROVENANCE.write_text(
+        _HEADER + "\n".join(existing[k] for k in sorted(existing)) + "\n")
