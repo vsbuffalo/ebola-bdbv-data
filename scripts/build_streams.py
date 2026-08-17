@@ -19,11 +19,15 @@ column is the source's own downward revision -- sitrep 073 prints Katwa's
 daily deaths as `-2` under a note declaring two deaths removed -- and clipping
 it would keep cases the source deleted, erring upward only.
 
-THE TRAILING PARTIAL BIN IS KEPT. It was once dropped so a short final bin
-could not read as a fall in transmission, but an engine that accumulates
-between consecutive observation times scores a five-day interval against five
-days; the reference pipeline records that the drop cost 298 Ituri cases, the
-five most recent days of the outbreak.
+THE TRAILING PARTIAL BIN IS KEPT, AND EVERY BIN'S OBSERVATION TIME IS ITS
+LAST REPORT DAY. An engine that accumulates between consecutive observation
+times scores the window (previous time, this time], so a four-day trailing
+bin under a seven-day nominal label reads as a 43% fall in daily rate that
+did not happen -- which is exactly what the streams showed before the times
+were fixed. With last-report-day times, every window's length equals the
+span its count covers, partial bins included. (Dropping the partial bin
+instead was measured by the reference pipeline to cost 298 Ituri cases, the
+most recent days of the outbreak.)
 
 THE IDENTITY THAT GATES THE OUTPUT
 What is emitted must sum to what the source's cumulative moved:
@@ -132,10 +136,32 @@ def daily_cumulative(panel: pl.DataFrame, province: str, col: str) -> pl.DataFra
         .map_elements(lambda r: canonical_zone(r["zone_reported"], r["level"]),
                       return_dtype=pl.Utf8).alias("zkey"))
     for key in parts["zkey"].unique().to_list():
+        if key == "unassigned":
+            continue
         z = (parts.filter(pl.col("zkey") == key)
              .group_by("date").agg(pl.col(col).last())
              .rename({col: f"v_{key}"}))
         wide = wide.join(z, on="date", how="left")
+
+    # THE UNASSIGNED POOL IS NOT A ZONE, AND IT NEEDS TWO DIFFERENT RULES.
+    # Within a report it is a SUM: one report can print two pool rows at once
+    # (sitrep 015: `ZS non identifiée` 6 beside `Sans fiche` 14), and
+    # last-value-wins silently dropped one. Across reports its absence is
+    # ZERO, not the previous value: a zone missing from a report is a zone
+    # whose count did not change, but a pool row the source stops printing is
+    # a pool the source has stopped counting -- Ituri's `Non identifiées = 17`
+    # last printed on 21 July forward-filled for 23 days while every printed
+    # province total already excluded it, then retired as a -17 revision
+    # inside the newest week when the source finally printed `A ventiler = 0`.
+    # So on any report day that carries this province's rows, the pool is
+    # what the report printed, and nothing when it printed nothing.
+    rep_dates = parts.select("date").unique()
+    pool = (parts.filter(pl.col("zkey") == "unassigned")
+            .group_by("date").agg(pl.col(col).sum().alias("v_unassigned")))
+    pool = (rep_dates.join(pool, on="date", how="left")
+            .with_columns(pl.col("v_unassigned").fill_null(0)))
+    wide = wide.join(pool, on="date", how="left")
+
     value_cols = [c for c in wide.columns if c.startswith("v_")]
     wide = wide.with_columns([pl.col(c).fill_null(strategy="forward")
                               for c in value_cols])
@@ -148,13 +174,24 @@ def weekly_increments(cum: pl.DataFrame,
                       report_dates: pl.Series | None = None) -> pl.DataFrame:
     """Daily differences of the cumulative, binned into 7-day totals from day 0.
 
+    THE OBSERVATION TIME IS THE BIN'S LAST REPORT DAY, not the bin's nominal
+    calendar end. An engine that accumulates between consecutive observation
+    times scores the window (previous time, this time], and the bin's counts
+    all fall on its report days -- so last-report-day times make every
+    window's length equal the span its count actually covers. Labelling with
+    the nominal end instead stretched the trailing window: the last bin held
+    four days of data under a seven-day label, every stream's newest point
+    read 43% low in daily rate, and all six streams showed a fall where five
+    had risen. (The same arithmetic understates a late-starting stream's
+    FIRST bin, and any interior bin whose last days went unreported.)
+
     AN EMPTY WEEK IS NOT A ZERO WEEK. The daily grid is forward-filled, so a
     week containing no report at all would difference to a sum of exactly 0 --
     a fabricated observation of no transmission, when the truth is no
     observation. Each bin therefore records how many REPORT days fed it, and a
-    bin fed by none is dropped rather than emitted as 0. In the current corpus
-    every bin has reports (the widest gap is three days); the guard exists for
-    the corpus this becomes when the source pauses.
+    bin fed by none is dropped rather than emitted as 0. The widest gap so
+    far is five days (5-10 August); the guard exists for the corpus this
+    becomes when the source pauses longer.
     """
     d = cum.with_columns(
         (pl.col("cum") - pl.col("cum").shift(1)).alias("inc")).drop_nulls("inc")
@@ -162,17 +199,14 @@ def weekly_increments(cum: pl.DataFrame,
         (((pl.col("date") - pl.lit(DAY0)).dt.total_days() - 1)
          // BIN_DAYS).alias("bin"))
     if report_dates is not None:
-        d = d.with_columns(pl.col("date").is_in(report_dates)
+        d = d.with_columns(pl.col("date").is_in(report_dates.to_list())
                            .alias("_isrep"))
     else:
         d = d.with_columns(pl.lit(True).alias("_isrep"))
     out = (d.group_by("bin")
-           .agg(pl.col("inc").sum().alias("count"), pl.col("date").max(),
+           .agg(pl.col("inc").sum().alias("count"),
+                pl.col("date").filter(pl.col("_isrep")).max().alias("time"),
                 pl.col("_isrep").sum().alias("n_report_days"))
-           .with_columns(
-               (pl.lit(DAY0)
-                + pl.duration(days=(pl.col("bin") + 1) * BIN_DAYS))
-               .alias("time"))
            .sort("bin"))
     empty = out.filter(pl.col("n_report_days") == 0)
     if empty.height:
@@ -181,40 +215,83 @@ def weekly_increments(cum: pl.DataFrame,
     return out.filter(pl.col("n_report_days") > 0)
 
 
-def ascertainment(panel: pl.DataFrame, province: str) -> pl.DataFrame:
-    """Weekly community-death count beside the week's total split deaths.
+def ascertainment(panel: pl.DataFrame,
+                  province: str) -> tuple[pl.DataFrame, dict]:
+    """Weekly community-death count beside the week's total split deaths,
+    and the check of both against the printed province rows.
 
-    From the daily ascertainment block, which begins 13 July: `deaths_community`
-    are confirmed deaths that occurred in the community (post-mortem swab; the
-    person was never isolated) and `deaths_total` is the day's confirmed deaths
-    however ascertained. Weeks are the same bins as the incidence streams.
-    Reports are daily, so summing the 24-hour columns over a week's reports is
-    the week's count; a missing report inside a week under-counts BOTH columns
-    together, leaving their ratio -- the quantity the model fits -- unbiased.
+    From the daily ascertainment block, which begins 13 July:
+    `deaths_community` are confirmed deaths that occurred in the community
+    (post-mortem swab; the person was never isolated) and `deaths_total` is
+    the day's confirmed deaths however ascertained. Weeks are the same bins as
+    the incidence streams, with the same last-report-day observation times.
+
+    THE INPUT IS THE PRINTED PROVINCE ROW, AND THE ZONE SUM IS THE CHECK --
+    the reverse of the cumulative streams, for a reason the cumulative
+    streams do not have. A zone-summed daily figure exists only over the rows
+    that print BOTH columns, and that row filter is a SELECTION: a day whose
+    rows print totals without community figures (sitrep 088's `A ventiler`
+    row carries 59 deaths and no split) is not "a missing report" that
+    undercounts both columns together -- it is a denominator truncated on a
+    criterion correlated with the quantity being estimated. A column shift
+    did exactly that on the last four reports (every surviving row had
+    community == total by construction) and the emitted final-week fraction
+    read 1.000 against a printed 0.55. The printed province row states both
+    columns whole; its agreement with the zone rows, where they print a full
+    breakdown, is checked at the aggregation step and again here, and the
+    dates where the two disagree go into the meta file.
     """
-    d = panel.filter((pl.col("province") == province)
-                     & pl.col("level").is_in(["zone", "unassigned"])
-                     & pl.col("deaths_community").is_not_null()
-                     & pl.col("deaths_total").is_not_null())
-    if d.is_empty():
-        return pl.DataFrame()
-    d = (d.with_columns(pl.col("date").str.to_date())
-         .group_by("date")
-         .agg(pl.col("deaths_community").sum(), pl.col("deaths_total").sum())
-         .with_columns(
-             (((pl.col("date") - pl.lit(DAY0)).dt.total_days() - 1)
-              // BIN_DAYS).alias("bin")))
-    return (d.group_by("bin")
-            .agg(pl.col("deaths_community").sum(), pl.col("deaths_total").sum())
-            .with_columns(
-                (pl.lit(DAY0)
-                 + pl.duration(days=(pl.col("bin") + 1) * BIN_DAYS))
-                .alias("time"))
-            .sort("bin"))
+    printed = (panel.filter((pl.col("province") == province)
+                            & (pl.col("level") == "province")
+                            & pl.col("deaths_community").is_not_null()
+                            & pl.col("deaths_total").is_not_null())
+               .with_columns(pl.col("date").str.to_date())
+               .group_by("date")
+               .agg(pl.col("deaths_community").last(),
+                    pl.col("deaths_total").last()))
+    if printed.is_empty():
+        return pl.DataFrame(), {}
+    zoned = (panel.filter((pl.col("province") == province)
+                          & pl.col("level").is_in(["zone", "unassigned"])
+                          & pl.col("deaths_community").is_not_null()
+                          & pl.col("deaths_total").is_not_null())
+             .with_columns(pl.col("date").str.to_date())
+             .group_by("date")
+             .agg(pl.col("deaths_community").sum().alias("comm_zones"),
+                  pl.col("deaths_total").sum().alias("total_zones")))
+    chk = printed.join(zoned, on="date", how="inner").sort("date")
+    bad = chk.filter((pl.col("deaths_community") != pl.col("comm_zones"))
+                     | (pl.col("deaths_total") != pl.col("total_zones")))
+    vs = {"n_compared": chk.height,
+          "n_equal": chk.height - bad.height,
+          "dates_disagree": [str(x) for x in bad["date"].to_list()]}
+    weekly = (printed.with_columns(
+                  (((pl.col("date") - pl.lit(DAY0)).dt.total_days() - 1)
+                   // BIN_DAYS).alias("bin"))
+              .group_by("bin")
+              .agg(pl.col("deaths_community").sum(),
+                   pl.col("deaths_total").sum(),
+                   pl.col("date").max().alias("time"))
+              .sort("bin"))
+    return weekly, vs
 
 
 def populations(geojson: Path, pop_csv: Path) -> dict[str, float]:
-    """Full-province denominators: every zone in the province, affected or not."""
+    """Full-province denominators: every zone in the province, affected or not.
+
+    Accent folding runs on BOTH sides, through one folding function. The old
+    comparison folded one accent on one side only, so a geojson spelling
+    `Haut-Uélé` produced a denominator of ZERO -- `sum()` over an empty
+    generator -- and the zero went into the meta file as a population. A
+    denominator of zero is never a population; it stops the build.
+    """
+    import unicodedata
+
+    def fold(s: str) -> str:
+        t = unicodedata.normalize("NFKD", s or "")
+        t = "".join(c for c in t if not unicodedata.combining(c))
+        return t.lower().replace("-", " ").strip()
+
     geo = json.loads(geojson.read_text())
     zone_prov = {f["properties"]["nom"]: f["properties"]["province"]
                  for f in geo["features"]}
@@ -222,8 +299,11 @@ def populations(geojson: Path, pop_csv: Path) -> dict[str, float]:
     out: dict[str, float] = {}
     for prov, slug in STREAM_PROVINCES.items():
         total = sum(v for z, v in pop.items()
-                    if zone_prov.get(z, "").lower().replace("-", " ")
-                    == prov.lower().replace("é", "e").replace("-", " "))
+                    if fold(zone_prov.get(z, "")) == fold(prov))
+        if not total > 0:
+            sys.exit(f"population for {prov} came out {total}: the geojson "
+                     "province spellings no longer match STREAM_PROVINCES, "
+                     "and zero is not a population")
         out[slug] = total
     return out
 
@@ -253,11 +333,11 @@ def main() -> None:
             cum = daily_cumulative(panel, prov, col)
             if cum.is_empty():
                 continue
-            rep = (parts := panel.filter(
+            rep = (panel.filter(
                 (pl.col("province") == prov)
                 & pl.col("level").is_in(["zone", "unassigned"])
-                & pl.col(col).is_not_null())) \
-                .select(pl.col("date").str.to_date()).unique()["date"]
+                & pl.col(col).is_not_null())
+                .select(pl.col("date").str.to_date()).unique()["date"])
             weekly = weekly_increments(cum, rep)
             name = f"{stem}_{slug}"
             emitted = int(weekly["count"].sum())
@@ -284,7 +364,7 @@ def main() -> None:
                                     & pl.col(col).is_not_null())
                        .group_by("date").agg(pl.col(col).last())
                        .with_columns(pl.col("date").str.to_date()))
-            chk = (cum.join(printed, on="date", how="inner")
+            chk = (cum.join(printed, on="date", how="inner").sort("date")
                    .with_columns((pl.col("cum") - pl.col(col)).alias("gap")))
             if chk.height:
                 worst = chk.sort(pl.col("gap").abs(), descending=True).row(0)
@@ -299,7 +379,7 @@ def main() -> None:
                            pl.col("count").alias(name))
              .write_csv(args.out_dir / f"{name}.tsv", separator="\t"))
 
-        asc = ascertainment(panel, prov)
+        asc, asc_vs = ascertainment(panel, prov)
         if not asc.is_empty():
             (asc.select(pl.col("time").dt.to_string("%Y-%m-%d"),
                         pl.col("deaths_community")
@@ -307,6 +387,19 @@ def main() -> None:
                         pl.col("deaths_total").alias(f"deaths_split_{slug}"))
              .write_csv(args.out_dir / f"community_deaths_{slug}.tsv",
                         separator="\t"))
+            recon[f"community_deaths_{slug}"] = {
+                "n_obs": asc.height,
+                "emitted": int(asc["deaths_community"].sum()),
+                "emitted_total": int(asc["deaths_total"].sum()),
+                "vs_printed_daily": asc_vs,
+            }
+            if asc_vs.get("dates_disagree"):
+                print(f"  community_deaths_{slug}: zone-summed daily split "
+                      f"deaths disagree with the printed province row on "
+                      f"{len(asc_vs['dates_disagree'])} of "
+                      f"{asc_vs['n_compared']} dates: "
+                      f"{', '.join(asc_vs['dates_disagree'])}",
+                      file=sys.stderr)
 
     last = panel.filter(pl.col("date") == panel["date"].max())
     meta = {
@@ -324,6 +417,12 @@ def main() -> None:
                                                        sort_keys=True) + "\n")
 
     for name, r in sorted(recon.items()):
+        if "source_delta" not in r:      # an ascertainment stream
+            av = r["vs_printed_daily"]
+            print(f"  {name:<22} {r['n_obs']:>3} obs   community {r['emitted']:>4} "
+                  f"of {r['emitted_total']:>4}   vs printed daily: "
+                  f"{av['n_equal']}/{av['n_compared']} equal")
+            continue
         flag = "" if r["difference"] == 0 else "   <-- DOES NOT RECONCILE"
         vp = r.get("vs_printed", {})
         vs = (f"   vs printed: {vp['n_equal']}/{vp['n_compared']} equal, "

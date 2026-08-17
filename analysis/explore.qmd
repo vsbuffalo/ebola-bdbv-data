@@ -111,20 +111,15 @@ panel = carry_province(load("data/build/series/zone_table.csv"))
 date2rep = dict(st.select("date", "sitrep").iter_rows())
 
 
+# The one smoother, imported -- a copy here drifted from the figure's once
+# already (the copy clipped negative revisions to zero inside the window,
+# which manufactured the right skew the residual section then reported).
+from plot_figures import _roll_geomean  # noqa: E402
+
+
 def _smooth(vals, days, window=7, max_gap=4):
-    """Centred rolling geometric mean, broken across reporting gaps -- the
-    same construction as the static figure, computed here so the page and the
-    PNG cannot drift apart in what their lines mean."""
-    import math
-    out = []
-    for i in range(len(vals)):
-        lo, hi = max(0, i - window // 2), min(len(vals), i + window // 2 + 1)
-        vs = [math.log1p(max(v, 0)) for v in vals[lo:hi] if v is not None]
-        if i > 0 and (days[i] - days[i - 1]).days > max_gap:
-            out.append(None)
-            continue
-        out.append(math.expm1(sum(vs) / len(vs)) if vs else None)
-    return out
+    xs = [d.toordinal() for d in days]
+    return _roll_geomean(xs, vals, window=window, max_gap=float(max_gap))
 
 
 import datetime as _dt
@@ -332,13 +327,17 @@ FLOW_LABELS = new Map([
 ## Reporting-noise diagnostics
 
 Residuals of each per-report observation against the smoothed line, computed
-in the space the smoother lives in — `log1p(observed) − log1p(smoothed)` — so
-they are centred by construction and any asymmetry that survives is real.
-**Right skew is the batching signature**: strings of under-filled reports,
-then a catch-up dump. Two caveats travel with this: the centred window smears
-(a dump drags its own smooth up and pushes its neighbours negative), and
-negative increments are the source's own revisions — they cannot enter a log
-histogram and are counted beside it instead.
+in the space the smoother lives in — `log1p(observed) − log1p(smoothed)`.
+Read the shape, not the mean: the window includes the point itself and
+truncates at the edges, so the residuals are only approximately centred.
+A strong right skew *would* be the batching signature — strings of
+under-filled reports, then a catch-up dump — but treat any asymmetry here
+with suspicion: an earlier version of this page reported Ituri at +0.62,
+and all of it was two of the source's negative revisions being clipped to
+zero inside the smoother window, lifting every neighbouring residual.
+Excluded properly, both provinces are near-symmetric. Negative increments
+are the source's own revisions: they enter neither the histogram nor any
+smoother window, and are counted beside the plot instead.
 
 ```{ojs}
 viewof resStream = Inputs.select(

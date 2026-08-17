@@ -42,8 +42,32 @@ from pathlib import Path
 
 import polars as pl
 
+#: Register paths resolve against the REPOSITORY, not the working directory.
+#: With CWD-relative defaults, running this step from any other directory made
+#: `load_province_overrides` return {} -- no error -- and Nord-Kivu's early
+#: series went off by six times on sitrep 009, on exactly the reports where no
+#: printed total can catch it. A register that cannot be found stops the
+#: build; one that can must be found from any directory.
+ROOT = Path(__file__).resolve().parents[1]
+
 REGISTER_COLUMNS = ("sitrep", "date", "sha256_16", "unit", "column",
                     "expected_gap", "verified_by", "note")
+
+
+def _archive_pdf(pdfs: Path, sitrep: int, register: str) -> Path:
+    """The one archive file a register entry is about, or a loud stop."""
+    hits = sorted(pdfs.glob(f"sitrep_{int(sitrep):03d}_*.pdf"))
+    if not hits:
+        raise SystemExit(
+            f"{register} names sitrep {sitrep}, which is not in the archive; "
+            "an entry that cannot be verified against its document cannot be "
+            "applied")
+    if len(hits) > 1:
+        raise SystemExit(
+            f"sitrep {sitrep} matches {len(hits)} archive files "
+            f"({', '.join(h.name for h in hits)}); {register} cannot know "
+            "which document its judgement is about")
+    return hits[0]
 
 
 def load_exceptions(path: Path, pdfs: Path | None) -> pl.DataFrame:
@@ -75,20 +99,25 @@ def load_exceptions(path: Path, pdfs: Path | None) -> pl.DataFrame:
             "their hashes cannot be verified. An exception not tied to a "
             "document is a suppression; pass --pdfs or move the register aside.")
 
-    stale, absent = [], []
+    stale = []
+    seen_keys: set[tuple] = set()
     for e in ex.iter_rows(named=True):
-        hits = sorted(pdfs.glob(f"sitrep_{int(e['sitrep']):03d}_*.pdf"))
-        if not hits:
-            absent.append(e)
-            continue
-        got = hashlib.sha256(hits[0].read_bytes()).hexdigest()[:16]
+        key = (int(e["sitrep"]), e["unit"], e["column"])
+        if key in seen_keys:
+            raise SystemExit(
+                f"{path}: duplicate entry for sitrep {e['sitrep']} "
+                f"{e['unit']}/{e['column']} -- two licensed gaps for one "
+                "identity contradict each other; keep one.")
+        seen_keys.add(key)
+        if e["unit"] != "national" and canonical_province(e["unit"]) is None:
+            raise SystemExit(
+                f"{path}: sitrep {e['sitrep']} names unit {e['unit']!r}, "
+                "which is neither `national` nor a known province spelling -- "
+                "the entry could never match anything and would sit silently.")
+        f = _archive_pdf(pdfs, e["sitrep"], str(path))
+        got = hashlib.sha256(f.read_bytes()).hexdigest()[:16]
         if got != e["sha256_16"]:
-            stale.append((e, got, hits[0].name))
-    if absent:
-        raise SystemExit(
-            "the exception register names reports that are not in the archive:\n"
-            + "\n".join(f"  sitrep {e['sitrep']} ({e['unit']}, {e['column']})"
-                        for e in absent))
+            stale.append((e, got, f.name))
     if stale:
         lines = "\n".join(
             f"  sitrep {e['sitrep']} {name}: register says {e['sha256_16']}, "
@@ -146,31 +175,54 @@ def canonical_province(name: str) -> str | None:
     return PROVINCE_ALIASES.get(s)
 
 
-def load_province_overrides(path: Path = Path("registers/zone_province_overrides.tsv"),
-                            pdfs: Path = Path("data/raw/sitrep_pdfs")) -> dict:
+def load_province_overrides(path: Path = ROOT / "registers/zone_province_overrides.tsv",
+                            pdfs: Path = ROOT / "data/raw/sitrep_pdfs") -> dict:
     """Rows whose province the page states in words -- see the register itself.
 
-    Hash-verified like every register. Applied AFTER the carry, so an override
-    is a correction the register can be audited against, not an input the carry
-    quietly depends on.
+    Hash-verified like every register, AND FAIL-CLOSED LIKE EVERY REGISTER: a
+    register file that cannot be read, an entry whose document is absent, or a
+    province spelling outside the closed set each stop the build. This loader
+    used to shrug at all three -- a missing file loaded as zero overrides with
+    no message, an absent PDF let the entry apply unverified, and an unknown
+    spelling would have minted a new province -- and the failures land on the
+    `not_checkable` early reports where nothing downstream can notice.
+
+    Applied AFTER the carry, so an override is a correction the register can
+    be audited against, not an input the carry quietly depends on.
     """
     if not path.exists():
-        return {}
+        raise SystemExit(
+            f"register not found: {path} -- applying zero overrides silently "
+            "is how Nord-Kivu's early series went wrong by six times")
     d = pl.read_csv(path, separator="\t", comment_prefix="#",
                     infer_schema_length=None)
     out = {}
     for e in d.iter_rows(named=True):
-        hits = sorted(pdfs.glob(f"sitrep_{int(e['sitrep']):03d}_*.pdf"))
-        if hits:
-            got = hashlib.sha256(hits[0].read_bytes()).hexdigest()[:16]
-            if got != e["sha256_16"]:
-                raise SystemExit(
-                    f"zone-province override for sitrep {e['sitrep']} is "
-                    f"STALE: register says {e['sha256_16']}, file is {got}. "
-                    "Re-read the new version; do not refresh the hash.")
+        f = _archive_pdf(pdfs, e["sitrep"], str(path))
+        got = hashlib.sha256(f.read_bytes()).hexdigest()[:16]
+        if got != e["sha256_16"]:
+            raise SystemExit(
+                f"zone-province override for sitrep {e['sitrep']} is "
+                f"STALE: register says {e['sha256_16']}, file is {got}. "
+                "Re-read the new version; do not refresh the hash.")
         key = (int(e["sitrep"]), re.sub(r"[^a-z0-9]+", "",
                                         _fold_ascii(e["zone"]).lower()))
-        out[key] = None if e["province"] == "none" else e["province"]
+        if key in out:
+            raise SystemExit(
+                f"{path}: duplicate override for sitrep {e['sitrep']} zone "
+                f"{e['zone']!r}; two judgements for one row contradict each "
+                "other")
+        if e["province"] == "none":
+            out[key] = None
+        else:
+            canon = canonical_province(e["province"])
+            if canon is None:
+                raise SystemExit(
+                    f"{path}: sitrep {e['sitrep']} assigns {e['zone']!r} to "
+                    f"{e['province']!r}, which is not in the closed province "
+                    "set -- an override must not mint a province the "
+                    "aggregation would refuse from the page itself.")
+            out[key] = canon
     return out
 
 
@@ -300,20 +352,40 @@ def apply_exceptions(check: pl.DataFrame, ex: pl.DataFrame) -> pl.DataFrame:
         wide[(int(e["sitrep"]), e["unit"], e["column"])] = (
             int(e["expected_gap"]), e["note"])
 
+    used: set[tuple] = set()
     verdicts, notes = [], []
     for r in check.iter_rows(named=True):
         v, n = r["reconciled"], None
         if v == "fails":
-            hit_c = wide.get((r["sitrep"], r["province"], "cum_cases"))
-            hit_d = wide.get((r["sitrep"], r["province"], "cum_deaths"))
+            kc = (r["sitrep"], r["province"], "cum_cases")
+            kd = (r["sitrep"], r["province"], "cum_deaths")
+            hit_c, hit_d = wide.get(kc), wide.get(kd)
             rc, rd = r.get("residual_cases"), r.get("residual_deaths")
             ok_c = (rc in (0, None)) or (hit_c is not None and hit_c[0] == rc)
             ok_d = (rd in (0, None)) or (hit_d is not None and hit_d[0] == rd)
             if ok_c and ok_d and (hit_c or hit_d):
                 v = "verified_exception"
-                n = (hit_c or hit_d)[1]
+                n = "; ".join(h[1] for h in (hit_c, hit_d) if h is not None)
+                used.update(k for k, h in ((kc, hit_c), (kd, hit_d))
+                            if h is not None and h[0] == (rc if k is kc else rd))
         verdicts.append(v)
         notes.append(n)
+
+    # AN ENTRY THAT NO LONGER FIRES IS STALE. Each entry licenses one exact
+    # residual; if the reading improved and the page now closes -- or the gap
+    # moved -- the entry describes a state that no longer exists, and leaving
+    # it in place is a licence waiting to silence a FUTURE defect that happens
+    # to produce the same number. Remove or re-verify it.
+    unused = set(wide) - used
+    if unused:
+        lines = "\n".join(f"  sitrep {s} {u}/{c}: licensed gap "
+                          f"{wide[(s, u, c)][0]:+d} did not occur"
+                          for s, u, c in sorted(unused))
+        raise SystemExit(
+            "EXCEPTION REGISTER ENTRIES NO LONGER MATCH ANY RESIDUAL:\n"
+            + lines
+            + "\n\nThe reading changed. Re-read the page and update or remove "
+              "each entry; an unused licence is a trap for the next defect.")
     return check.with_columns(pl.Series("reconciled", verdicts),
                               pl.Series("exception_note", notes, dtype=pl.Utf8))
 
@@ -371,6 +443,37 @@ def aggregate(panel: pl.DataFrame) -> tuple[pl.DataFrame, pl.DataFrame]:
         .otherwise(pl.lit("fails"))
         .alias("reconciled")
     )
+
+    # THE DAILY BLOCK GETS THE SAME IDENTITY. It did not, and under that cover
+    # a column shift on the last four reports drove the emitted community-death
+    # fraction to 1.000 against a printed 0.55 -- 102 daily-column
+    # disagreements sat in this file under `reconciled = ok`, because
+    # `reconciled` only ever looked at the two cumulative columns. Per column:
+    # a printed province value with no zone breakdown is `no_parts` (the table
+    # states the day's flows only at province level -- common, and not a
+    # defect); a printed value the summed rows contradict is a failure.
+    daily = [c for c in ("new_cases", "deaths_community",
+                         "deaths_treatment_centre", "deaths_total")
+             if c in present]
+    if daily:
+        check = check.with_columns(
+            [(pl.col(c) - pl.col(f"{c}_printed")).alias(f"residual_{c}")
+             for c in daily]
+        ).with_columns(
+            pl.when(pl.any_horizontal([
+                pl.col(f"{c}_printed").is_not_null()
+                & pl.col(c).is_not_null()
+                & (pl.col(f"residual_{c}") != 0) for c in daily]))
+            .then(pl.lit("fails"))
+            .when(pl.any_horizontal([
+                pl.col(f"{c}_printed").is_not_null() & pl.col(c).is_null()
+                for c in daily]))
+            .then(pl.lit("no_parts"))
+            .when(pl.any_horizontal([
+                pl.col(f"{c}_printed").is_not_null() for c in daily]))
+            .then(pl.lit("ok"))
+            .otherwise(pl.lit("not_checkable"))
+            .alias("daily_reconciled"))
     return summed, check
 
 
@@ -383,13 +486,13 @@ def main() -> None:
     ap.add_argument("--out", required=True, type=Path,
                     help="province series; a _reconciliation.csv sibling is written beside it")
     ap.add_argument("--exceptions", type=Path,
-                    default=Path("registers/reconciliation_exceptions.tsv"),
+                    default=ROOT / "registers/reconciliation_exceptions.tsv",
                     help="TSV of reports whose OWN arithmetic does not close, "
                          "verified by hand against the page and keyed on the "
                          "PDF's hash. An entry asserts a claim about the "
                          "document -- that its printed rows do not sum to its "
                          "printed total -- not a licence to silence the check.")
-    ap.add_argument("--pdfs", type=Path, default=Path("data/raw/sitrep_pdfs"),
+    ap.add_argument("--pdfs", type=Path, default=ROOT / "data/raw/sitrep_pdfs",
                     help="the archive, so each exception's hash can be verified")
     ap.add_argument("--allow-unchecked", type=int, default=None,
                     help="how many province-reports may lack a printed total to "
@@ -430,6 +533,41 @@ def main() -> None:
     print(f"{check.height} province-reports: {ok} reconcile, "
           f"{excused} carry a verified exception, {bad} disagree, "
           f"{unchecked} have no printed total to check against")
+
+    # The daily block's identity, reported beside the cumulative one.
+    if "daily_reconciled" in check.columns:
+        dt = dict(check.group_by("daily_reconciled").len().iter_rows())
+        print(f"daily block: {dt.get('ok', 0)} reconcile, "
+              f"{dt.get('fails', 0)} disagree, {dt.get('no_parts', 0)} print "
+              f"province flows with no zone breakdown, "
+              f"{dt.get('not_checkable', 0)} print none")
+        dbad = check.filter(pl.col("daily_reconciled") == "fails")
+        if dbad.height:
+            print("\nDAILY COLUMNS THAT DO NOT MATCH THE SUM OF THEIR PARTS:",
+                  file=sys.stderr)
+            cols = ["sitrep", "date", "province"] + \
+                   [f"residual_{c}" for c in ("new_cases", "deaths_community",
+                                              "deaths_treatment_centre",
+                                              "deaths_total")]
+            with pl.Config(tbl_rows=120):
+                print(dbad.select([c for c in cols if c in dbad.columns])
+                      .sort(["sitrep", "province"]), file=sys.stderr)
+
+    # PER-ROW SPLIT IDENTITY: a zone's community deaths plus its
+    # treatment-centre deaths must equal its total split deaths where the
+    # table prints all three. This is the row-level check that catches a
+    # shifted column even when no province row exists to sum against.
+    split = panel.filter(pl.col("deaths_community").is_not_null()
+                         & pl.col("deaths_treatment_centre").is_not_null()
+                         & pl.col("deaths_total").is_not_null()
+                         & (pl.col("deaths_community")
+                            + pl.col("deaths_treatment_centre")
+                            != pl.col("deaths_total")))
+    if split.height:
+        reps = sorted(set(split["sitrep"].to_list()))
+        print(f"\n{split.height} rows across reports "
+              f"{', '.join(str(r) for r in reps)} print community + intra-CTE "
+              f"!= total split deaths", file=sys.stderr)
 
     if bad:
         print("\nPROVINCE TOTALS THAT DO NOT MATCH THE SUM OF THEIR PARTS:",

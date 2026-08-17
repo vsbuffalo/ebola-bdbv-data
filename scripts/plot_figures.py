@@ -121,6 +121,7 @@ def draw_availability(inputs: dict[str, Path], out: Path) -> None:
     routes = [("zone_cumulative", "zone table (cumulative)"),
               ("zone_mixed", "zone table (mixed daily/cumulative)"),
               ("zone_early", "zone table (early layout)"),
+              ("zone_daily", "zone table (daily flows only)"),
               ("summary_only", "provincial summary only"),
               ("prose", "prose sentence only")]
     zone_route = dict(zone.select("date", "table").unique().iter_rows())
@@ -256,12 +257,21 @@ def _roll_geomean(xs, ys, window=7, max_gap=4.0):
     and joining them drew a six-week plateau out of a single point. Where
     consecutive observations are more than `max_gap` days apart the line is
     interrupted instead.
+
+    NEGATIVE INCREMENTS ARE EXCLUDED FROM THE WINDOW, NOT CLIPPED TO ZERO.
+    A clipped revision enters as log1p(0) = 0 and depresses the local mean
+    for its whole neighbourhood -- two revisions (-23 and -39) lifted twelve
+    neighbouring residuals by +0.44 on average and manufactured a +0.62 right
+    skew in Ituri's residual histogram that vanished (to -0.12) once they
+    were excluded. A revision is not an observation of zero incidence; it is
+    the source editing its past, and it carries no information about the
+    local level.
     """
     import math
     out = []
     for i in range(len(ys)):
         lo, hi = max(0, i - window // 2), min(len(ys), i + window // 2 + 1)
-        vals = [math.log1p(max(v, 0)) for v in ys[lo:hi] if v is not None]
+        vals = [math.log1p(v) for v in ys[lo:hi] if v is not None and v >= 0]
         v = math.expm1(sum(vals) / len(vals)) if vals else None
         if i > 0 and xs[i] - xs[i - 1] > max_gap:
             out.append(None)
@@ -446,14 +456,19 @@ def draw_streams_detail(inputs: dict[str, Path], out: Path) -> None:
 def draw_residuals(inputs: dict[str, Path], out: Path) -> None:
     """Reporting-noise diagnostics: per-report residuals against the smoother.
 
-    Computed as log1p(observed) - log1p(smoothed) because the rolling line IS
-    the local mean in that space -- residuals are centred by construction, and
-    any asymmetry that survives is real rather than the mechanical right-skew
-    raw-scale residuals of count data carry. Right skew is the batching
-    signature: under-filled reports, then a catch-up dump. The source's
-    negative increments (its own revisions) cannot enter a log residual and
-    are counted in the panel title instead. The weekday-median row underneath
-    exists because a consistent weekday dip is a reporting-cycle artefact, not
+    Computed as log1p(observed) - log1p(smoothed) because the rolling line is
+    approximately the local mean in that space -- approximately, not by
+    construction: the window includes the point itself (shrinking each
+    residual by about 1 - 1/window) and truncates at the series' edges, so a
+    small nonzero mean is mechanics, not signal. Read the SHAPE, not the
+    mean. A strong right skew would suggest batching -- under-filled reports,
+    then a catch-up dump -- but note that this figure once showed exactly
+    that (+0.62) as an artefact of clipping the source's negative revisions
+    to zero inside the smoother window; excluded properly, both provinces
+    are near-symmetric. Negative increments are the source's own revisions:
+    they enter neither the residual set nor any window, and are counted in
+    the panel title instead. The weekday-median row underneath exists
+    because a consistent weekday dip is a reporting-cycle artefact, not
     epidemiology.
     """
     import datetime as dt
