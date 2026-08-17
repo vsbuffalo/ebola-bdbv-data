@@ -79,7 +79,14 @@ def main() -> None:
             # stops the fetch and asks for adjudication.
             try:
                 import urllib.request
-                req = urllib.request.Request(r["url"], method="HEAD")
+                from lib.provenance import UA, _encode
+                # The UA and the percent-encoding matter here exactly as they
+                # do on the GET path: INSP 403s default user agents, and many
+                # filenames carry a literal degree sign urllib cannot put on
+                # the wire. The first run of this check forgot both and
+                # reported all 83 held reports unverifiable.
+                req = urllib.request.Request(_encode(r["url"]), method="HEAD",
+                                             headers={"User-Agent": UA})
                 with urllib.request.urlopen(req, timeout=30) as resp:
                     clen = int(resp.headers.get("Content-Length") or -1)
             except Exception as exc:  # noqa: BLE001

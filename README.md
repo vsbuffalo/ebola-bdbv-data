@@ -136,7 +136,9 @@ deliberately unlike the weekly-incidence streams beside it) are coordinated
 changes, announced across both repositories — never refactors. Releases are
 tagged `data/<data-date>` (the newest report's data date), gated on: every
 accounting identity holding, the comparison figures rendering, and
-`make check` returning current-or-behind.
+`make check` returning current-or-behind. A re-release whose newest data
+date is unchanged — a mid-series report the source listed late, a register
+judgement revised — appends `-r2`, `-r3`, …
 
 ## How the extraction works
 

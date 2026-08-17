@@ -1,5 +1,6 @@
 path	source_url	sha256	bytes	fetched_utc
 data/raw/health_zones.geojson	https://raw.githubusercontent.com/INRB-UMIE/BDBV2026-Data/main/build/drc_health_zones.geojson	5666c9bd219d6cf24148669f724ee1298f716ddfbd7cdfc00d4249a1bf812a01	854543	2026-08-16
+data/raw/insp_sitrep_index.tsv	https://insp.cd/wp-json/wp/v2/media?after=2026-05-01T00:00:00&per_page=100&orderby=date&order=asc&_fields=id,date,source_url	8378207a9fd91de20a29f6002487e20413afc8629d6a2aa0accccddb7eba17b3	15101	2026-08-17
 data/raw/insp_sitrep_index.tsv	https://insp.cd/wp-json/wp/v2/media?after=2026-05-01T00:00:00&per_page=100&orderby=date&order=asc&_fields=id,date,source_url	b33ffb2fd88e3ac2a4362f73beb06285f372fbe5c2cf1a25dd9cbc57098a552b	14941	2026-08-16
 data/raw/sitrep_pdfs/sitrep_005_2026-05-19.pdf	https://insp.cd/wp-content/uploads/2026/05/Draft_SitRep_MVE_RDC_20260520_vf1.pdf	3ca1c8204515b4d22772a4ad271e7f64bc95acf58f5b736df5647af38ea49e7a	1233908	2026-08-15
 data/raw/sitrep_pdfs/sitrep_006_2026-05-20.pdf	https://insp.cd/wp-content/uploads/2026/05/SitRep_MVE_RDC_20260521_editing-FV.pdf	7eba1b3706a3ffa30adb6714b67d29e21b434ba2364b90a517129f9513639dab	1263547	2026-08-15
@@ -56,6 +57,7 @@ data/raw/sitrep_pdfs/sitrep_059_2026-07-12.pdf	https://insp.cd/wp-content/upload
 data/raw/sitrep_pdfs/sitrep_060_2026-07-13.pdf	https://insp.cd/wp-content/uploads/2026/07/Draft_SitRep_MVE_RDC_N°60_13-07-2026_Analytique_VF.pdf	d169542ecf17c4f83614098866bcf3a544dd96c3a3f42606fa0963917b23fcbb	1359883	2026-08-15
 data/raw/sitrep_pdfs/sitrep_061_2026-07-14.pdf	https://insp.cd/wp-content/uploads/2026/07/Draft_SitRep_MVE_RDC_N_61_14-07-2026_Analytique.pdf	b8d1228d2bf1160176e5704f13cc9ee9cafe3b04b52a8ab6ecb8e28bb1ee52ae	1306755	2026-08-15
 data/raw/sitrep_pdfs/sitrep_062_2026-07-15.pdf	https://insp.cd/wp-content/uploads/2026/07/Draft_SitRep_MVE_RDC_N_62_15-07-2026_VF.pdf	dfbd55ed538573b45bf8a0947accaebd54a5fcadf34e68160e21da5e0855374e	1281656	2026-08-15
+data/raw/sitrep_pdfs/sitrep_063_2026-07-16.pdf	https://insp.cd/wp-content/uploads/2026/07/SitRep_MVE_RDC_N_63_16-07-2026_Final.pdf	e09dc671dd7d68b6fcf99550e7d2a599fda66512d98dce30f1d5062440c6279f	1712479	2026-08-17
 data/raw/sitrep_pdfs/sitrep_064_2026-07-17.pdf	https://insp.cd/wp-content/uploads/2026/07/SitRep_MVE_RDC_N°_64_17-07-2026_OKK-2.pdf	9458cd2adaea90b7bd8002c4c6d869b34d615e05eab3e224a69fa06f31f49a53	5002431	2026-08-15
 data/raw/sitrep_pdfs/sitrep_065_2026-07-18.pdf	https://insp.cd/wp-content/uploads/2026/07/SitRep_MVE_RDC_N°_65_18-07-2026.pdf	204bde53343a36c2c343e4982b54fcbbc684204f688f10e2c1d31ad3391bf914	1386096	2026-08-15
 data/raw/sitrep_pdfs/sitrep_066_2026-07-19.pdf	https://insp.cd/wp-content/uploads/2026/07/SitRep_MVE_RDC_N°_66_19-07-2026.pdf	cca0b151591c66824a791965964f608f3d8fc8d6ee9c243a8ad215c8807faf5b	1977539	2026-08-15
