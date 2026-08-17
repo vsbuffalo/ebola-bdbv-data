@@ -443,7 +443,87 @@ def draw_streams_detail(inputs: dict[str, Path], out: Path) -> None:
     plt.close(fig)
 
 
+def draw_residuals(inputs: dict[str, Path], out: Path) -> None:
+    """Reporting-noise diagnostics: per-report residuals against the smoother.
+
+    Computed as log1p(observed) - log1p(smoothed) because the rolling line IS
+    the local mean in that space -- residuals are centred by construction, and
+    any asymmetry that survives is real rather than the mechanical right-skew
+    raw-scale residuals of count data carry. Right skew is the batching
+    signature: under-filled reports, then a catch-up dump. The source's
+    negative increments (its own revisions) cannot enter a log residual and
+    are counted in the panel title instead. The weekday-median row underneath
+    exists because a consistent weekday dip is a reporting-cycle artefact, not
+    epidemiology.
+    """
+    import datetime as dt
+    import math
+    series = pl.read_csv(inputs["province_series"], infer_schema_length=None)
+    provs = ["Ituri", "Nord-Kivu"]
+    fig, axes = plt.subplots(2, 2, figsize=(11, 6.6), constrained_layout=True)
+
+    for ci, prov in enumerate(provs):
+        b = (series.filter((pl.col("province") == prov)
+                           & pl.col("cum_cases").is_not_null()).sort("date"))
+        dates = [dt.date.fromisoformat(d) for d in b["date"].to_list()][1:]
+        vals = (b["cum_cases"] - b["cum_cases"].shift(1)).to_list()[1:]
+        xs = [mdates.date2num(d) for d in dates]
+        sm = _roll_geomean(xs, vals)
+        res, wd, neg = [], {}, 0
+        for d, v, m in zip(dates, vals, sm):
+            if v is None or m is None:
+                continue
+            if v < 0:
+                neg += 1
+                continue
+            r = math.log1p(v) - math.log1p(m)
+            res.append(r)
+            wd.setdefault(d.strftime("%a"), []).append(r)
+        n = len(res)
+        mean = sum(res) / n
+        m2 = sum((x - mean) ** 2 for x in res) / n
+        m3 = sum((x - mean) ** 3 for x in res) / n
+        skew = m3 / m2 ** 1.5
+        color = PROVINCE_COLOR[prov]
+
+        ax = axes[0][ci]
+        ax.hist(res, bins=25, color=color, alpha=0.85)
+        ax.axvline(0, color="#444", linewidth=1)
+        med = sorted(res)[n // 2]
+        ax.axvline(med, color="#444", linewidth=1, linestyle=":")
+        ax.set_title(f"{prov} — confirmed cases per report\n"
+                     f"n={n} · skew {skew:+.2f} · median {med:+.2f}"
+                     + (f" · {neg} revision(s) excluded" if neg else ""),
+                     loc="left", fontsize=9)
+        ax.set_xlabel("log1p(observed) − log1p(smoothed)", fontsize=8.5)
+
+        ax2 = axes[1][ci]
+        days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+        meds = [sorted(wd[d])[len(wd[d]) // 2] if d in wd else 0 for d in days]
+        ax2.bar(days, meds, color=color, alpha=0.85)
+        ax2.axhline(0, color="#999", linewidth=0.8)
+        ax2.set_title("median residual by weekday", loc="left", fontsize=9.5)
+        for a in (ax, ax2):
+            a.grid(True, axis="y", **GRID)
+            for sp in ("top", "right"):
+                a.spines[sp].set_visible(False)
+
+    lo = min(a.get_ylim()[0] for a in axes[1])
+    hi = max(a.get_ylim()[1] for a in axes[1])
+    for a in axes[1]:
+        a.set_ylim(lo, hi)
+
+    fig.suptitle("Reporting noise: per-report residuals against the rolling "
+                 "geometric mean, in its own (log1p) space",
+                 x=0.01, ha="left", fontsize=12, fontweight="bold")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out, dpi=160)
+    plt.close(fig)
+
+
 FIGURES = {
+    "residuals": (draw_residuals,
+                  {"province_series": "data/build/series/province_series.csv"}),
     "streams_detail": (draw_streams_detail,
                        {"zone_table": "data/build/series/zone_table.csv",
                         "caveat": "data/build/series/provisional_caveat.csv",

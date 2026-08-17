@@ -110,6 +110,8 @@ figures:
 		--out data/build/figures/province_series.png
 	uv run python scripts/plot_figures.py --figure streams_detail \
 		--out data/build/figures/streams_detail.png
+	uv run python scripts/plot_figures.py --figure residuals \
+		--out data/build/figures/residuals.png
 
 ## doc     -- render analysis/data.html against the built artefacts.
 ##            Every read the document makes is fail-closed through _guard.py:
