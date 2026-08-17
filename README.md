@@ -8,6 +8,32 @@ The companion modelling repository consumes exactly seven small TSVs from this
 one (`data/build/streams/`). Everything else here exists to make those seven
 files trustworthy, and to show the work.
 
+## Why this much care
+
+The quantity the models most need from these reports is not the case count —
+it is the fraction of confirmed deaths found in the community rather than in
+a treatment centre, the closest thing the source prints to a measurement of
+how much transmission the surveillance system is missing. In mid-August a
+plausible-looking extraction of that fraction read **1.00** for the most
+recent week: every death found in the community, isolation effectively over.
+The pages print **0.55**. The whole difference was one silently shifted
+column on one page of four consecutive reports — invisible to any reader
+that trusts a table's shape, and caught only by summing each page's rows
+against the totals the page itself prints. An epidemiological conclusion of
+the first order — *isolation has collapsed* — would have been a parsing
+artefact, at maximum leverage on the most recent data.
+
+That is the failure class this repository is built against, and it sets the
+two rules everything else follows. Every extracted number must survive the
+page's own arithmetic (zones plus unassigned rows equal the printed province
+row; provinces equal the printed national total), and the assembled series
+must agree with two independent readings of the same documents — INRB-UMIE's
+manual transcription and the epiforecasts scan — with every disagreement
+recorded rather than resolved. Where a page fails its own arithmetic, that
+is a finding about the source, read by hand and kept in a register keyed to
+the exact document. The seven TSVs are small; the claim that they say what
+the source said is the product.
+
 ## Running it
 
 ```sh
@@ -158,6 +184,20 @@ evidence about *transcription*, never corroboration of the counts (all three
 lineages read the same pages); a disagreement is always a finding. The
 largest one is upstream's: sitrep 032 prints Rwampara at 159 in both its
 table and its narrative, and the INRB file carries 192.
+
+![The three lineages as series: our summed zone rows (line), INSP's own
+printed totals (rings), and INRB-UMIE's transcription (dashed). The bottom
+row is the differences — ours − INRB mixes value disagreements with
+row-coverage gaps in their file; ours − printed is pure arithmetic against
+the page, zero except the registered source
+self-disagreements.](docs/figures/comparison_series.png)
+
+![Every zone-day on the identity line against INRB-UMIE, and the
+disagreements, signed, over time.](docs/figures/comparison.png)
+
+These two figures are committed copies (`docs/figures/`), refreshed by
+`make compare` so they always show the current build's comparison; a diff in
+them is a change in what the comparison shows.
 
 **6. The archive itself.** The PDFs are not committed (~145 MB); what pins
 them is a committed SHA-256 manifest, and `make verify` proves the copy on

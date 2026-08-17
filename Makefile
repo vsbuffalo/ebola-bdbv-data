@@ -136,6 +136,13 @@ compare:
 	#              data/build/compare/scan_comparison.csv
 	#              data/build/compare/zone_comparison.csv
 	#              data/build/compare/compare_meta.json
+	# COMMITTED COPIES of the two comparison figures, so the README's
+	# validation section travels with the repository (data/build is
+	# gitignored). Refreshed on every compare; a diff here is a change in
+	# what the comparison shows, and belongs in the commit that caused it.
+	mkdir -p docs/figures
+	cp data/build/compare/comparison.png \
+	   data/build/compare/comparison_series.png docs/figures/
 
 ## figures -- OFFLINE. The EDA figures, from the built series.
 figures: 
