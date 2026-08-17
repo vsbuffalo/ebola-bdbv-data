@@ -2,7 +2,7 @@
 # by design: `build` and `doc` never touch the network, so a rebuild can never
 # silently change what the source says.
 
-.PHONY: check fetch refresh verify build streams compare figures external \
+.PHONY: cron-install cron-uninstall check fetch refresh verify build streams compare figures external \
 	external-update scan-refresh doc serve test
 
 ## check   -- is the archive current, and does the source still look the same?
@@ -27,6 +27,25 @@ fetch:
 ##            whole offline rebuild. (This target existed only in check's
 ##            advice for a while; advice must name a target that exists.)
 refresh: fetch build streams figures compare doc
+
+## cron-install -- schedule `make check` every six hours via launchd (macOS).
+##            The plist template is committed; the absolute repo path is
+##            substituted here at install time, never committed. Output lands
+##            in logs/check_upstream.log; a non-CURRENT verdict raises a
+##            macOS notification. `make cron-uninstall` removes it.
+CRON_LABEL = com.vsb.ebola-bdbv-check
+cron-install:
+	mkdir -p logs
+	sed "s|@REPO@|$$(pwd)|g" scripts/launchd/$(CRON_LABEL).plist.in \
+		> ~/Library/LaunchAgents/$(CRON_LABEL).plist
+	launchctl bootout gui/$$(id -u)/$(CRON_LABEL) 2>/dev/null || true
+	launchctl bootstrap gui/$$(id -u) ~/Library/LaunchAgents/$(CRON_LABEL).plist
+	@echo "installed; first run fires now, then every 6 h. Log: logs/check_upstream.log"
+
+cron-uninstall:
+	launchctl bootout gui/$$(id -u)/$(CRON_LABEL) 2>/dev/null || true
+	rm -f ~/Library/LaunchAgents/$(CRON_LABEL).plist
+	@echo "removed"
 
 ## verify  -- OFFLINE. Every held PDF hashes to what the manifest records.
 verify:
