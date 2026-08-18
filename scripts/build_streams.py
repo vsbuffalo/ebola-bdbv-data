@@ -916,11 +916,14 @@ def main() -> None:
                                                        sort_keys=True) + "\n")
 
     for name, r in sorted(recon.items()):
-        if "tests" in r:                 # the testing stream
-            pv = r["positives_vs_new_cases"]
-            print(f"  {name:<22} {r['n_obs']:>3} obs   tests {r['tests']:>5}  "
-                  f"positives {r['positives']:>4}   vs new cases: "
-                  f"{pv['n_equal']}/{pv['n_compared']} equal")
+        if "tests" in r:                 # a testing stream
+            pv = r.get("positives_vs_new_cases")
+            cov = r.get("n_provinces")
+            tail = (f"vs new cases: {pv['n_equal']}/{pv['n_compared']} equal"
+                    if pv else
+                    f"{cov['min']}-{cov['max']} provinces/day" if cov else "")
+            print(f"  {name:<26} {r['n_obs']:>3} obs   tests {r['tests']:>5}  "
+                  f"positives {r['positives']:>4}   {tail}")
             continue
         if "source_delta" not in r:      # an ascertainment stream
             av = r.get("vs_printed_daily")

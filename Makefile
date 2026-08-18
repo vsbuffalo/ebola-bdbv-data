@@ -2,7 +2,7 @@
 # by design: `build` and `doc` never touch the network, so a rebuild can never
 # silently change what the source says.
 
-.PHONY: oneoff-testing cron-install cron-uninstall check fetch refresh verify build streams compare figures external \
+.PHONY: release-check oneoff-testing cron-install cron-uninstall check fetch refresh verify build streams compare figures external \
 	external-update scan-refresh doc serve test
 
 ## check   -- is the archive current, and does the source still look the same?
@@ -191,6 +191,19 @@ figures:
 		--out data/build/figures/streams_detail.png
 	uv run python scripts/plot_figures.py --figure residuals \
 		--out data/build/figures/residuals.png
+
+## release-check -- build the COMMITTED state in a scratch clone before
+##            tagging. Exists because r5 shipped a build that crashed after
+##            writing its files: the working tree masked the exit code, and
+##            only the consumer's clean-clone rebuild caught it. The PDF
+##            archive is not committed, so it is shared into the clone.
+RC_DIR ?= /tmp/ebola-bdbv-release-check
+release-check:
+	rm -rf $(RC_DIR)
+	git clone -q . $(RC_DIR)
+	ln -s $$(pwd)/data/raw/sitrep_pdfs $(RC_DIR)/data/raw/sitrep_pdfs
+	cd $(RC_DIR) && make build && make streams
+	@echo "release-check PASSED: the committed state builds from a fresh clone"
 
 ## oneoff-testing -- DISPOSABLE question figure: did testing keep pace with
 ##            incidence? Not part of `figures`, not referenced by any
