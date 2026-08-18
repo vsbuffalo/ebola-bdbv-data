@@ -713,3 +713,42 @@ def test_summary_new_cases_column_is_read():
     rows, _ = E.extract(pdf(20), specs=(PROVINCIAL_SUMMARY,))
     itu = [r for r in rows if norm(r["zone_reported"]) == "ituri"][0]
     assert itu["new_cases"] == 18
+
+
+# --------------------------------------------------------------------------
+# The laboratory prose route
+# --------------------------------------------------------------------------
+
+def test_lab_licensed_pair():
+    """A (positives, samples) pair is licensed only by reproducing the
+    printed positivity, uniquely -- ambiguity is refusal."""
+    import extract_lab_prose as L
+    assert L.licensed_pair([115, 45], [39.1]) == (45, 115, 39.1)
+    assert L.licensed_pair([89, 59, 30, 288], [30.9]) == (89, 288, 30.9)
+    assert L.licensed_pair([1, 6], [16.6]) == (1, 6, 16.6)   # truncation
+    assert L.licensed_pair([199], [32.6]) is None            # no pair printed
+    assert L.licensed_pair([10, 20, 40], [50.0]) is None     # ambiguous
+
+
+@needs_pdfs
+def test_lab_prose_sitrep_093():
+    """Sitrep 093's chained lab sentence yields all three provinces, each
+    licensed by its own printed rate; the fourth clause (Tshopo, spelled-out
+    'un résultat positif') is correctly refused rather than guessed."""
+    import extract_lab_prose as L
+    got, _ = L.extract(pdf(93))
+    by = {r["province"]: (r["samples"], r["positives"]) for r in got}
+    assert by["Ituri"] == (288, 89)
+    assert by["Nord-Kivu"] == (133, 8)
+    assert by["Haut-Uélé"] == (9, 3)
+
+
+@needs_pdfs
+def test_lab_prose_flow_not_stock():
+    """Sitrep 020's bullet vintage states no flow word; the laboratory
+    section is daily by construction and the positives equal the day's
+    printed new confirmed cases (18)."""
+    import extract_lab_prose as L
+    got, _ = L.extract(pdf(20))
+    itu = [r for r in got if r["province"] == "Ituri"]
+    assert itu and itu[0]["positives"] == 18 and itu[0]["samples"] == 82

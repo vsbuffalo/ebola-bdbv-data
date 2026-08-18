@@ -388,6 +388,9 @@ def main() -> None:
                          "the reports whose vintage dropped the zone table")
     ap.add_argument("--prose", type=Path, default=None,
                     help="prose_provinces.csv, for the three prose-only reports")
+    ap.add_argument("--lab", type=Path, default=None,
+                    help="lab_prose.csv: licensed daily testing volume and "
+                         "positives, for the national testing stream")
     args = ap.parse_args()
     args.out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -638,6 +641,65 @@ def main() -> None:
                   f"{', '.join(str(x) for x in bad['date'].to_list())}",
                   file=sys.stderr)
 
+    # THE TESTING STREAM, from the laboratory prose (extract_lab_prose.py:
+    # every row is licensed by the sentence's own printed positivity). This
+    # is the scale anchor the national model class asked for: with no stream
+    # observing absolute testing effort, ascertainment and outbreak size are
+    # prior-driven. Weekly sums of the day's samples analysed and positives
+    # across the provinces whose sentences licensed -- coverage is therefore
+    # PARTIAL BY CONSTRUCTION (a wording the licence refuses drops out,
+    # counted), and the per-bin province-day count in the meta file is the
+    # completeness statement a model should weigh.
+    if args.lab and args.lab.exists():
+        lab = pl.read_csv(args.lab, infer_schema_length=None)
+        if not lab.is_empty():
+            daily = (lab.with_columns(pl.col("date").str.to_date())
+                     .group_by("date")
+                     .agg(pl.col("samples").sum(), pl.col("positives").sum(),
+                          pl.len().alias("n_prov")))
+            weekly = (daily.with_columns(
+                          (((pl.col("date") - pl.lit(DAY0)).dt.total_days() - 1)
+                           // BIN_DAYS).alias("bin"))
+                      .group_by("bin")
+                      .agg(pl.col("samples").sum(), pl.col("positives").sum(),
+                           pl.col("date").max().alias("time"),
+                           pl.len().alias("n_report_days"),
+                           pl.col("n_prov").sum().alias("n_province_days"))
+                      .sort("bin"))
+            (weekly.select(pl.col("time").dt.to_string("%Y-%m-%d"),
+                           pl.col("positives").alias("positives_national"),
+                           pl.col("samples").alias("tests_national"))
+             .write_csv(args.out_dir / "lab_national.tsv", separator="\t"))
+            # Cross-check: a day's positives should be the day's newly
+            # confirmed cases, province by province. Equality on most dates is
+            # what licenses reading this stream as testing effort; the
+            # disagreeing dates are results-vs-notification timing, recorded.
+            newc = (panel.filter((pl.col("level") == "province")
+                                 & pl.col("new_cases").is_not_null())
+                    .with_columns(pl.col("date").str.to_date())
+                    .group_by("date", "province")
+                    .agg(pl.col("new_cases").last()))
+            j = (lab.with_columns(pl.col("date").str.to_date())
+                 .join(newc, on=["date", "province"], how="inner"))
+            bad = j.filter(pl.col("positives") != pl.col("new_cases"))
+            recon["lab_national"] = {
+                "n_obs": weekly.height,
+                "tests": int(weekly["samples"].sum()),
+                "positives": int(weekly["positives"].sum()),
+                "province_days": int(lab.height),
+                "report_days": int(daily.height),
+                "per_bin": [{"bin": int(r["bin"]), "time": str(r["time"]),
+                             "n_report_days": int(r["n_report_days"]),
+                             "n_province_days": int(r["n_province_days"])}
+                            for r in weekly.iter_rows(named=True)],
+                "positives_vs_new_cases": {
+                    "n_compared": j.height,
+                    "n_equal": j.height - bad.height,
+                    "dates_disagree": sorted(
+                        f"{r['date']}/{r['province']}"
+                        for r in bad.iter_rows(named=True))},
+            }
+
     last = panel.filter(pl.col("date") == panel["date"].max())
     meta = {
         "day0": str(DAY0),
@@ -656,6 +718,12 @@ def main() -> None:
                                                        sort_keys=True) + "\n")
 
     for name, r in sorted(recon.items()):
+        if "tests" in r:                 # the testing stream
+            pv = r["positives_vs_new_cases"]
+            print(f"  {name:<22} {r['n_obs']:>3} obs   tests {r['tests']:>5}  "
+                  f"positives {r['positives']:>4}   vs new cases: "
+                  f"{pv['n_equal']}/{pv['n_compared']} equal")
+            continue
         if "source_delta" not in r:      # an ascertainment stream
             av = r["vs_printed_daily"]
             print(f"  {name:<22} {r['n_obs']:>3} obs   community {r['emitted']:>4} "

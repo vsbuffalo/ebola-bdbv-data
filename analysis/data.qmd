@@ -222,6 +222,14 @@ every printed province row.
 ```{python}
 lines = []
 for name, r in sorted(meta["reconciliation"].items()):
+    if "tests" in r:
+        # The testing stream: licensed prose, checked against new cases.
+        pv = r["positives_vs_new_cases"]
+        lines.append(
+            f"| `{name}` | {r['n_obs']} | {stat(r['positives'])} of "
+            f"{stat(r['tests'])} tests | — | "
+            f"{pv['n_equal']}/{pv['n_compared']} vs new cases | — |")
+        continue
     if "difference" not in r:
         # An ascertainment stream: community deaths of total split deaths,
         # read from the printed province rows and checked per-date against
