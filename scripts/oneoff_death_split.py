@@ -11,16 +11,31 @@ row and no percentage:
 
 the numerator (confirmed deaths of people never under case management,
 confirmed post-mortem by swab) and the denominator (all confirmed deaths
-the report split that week). The ratio is never stored, because storing it
-would throw away the sample size the likelihood needs: 3/6 and 300/600 are
-the same percentage and very different evidence. The model reads the pair
-as a beta-binomial and infers the probability; this figure draws the pair,
-and shows the ratio only with the uncertainty that the counts imply.
+the report CLASSIFIED that week). The ratio is never stored, because
+storing it would throw away the sample size the likelihood needs: 3/6 and
+300/600 are the same percentage and very different evidence. The model
+reads the pair as a beta-binomial and infers the probability; this figure
+draws the pair, and shows the ratio only with the uncertainty the counts
+imply.
 
-LEFT: the two counts, stacked -- community below, under-care above. The
-column height is the week's split deaths.
-RIGHT: the implied fraction with a 95% Jeffreys interval, so a week resting
-on few deaths visibly says less than one resting on many.
+THE DENOMINATOR IS NOT THE WEEK'S DEATHS. `deaths_split_*` sums the
+reports' own 24-hour figures, so it counts only deaths a report classified
+on a day it published. The death STREAM differences the cumulative and
+therefore also carries deaths that accrued on silent days and in batch
+consolidations. The grey band is that difference -- confirmed deaths the
+source added to its cumulative but never split -- and over Ituri's window
+it is 428 of 1,327 deaths, a third of them. It is drawn because a reader
+comparing the coloured columns against the death stream would otherwise
+wonder where the rest went, and because it is the honest picture of how
+much of the mortality this classification actually covers.
+
+WHAT IS NOT DRAWN, AND WHY. Community deaths whose swab was refused or
+failed are NOT in any of these bands: an unswabbed body is never confirmed,
+so it enters no column of the death table at all. Those events appear only
+in the burial pillar's prose ("1 échec de swab à Butembo", "13 corps
+restent en attente"), which counts DEATH ALERTS of any cause rather than
+Ebola deaths -- a different universe, un-extracted, and not stackable on
+these bars without inventing a subset relation the source does not state.
 """
 
 from __future__ import annotations
@@ -36,6 +51,7 @@ import polars as pl
 from scipy.stats import beta
 
 COMM, CARE = "#D55E00", "#0072B2"     # Okabe-Ito, CVD-validated pair
+UNCL = "#bdbdbd"                      # never classified: absence, not a class
 GRID = dict(color="#e8e8e8", linewidth=0.6)
 
 
@@ -58,6 +74,16 @@ def main() -> None:
         d = pl.read_csv(args.streams / f"community_deaths_{scope}.tsv",
                         separator="\t")
         num, den = f"community_deaths_{scope}", f"deaths_split_{scope}"
+        # The death stream over the same weeks, to expose what was never
+        # classified. Absent for a scope with no death stream; then the band
+        # is simply not drawn.
+        dstream = args.streams / f"deaths_{scope}.tsv"
+        unclassified = None
+        if dstream.exists():
+            w = pl.read_csv(dstream, separator="\t")
+            j = d.join(w, on="time", how="left")
+            unclassified = [max(int(a or 0) - int(b), 0) for a, b
+                            in zip(j[f"deaths_{scope}"], j[den])]
         xs = [mdates.datestr2num(t) for t in d["time"]]
         k = d[num].to_list()
         tot = d[den].to_list()
@@ -67,12 +93,16 @@ def main() -> None:
         ax.bar(xs, k, width=4.6, color=COMM, label="never under care (Swab+)")
         ax.bar(xs, care, width=4.6, bottom=k, color=CARE,
                label="died under care (CTE/CT)")
+        if unclassified is not None:
+            ax.bar(xs, unclassified, width=4.6, bottom=tot, color=UNCL,
+                   label="in the death stream, never classified")
         for x, c, t in zip(xs, k, tot):
             ax.annotate(f"{c}/{t}", (x, t), ha="center", va="bottom",
                         fontsize=7.5, color="#444444")
-        ax.set_title(f"{scope.replace('_', '-').title()} — confirmed deaths "
-                     f"per week,\nsplit as the source prints it",
-                     loc="left", fontsize=10, fontweight="bold")
+        share = (f"\n{sum(tot)} of {sum(tot) + sum(unclassified)} deaths "
+                 f"classified" if unclassified else "")
+        ax.set_title(f"{scope.replace('_', '-').title()} — deaths per week"
+                     f"{share}", loc="left", fontsize=9.5, fontweight="bold")
         ax.set_ylabel("confirmed deaths (count)", fontsize=9)
         if ci == 0:
             ax.legend(frameon=False, fontsize=8, loc="upper left")
@@ -96,9 +126,12 @@ def main() -> None:
                 a.spines[sp].set_visible(False)
 
     fig.suptitle(
-        "What `community_deaths_*.tsv` holds: two COUNTS per week,\n"
-        "not a percentage — numerator = confirmed deaths never under case\n"
-        "management (post-mortem Swab+), denominator = all deaths split",
+        "What `community_deaths_*.tsv` holds: two COUNTS per week, not a "
+        "percentage\n"
+        "numerator = deaths never under case management (post-mortem Swab+) · "
+        "denominator = deaths the report classified\n"
+        "grey = in the death stream but never classified (silent days and "
+        "batch consolidations); unswabbed deaths are in NO band",
         x=0.01, ha="left", fontsize=11.5, fontweight="bold")
     args.out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(args.out, dpi=160)
