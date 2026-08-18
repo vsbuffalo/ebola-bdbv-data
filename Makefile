@@ -2,7 +2,7 @@
 # by design: `build` and `doc` never touch the network, so a rebuild can never
 # silently change what the source says.
 
-.PHONY: release-check oneoff-testing cron-install cron-uninstall check fetch refresh verify build streams compare figures external \
+.PHONY: release-check oneoff-testing oneoff-death-split cron-install cron-uninstall check fetch refresh verify build streams compare figures external \
 	external-update scan-refresh doc serve test
 
 ## check   -- is the archive current, and does the source still look the same?
@@ -204,6 +204,13 @@ release-check:
 	ln -s $$(pwd)/data/raw/sitrep_pdfs $(RC_DIR)/data/raw/sitrep_pdfs
 	cd $(RC_DIR) && make build && make streams
 	@echo "release-check PASSED: the committed state builds from a fresh clone"
+
+## oneoff-death-split -- DISPOSABLE question figure: what the community-death
+##            streams contain (two counts, not a percentage). Delete with
+##            scripts/oneoff_death_split.py when settled.
+oneoff-death-split:
+	uv run python scripts/oneoff_death_split.py \
+		--out data/build/figures/oneoff_death_split.png
 
 ## oneoff-testing -- DISPOSABLE question figure: did testing keep pace with
 ##            incidence? Not part of `figures`, not referenced by any
