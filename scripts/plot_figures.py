@@ -299,6 +299,7 @@ def draw_streams_detail(inputs: dict[str, Path], out: Path) -> None:
     caveat = pl.read_csv(inputs["caveat"], infer_schema_length=None)
     summary = pl.read_csv(inputs["summary"], infer_schema_length=None)
     prose = pl.read_csv(inputs["prose"], infer_schema_length=None)
+    lab = pl.read_csv(inputs["lab"], infer_schema_length=None)
 
     provinces = ["Ituri", "Nord-Kivu"]
     rows = [
@@ -308,6 +309,8 @@ def draw_streams_detail(inputs: dict[str, Path], out: Path) -> None:
         ("deaths_community", "Community deaths / day\npost-mortem swab"),
         ("deaths_treatment_centre",
          "Treatment-centre deaths / day\nthe other half of the split"),
+        ("lab_tests", "Samples analysed / day\nlaboratory prose, licensed by "
+         "its own printed positivity"),
     ]
 
     fig = plt.figure(figsize=(11, 3.1 * len(rows) + 3.7),
@@ -344,6 +347,14 @@ def draw_streams_detail(inputs: dict[str, Path], out: Path) -> None:
                      .with_columns((pl.col("cum") - pl.col("cum").shift(1))
                                    .alias("v")).drop_nulls("v"))
                 xs = [mdates.date2num(x) for x in d["date"].to_list()]
+                ys = d["v"].to_list()
+            elif kind == "lab_tests":
+                d = (lab.filter(pl.col("province") == prov)
+                     .group_by("date").agg(pl.col("samples").sum().alias("v"))
+                     .sort("date"))
+                if d.is_empty():
+                    continue
+                xs = _dates(d["date"])
                 ys = d["v"].to_list()
             else:
                 d = (panel.filter((pl.col("province") == prov)
@@ -543,7 +554,8 @@ FIGURES = {
                        {"zone_table": "data/build/series/zone_table.csv",
                         "caveat": "data/build/series/provisional_caveat.csv",
                         "summary": "data/build/series/province_summary.csv",
-                        "prose": "data/build/series/prose_provinces.csv"}),
+                        "prose": "data/build/series/prose_provinces.csv",
+                        "lab": "data/build/series/lab_prose.csv"}),
     "availability": (draw_availability,
                      {"zone_table": "data/build/series/zone_table.csv",
                       "zone_status": "data/build/series/zone_table_status.csv",
