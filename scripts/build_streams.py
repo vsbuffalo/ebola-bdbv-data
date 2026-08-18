@@ -54,6 +54,8 @@ from pathlib import Path
 
 import polars as pl
 
+ROOT = Path(__file__).resolve().parents[1]
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from aggregate_provinces import carry_province
 from lib.tablespec import norm as _norm
@@ -213,6 +215,81 @@ def weekly_increments(cum: pl.DataFrame,
         print(f"  NOTE: {empty.height} week(s) contained no report at all "
               "and are omitted rather than emitted as zero")
     return out.filter(pl.col("n_report_days") > 0)
+
+
+def daily_increments(cum: pl.DataFrame, report_dates: pl.Series) -> pl.DataFrame:
+    """One row per REPORT DAY: the cumulative's movement since the previous
+    report day, and the length of the interval that movement covers.
+
+    THE INTERVAL IS THE POINT. Report days are irregular -- the source has
+    skipped one to four days nine times, once five -- so a daily row is not
+    "a day's cases": it is everything the cumulative moved over
+    `(previous report day, this report day]`, which `days_covered` states.
+    An engine that accumulates between consecutive observation times reads
+    that correctly with no rescaling; anything that divides must divide by
+    `days_covered` and not by one. Nothing here is spread across the
+    interval, because the source does not say how it was distributed.
+
+    Report days with no report are absent, never zero -- the same rule the
+    weekly bins follow, and for the same reason.
+    """
+    d = (cum.filter(pl.col("date").is_in(report_dates.to_list())).sort("date")
+         .with_columns((pl.col("cum") - pl.col("cum").shift(1)).alias("count"),
+                       (pl.col("date") - pl.col("date").shift(1))
+                       .dt.total_days().alias("days_covered"))
+         .drop_nulls("count"))
+    return d.select("date", "count", "days_covered")
+
+
+def daily_flags(dates: pl.Series, caveat: pl.DataFrame | None,
+                exceptions: pl.DataFrame | None, province: str) -> pl.Series:
+    """What the SOURCE says about each report day, for a consumer that wants
+    to down-weight consolidation rather than absorb it in dispersion.
+
+      consolidating      the report carries the "recent fluctuations ...
+                         notification delays and progressive consolidation"
+                         caveat -- the custodians declining to read their own
+                         newest points as epidemiology.
+      harmonisation      the early footnote declaring the cumulative still
+                         under harmonisation; `_undercount` where the source
+                         states outright that it omits community cases and
+                         escapees.
+      stale_distribution this province's zone rows are a distribution from an
+                         earlier date, by the page's own note (sitrep 059) --
+                         registered, so the flag follows the register rather
+                         than a guess.
+
+    Empty means the page said nothing of the kind. A negative count is the
+    source's own downward revision and is visible as its own sign; it is not
+    flagged here.
+    """
+    cav: dict[str, list[str]] = {}
+    if caveat is not None:
+        for r in caveat.iter_rows(named=True):
+            k = r["kind"]
+            if k in ("none", None):
+                continue
+            tag = ("consolidating" if k == "recent_data_provisional"
+                   else "harmonisation_undercount"
+                   if k == "harmonisation_undercount"
+                   else "harmonisation" if k == "harmonisation_pending"
+                   else k)
+            cav.setdefault(r["date"], []).append(tag)
+    stale: set[str] = set()
+    if exceptions is not None and not exceptions.is_empty():
+        for r in exceptions.iter_rows(named=True):
+            if r["unit"] == province and "distribution" in (r["note"] or ""):
+                stale.add(r["date"])
+    out = []
+    for d in dates.to_list():
+        s = str(d)
+        tags = list(dict.fromkeys(cav.get(s, [])))
+        if s in stale:
+            tags.append("stale_distribution")
+        # "-" rather than "": polars writes an empty string as a quoted ""
+        # in TSV, which a naive reader takes as a two-character value.
+        out.append("|".join(tags) if tags else "-")
+    return pl.Series("flags", out, dtype=pl.Utf8)
 
 
 def ascertainment(panel: pl.DataFrame,
@@ -391,6 +468,13 @@ def main() -> None:
     ap.add_argument("--lab", type=Path, default=None,
                     help="lab_prose.csv: licensed daily testing volume and "
                          "positives, for the national testing stream")
+    ap.add_argument("--caveat", type=Path, default=None,
+                    help="provisional_caveat.csv, so daily rows carry the "
+                         "source's own consolidation flags")
+    ap.add_argument("--exceptions", type=Path,
+                    default=ROOT / "registers/reconciliation_exceptions.tsv",
+                    help="the exception register, for the stale-distribution "
+                         "flag on daily rows")
     args = ap.parse_args()
     args.out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -641,6 +725,93 @@ def main() -> None:
                   f"{', '.join(str(x) for x in bad['date'].to_list())}",
                   file=sys.stderr)
 
+    # ------------------------------------------------------------------
+    # DAILY COMPANIONS. One row per report day, the increment since the
+    # previous report day, `days_covered` naming the interval it covers, and
+    # the source's own consolidation flags. Same construction as the weekly
+    # streams -- same panel, same forward-filled grid, same registers -- so
+    # the two resolutions cannot disagree about what a report said; a daily
+    # stream's total is gated against the same cumulative movement.
+    caveat = (pl.read_csv(args.caveat, infer_schema_length=None)
+              if args.caveat and args.caveat.exists() else None)
+    exceptions = (pl.read_csv(args.exceptions, separator="\t",
+                              comment_prefix="#", infer_schema_length=None)
+                  if args.exceptions and args.exceptions.exists() else None)
+
+    def emit_daily(name: str, cum: pl.DataFrame, reps: pl.Series,
+                   province: str) -> None:
+        d = daily_increments(cum, reps)
+        if d.is_empty():
+            return
+        d = d.with_columns(daily_flags(d["date"], caveat, exceptions, province))
+        emitted = int(d["count"].sum())
+        delta = int(cum.filter(pl.col("date").is_in(reps.to_list()))["cum"][-1]
+                    - cum.filter(pl.col("date").is_in(reps.to_list()))["cum"][0])
+        recon[name] = {
+            "n_obs": d.height, "emitted": emitted, "source_delta": delta,
+            "difference": emitted - delta,
+            "first_date": str(d["date"][0]), "last_date": str(d["date"][-1]),
+            "days_covered": {"median": float(d["days_covered"].median()),
+                             "max": int(d["days_covered"].max()),
+                             "n_gt_1": int(d.filter(pl.col("days_covered") > 1).height)},
+            "n_flagged": int(d.filter(pl.col("flags") != "-").height),
+            "n_negative": int(d.filter(pl.col("count") < 0).height),
+        }
+        if emitted != delta:
+            failures.append(name)
+        (d.select(pl.col("date").dt.to_string("%Y-%m-%d").alias("time"),
+                  pl.col("count").alias(name), "days_covered", "flags")
+         .write_csv(args.out_dir / f"{name}.tsv", separator="\t"))
+
+    for prov, slug in STREAM_PROVINCES.items():
+        for col, stem in (("cum_cases", "cases"), ("cum_deaths", "deaths")):
+            cum = daily_cumulative(panel, prov, col)
+            if cum.is_empty():
+                continue
+            reps = (panel.filter((pl.col("province") == prov)
+                                 & pl.col("level").is_in(["zone", "unassigned"])
+                                 & pl.col(col).is_not_null())
+                    .select(pl.col("date").str.to_date()).unique()["date"])
+            emit_daily(f"{stem}_daily_{slug}", cum, reps, prov)
+    for col, stem in (("cum_cases", "cases"), ("cum_deaths", "deaths")):
+        printed = national_printed(panel, summary, prose, col)
+        cum = national_cumulative_grid(printed)
+        if not cum.is_empty():
+            emit_daily(f"{stem}_daily_national", cum, printed["date"], "national")
+
+    # The daily ascertainment split: these columns are ALREADY the day's own
+    # 24-hour flows as the source prints them, so a row covers one day
+    # whatever the gap before it -- `days_since_prev_report` says how far
+    # back the previous observation sits without claiming the interval.
+    for prov, slug in list(STREAM_PROVINCES.items()) + [(None, "national")]:
+        lvl = "national" if prov is None else "province"
+        sel = panel.filter((pl.col("level") == lvl)
+                           & pl.col("deaths_community").is_not_null()
+                           & pl.col("deaths_total").is_not_null())
+        if prov is not None:
+            sel = sel.filter(pl.col("province") == prov)
+        if sel.is_empty():
+            continue
+        d = (sel.with_columns(pl.col("date").str.to_date())
+             .group_by("date")
+             .agg(pl.col("deaths_community").last(), pl.col("deaths_total").last())
+             .sort("date")
+             .with_columns((pl.col("date") - pl.col("date").shift(1))
+                           .dt.total_days().fill_null(1)
+                           .alias("days_since_prev_report")))
+        d = d.with_columns(daily_flags(d["date"], caveat, exceptions,
+                                       prov or "national"))
+        name = f"community_deaths_daily_{slug}"
+        (d.select(pl.col("date").dt.to_string("%Y-%m-%d").alias("time"),
+                  pl.col("deaths_community").alias(name),
+                  pl.col("deaths_total").alias(f"deaths_split_daily_{slug}"),
+                  "days_since_prev_report", "flags")
+         .write_csv(args.out_dir / f"{name}.tsv", separator="\t"))
+        recon[name] = {"n_obs": d.height,
+                       "emitted": int(d["deaths_community"].sum()),
+                       "emitted_total": int(d["deaths_total"].sum()),
+                       "n_flagged": int(d.filter(pl.col("flags") != "-").height)}
+
     # THE TESTING STREAM, from the laboratory prose (extract_lab_prose.py:
     # every row is licensed by the sentence's own printed positivity). This
     # is the scale anchor the national model class asked for: with no stream
@@ -670,6 +841,33 @@ def main() -> None:
                            pl.col("positives").alias("positives_national"),
                            pl.col("samples").alias("tests_national"))
              .write_csv(args.out_dir / "lab_national.tsv", separator="\t"))
+            # THE DAILY FORM IS THE COVERAGE-HONEST ONE, and this stream needs
+            # it most: a weekly total is the sum over however many report-days
+            # and however many PROVINCES licensed a sentence that week, and
+            # both vary -- the last weekly bins rest on one report-day each.
+            # `n_provinces` is therefore emitted beside the counts: a day's
+            # national total is the sum over exactly those provinces, and a
+            # consumer that ignores it will read a composition change as a
+            # change in testing effort.
+            dl = daily.sort("date").with_columns(
+                (pl.col("date") - pl.col("date").shift(1)).dt.total_days()
+                .fill_null(1).alias("days_since_prev_report"))
+            dl = dl.with_columns(daily_flags(dl["date"], caveat, exceptions,
+                                             "national"))
+            (dl.select(pl.col("date").dt.to_string("%Y-%m-%d").alias("time"),
+                       pl.col("positives").alias("positives_daily_national"),
+                       pl.col("samples").alias("tests_daily_national"),
+                       pl.col("n_prov").alias("n_provinces"),
+                       "days_since_prev_report", "flags")
+             .write_csv(args.out_dir / "lab_daily_national.tsv", separator="\t"))
+            recon["lab_daily_national"] = {
+                "n_obs": dl.height,
+                "tests": int(dl["samples"].sum()),
+                "positives": int(dl["positives"].sum()),
+                "n_provinces": {"median": float(dl["n_prov"].median()),
+                                "min": int(dl["n_prov"].min()),
+                                "max": int(dl["n_prov"].max())},
+            }
             # Cross-check: a day's positives should be the day's newly
             # confirmed cases, province by province. Equality on most dates is
             # what licenses reading this stream as testing effort; the
@@ -725,7 +923,13 @@ def main() -> None:
                   f"{pv['n_equal']}/{pv['n_compared']} equal")
             continue
         if "source_delta" not in r:      # an ascertainment stream
-            av = r["vs_printed_daily"]
+            av = r.get("vs_printed_daily")
+            if av is None:               # the daily form carries no such check
+                print(f"  {name:<26} {r['n_obs']:>3} obs   community "
+                      f"{r['emitted']:>4} of {r.get('emitted_total', 0):>4}"
+                      + (f"   {r['n_flagged']} flagged"
+                         if r.get("n_flagged") else ""))
+                continue
             print(f"  {name:<22} {r['n_obs']:>3} obs   community {r['emitted']:>4} "
                   f"of {r['emitted_total']:>4}   vs printed daily: "
                   f"{av['n_equal']}/{av['n_compared']} equal")

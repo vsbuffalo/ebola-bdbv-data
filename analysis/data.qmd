@@ -224,21 +224,27 @@ lines = []
 for name, r in sorted(meta["reconciliation"].items()):
     if "tests" in r:
         # The testing stream: licensed prose, checked against new cases.
-        pv = r["positives_vs_new_cases"]
+        # Its daily companion carries province coverage instead.
+        pv = r.get("positives_vs_new_cases")
+        cov = r.get("n_provinces")
         lines.append(
             f"| `{name}` | {r['n_obs']} | {stat(r['positives'])} of "
             f"{stat(r['tests'])} tests | — | "
-            f"{pv['n_equal']}/{pv['n_compared']} vs new cases | — |")
+            + (f"{pv['n_equal']}/{pv['n_compared']} vs new cases | — |" if pv
+               else f"{cov['min']}–{cov['max']} provinces/day | — |" if cov
+               else "— | — |"))
         continue
     if "difference" not in r:
         # An ascertainment stream: community deaths of total split deaths,
         # read from the printed province rows and checked per-date against
-        # the zone breakdown where the table prints one.
-        av = r["vs_printed_daily"]
+        # the zone breakdown where the table prints one. The daily companion
+        # carries no such check -- it IS the printed rows, per report day.
+        av = r.get("vs_printed_daily")
         lines.append(
             f"| `{name}` | {r['n_obs']} | {stat(r['emitted'])} of "
             f"{stat(r['emitted_total'])} | — | "
-            f"{av['n_equal']}/{av['n_compared']} daily | — |")
+            + (f"{av['n_equal']}/{av['n_compared']} daily | — |" if av else
+               f"{r.get('n_flagged', 0)} flagged | — |"))
         continue
     vp = r.get("vs_printed", {})
     lines.append(

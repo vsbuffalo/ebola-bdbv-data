@@ -143,9 +143,8 @@ committed inputs; delete it and `make build` returns it byte-identically.
 
 ### The modelling contract
 
-The fifteen files of `data/build/streams/` — fourteen stream TSVs (three
-provinces plus national, the testing stream, and the Uganda exports) plus
-`meta.json` (whose
+The stream files of `data/build/streams/` — weekly TSVs, a **daily
+companion for each** (one row per report day), and `meta.json` (whose
 `population` and `day0` fields are read too) — are vendored by the modelling
 repository, pinned to a commit of this one and verified by per-file sha256
 against a byte-identical rebuild. The national streams are built from the
@@ -156,8 +155,22 @@ a finding. That makes their shape a
 **contract, not an implementation detail**: file renames, column changes,
 and the `uganda_exports` convention (cumulative counts at bulletin dates,
 deliberately unlike the weekly-incidence streams beside it) are coordinated
-changes, announced across both repositories — never refactors. Contract
-changes ship through the release tags described at the top, with the change
+changes, announced across both repositories — never refactors.
+
+**Two resolutions, one construction.** `cases_ituri.tsv` is weekly;
+`cases_daily_ituri.tsv` is the same quantity per report day. Both come from
+the same panel, the same registers and the same gate — a stream's total
+equals what the source's cumulative moved, exactly — so the two resolutions
+cannot disagree about what a report said. The daily files state the interval
+each row covers, because report days are irregular: `days_covered` is the
+length of `(previous report day, this report day]`, and nothing is spread
+across it. Days with no report are absent, never zero. A `flags` column
+carries the source's own words about that day (`consolidating`,
+`harmonisation`, `harmonisation_undercount`, `stale_distribution`, `-` for
+none), so a consumer can down-weight batch consolidation rather than absorb
+it in dispersion.
+
+Contract changes ship through the release tags described at the top, with the change
 named in the tag message.
 
 ## How the extraction works

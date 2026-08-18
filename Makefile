@@ -94,6 +94,7 @@ streams:
 		--summary data/build/series/province_summary.csv \
 		--prose data/build/series/prose_provinces.csv \
 		--lab data/build/series/lab_prose.csv \
+		--caveat data/build/series/provisional_caveat.csv \
 		--geojson data/raw/health_zones.geojson \
 		--population data/raw/zone_population.csv \
 		--out-dir data/build/streams
@@ -108,6 +109,11 @@ streams:
 	#   data/build/streams/community_deaths_haut_uele.tsv
 	#   data/build/streams/community_deaths_national.tsv
 	#   data/build/streams/lab_national.tsv
+	# and the DAILY companions, one row per report day:
+	#   data/build/streams/cases_daily_{ituri,nord_kivu,haut_uele,national}.tsv
+	#   data/build/streams/deaths_daily_{ituri,nord_kivu,haut_uele,national}.tsv
+	#   data/build/streams/community_deaths_daily_{ituri,nord_kivu,haut_uele,national}.tsv
+	#   data/build/streams/lab_daily_national.tsv
 	#   data/build/streams/meta.json
 	uv run python scripts/build_uganda_stream.py \
 		--uganda data/raw/uganda_cases.toml \
