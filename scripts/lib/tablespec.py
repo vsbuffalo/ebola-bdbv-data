@@ -61,8 +61,22 @@ class Role(StrEnum):
     CUM_DEATHS = "cum_deaths"                # cumulative confirmed deaths
     LETALITY = "letality"                    # printed case fatality; a CHECK, never data
     NEW_CASES = "new_cases"                  # confirmed cases in the last 24 h
-    DEATHS_COMMUNITY = "deaths_community"    # community deaths confirmed by post-mortem swab
-    DEATHS_CTE = "deaths_treatment_centre"   # deaths inside an Ebola treatment centre
+    # THE DEATH SPLIT'S BOUNDARY IS CASE-MANAGEMENT STATUS, NOT GEOGRAPHY.
+    # The source never defines the columns, but it answers operationally:
+    # the heading prints `Décès communautaires (Swab+)`, two narratives
+    # partition a day's deaths exactly as "communautaires swab+" vs "en
+    # CTE/CT", the two columns sum to the printed total on 733 of 734 rows,
+    # and on sitrep 081 two deaths the narrative calls INTRA-HOSPITALIERS
+    # (ordinary hospitals; Haut-Uélé has no ETC) are printed in the intra-CTE
+    # column. So `deaths_community` = died OUTSIDE case management, confirmed
+    # post-mortem by swab wherever the body lay (household or ward), and
+    # `deaths_treatment_centre` = died as a recognised case under care in an
+    # ETC, transit centre, or hospital serving as one. This is close to
+    # WHO's DRC "community death" (an isolation-status notion), except that
+    # a recognised case dying in a non-ETC facility falls on the CTE side
+    # here where WHO's location rule would call it community.
+    DEATHS_COMMUNITY = "deaths_community"    # died outside case management; Swab+
+    DEATHS_CTE = "deaths_treatment_centre"   # died under care (CTE/CT/hospital-as-CT)
     DEATHS_TOTAL = "deaths_total"            # confirmed deaths in the last 24 h
     SUSPECTED = "suspected"                  # suspected cases, cumulative (a stock)
     NEW_SUSPECTED = "new_suspected"          # suspected cases in 24 h (a flow)
