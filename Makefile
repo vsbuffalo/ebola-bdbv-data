@@ -2,7 +2,7 @@
 # by design: `build` and `doc` never touch the network, so a rebuild can never
 # silently change what the source says.
 
-.PHONY: release-check oneoff-testing oneoff-death-split cron-install cron-uninstall check fetch refresh verify build streams compare figures external \
+.PHONY: release-check oneoff-testing oneoff-death-split oneoff-death-flow cron-install cron-uninstall check fetch refresh verify build streams compare figures external \
 	external-update scan-refresh doc serve test
 
 ## check   -- is the archive current, and does the source still look the same?
@@ -204,6 +204,12 @@ release-check:
 	ln -s $$(pwd)/data/raw/sitrep_pdfs $(RC_DIR)/data/raw/sitrep_pdfs
 	cd $(RC_DIR) && make build && make streams
 	@echo "release-check PASSED: the committed state builds from a fresh clone"
+
+## oneoff-death-flow -- DISPOSABLE diagram: where a death goes, from the
+##            event to the likelihood, with the two lossy edges named.
+oneoff-death-flow:
+	uv run python scripts/oneoff_death_flow.py \
+		--out data/build/figures/oneoff_death_flow.png
 
 ## oneoff-death-split -- DISPOSABLE question figure: what the community-death
 ##            streams contain (two counts, not a percentage). Delete with
