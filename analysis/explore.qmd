@@ -69,6 +69,7 @@ series = load("data/build/series/province_series.csv")
 st = load("data/build/series/zone_table_status.csv")
 summ = load("data/build/series/province_summary.csv")
 cav = load("data/build/series/provisional_caveat.csv")
+lab = load("data/build/series/lab_prose.csv")
 meta = load_json("data/build/streams/meta.json")
 comp = load("data/build/compare/zone_comparison.csv")
 ex = source("registers/reconciliation_exceptions.tsv")
@@ -138,6 +139,11 @@ for prov in ("Ituri", "Nord-Kivu"):
         b = (blk.filter(pl.col(col).is_not_null())
              .group_by("date").agg(pl.col(col).sum()).sort("date"))
         per[col] = list(zip(b["date"].to_list(), b[col].to_list()))
+    lb = (lab.filter(pl.col("province") == prov)
+          .group_by("date").agg(pl.col("samples").sum()).sort("date"))
+    if lb.height:
+        per["lab_tests"] = list(zip(lb["date"].to_list(),
+                                    lb["samples"].to_list()))
     for name, rows in per.items():
         days = [_dt.date.fromisoformat(d) for d, _ in rows]
         sm = _smooth([v for _, v in rows], days)
@@ -285,6 +291,7 @@ FLOW_LABELS = new Map([
   ["deaths_diff", ["Confirmed deaths / day", "differenced cumulative"]],
   ["deaths_community", ["Community deaths / day", "post-mortem swab — the ascertainment signal"]],
   ["deaths_treatment_centre", ["Treatment-centre deaths / day", "the other half of the same split"]],
+  ["lab_tests", ["Samples analysed / day", "laboratory prose — every point licensed by its own printed positivity"]],
 ])
 ```
 

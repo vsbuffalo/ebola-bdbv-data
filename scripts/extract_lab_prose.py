@@ -61,7 +61,11 @@ PROV_RE = re.compile(r"\b(Ituri|Nord[-\s]Kivu|Sud[-\s]Kivu|Haut[-\s]U[ée]l[ée]
 LAB_WORD = re.compile(r"[ée]chantillons?|pr[ée]l[èe]vements?", re.I)
 FLOW_WORD = re.compile(r"nouveaux?|nouvelles?|derni[èe]res?\s+24|du\s+jour", re.I)
 PCT = re.compile(r"(\d{1,2}(?:[.,]\d{1,2})?)\s*%")
-INT = re.compile(r"(?<![\d,.%])(\d{1,4})(?![\d%])")
+#: The lookahead also refuses `,\d` and `.\d`: a decimal percentage's integer
+#: part ("2,6%" -> 2) otherwise joins the pool, and on sitrep 040 the phantom
+#: pair (2, 76) -> 2.63% collided with the true (1, 39) -> 2.56%, turning a
+#: perfectly licensed sentence into an ambiguity refusal.
+INT = re.compile(r"(?<![\d,.%])(\d{1,4})(?!\d|[.,]\d|\s*%)")
 
 
 def _norm_prov(s: str) -> str:
@@ -160,6 +164,19 @@ def extract(pdf: Path) -> tuple[list[dict], list[dict]]:
                 refused.append({"why": "no_flow_marker", "prov": prov,
                                 "sent": seg[:160]})
             continue
+        # "tous revenus négatifs" / "aucun résultat positif" is zero positives
+        # stated in words -- a licence as explicit as a printed rate. The
+        # sample count must sit adjacent to its noun, uniquely.
+        NEG = re.compile(r"tous\s+(?:sont\s+)?(?:revenus\s+)?n[ée]gatifs?"
+                         r"|aucun\s+(?:nouveau\s+)?(?:r[ée]sultat\s+)?positif",
+                         re.I)
+        if not pcts and NEG.search(seg):
+            ns = re.findall(r"(\d{1,4})\s+(?:nouveaux\s+)?[ée]chantillons", seg)
+            if len(ns) == 1:
+                rows.append({"province": prov, "samples": int(ns[0]),
+                             "positives": 0, "printed_pct": 0.0,
+                             "sentence": seg.strip()[:220]})
+                continue
         if not pcts or len(ints) < 2:
             if len(ints) >= 2:
                 refused.append({"why": "no_printed_rate", "prov": prov,
