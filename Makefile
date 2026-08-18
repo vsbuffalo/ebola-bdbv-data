@@ -2,7 +2,7 @@
 # by design: `build` and `doc` never touch the network, so a rebuild can never
 # silently change what the source says.
 
-.PHONY: cron-install cron-uninstall check fetch refresh verify build streams compare figures external \
+.PHONY: oneoff-testing cron-install cron-uninstall check fetch refresh verify build streams compare figures external \
 	external-update scan-refresh doc serve test
 
 ## check   -- is the archive current, and does the source still look the same?
@@ -185,6 +185,14 @@ figures:
 		--out data/build/figures/streams_detail.png
 	uv run python scripts/plot_figures.py --figure residuals \
 		--out data/build/figures/residuals.png
+
+## oneoff-testing -- DISPOSABLE question figure: did testing keep pace with
+##            incidence? Not part of `figures`, not referenced by any
+##            document. Delete scripts/oneoff_testing_effort.py and this
+##            target together when the question is settled.
+oneoff-testing:
+	uv run python scripts/oneoff_testing_effort.py \
+		--out data/build/figures/oneoff_testing_effort.png
 
 ## doc     -- render analysis/data.html against the built artefacts.
 ##            Every read the document makes is fail-closed through _guard.py:
