@@ -6,9 +6,26 @@ together once the question is settled.
 Draws the death pathway as a flow: an Ebola death occurs, may or may not be
 confirmed, may or may not be classified into the community/care split, and
 lands in one, both or neither of the two emitted streams. Every count is
-read from the built streams at draw time -- nothing here is typed -- and
-the two lossy edges are drawn as prominently as the surviving ones, because
-they are what a reader most needs to see.
+read from the built streams at draw time -- nothing here is typed.
+
+THREE STATES, THREE ENCODINGS, because two of them were once drawn alike
+and that was a claim about the data that is not true:
+
+  extracted and emitted     solid border, coloured  -- in a stream the model
+                                                       reads
+  extracted, not classified solid grey              -- IN the death stream,
+                                                       counted, fed to the
+                                                       model; only its
+                                                       community/care status
+                                                       is unknown. Missing
+                                                       covariate, not a
+                                                       missing death.
+  never observed            dashed, hollow          -- no count exists in the
+                                                       source at all
+
+The middle state is measurable and measured (it is the difference between
+the two streams); the outer one is not. Drawing them the same way implied
+the outbreak loses deaths where in fact it loses only their classification.
 
 The national window is the one the split exists for (13 July onward); the
 `deaths_*` stream itself runs from 29 May, which the caption states.
@@ -26,7 +43,11 @@ import polars as pl
 from matplotlib.patches import FancyArrowPatch, FancyBboxPatch
 
 COMM, CARE = "#D55E00", "#0072B2"
-LOST = "#9a9a9a"
+#: The three states a death can be in, and the encoding each gets. KEPT
+#: SEPARATE ON PURPOSE: `UNCLASS` is observed and counted, `UNOBS` is not.
+KEPT = "#222222"          # extracted and emitted
+UNCLASS = "#7a7a7a"       # extracted, counted, but carrying no classification
+UNOBS = "#b0b0b0"         # never observed; no count exists
 INK, MUTED = "#222222", "#666666"
 
 
@@ -72,78 +93,97 @@ def main() -> None:
     total_stream = int(d[f"deaths_{s}"].sum())
     w0, w1 = c["time"].min(), c["time"].max()
 
-    fig, ax = plt.subplots(figsize=(12.6, 9.4))
-    ax.set_xlim(0, 12.6); ax.set_ylim(0, 9.4); ax.axis("off")
+    fig, ax = plt.subplots(figsize=(14.2, 9.4))
+    ax.set_xlim(0, 14.2); ax.set_ylim(0, 9.4); ax.axis("off")
     ax.text(0.1, 9.25, "Where a death goes", ha="left", va="top", fontsize=16,
             fontweight="bold", color=INK)
     ax.text(0.1, 8.82, "and which of it reaches the model",
             ha="left", va="top", fontsize=10.5, color=MUTED)
 
     # ---- the event, and the first loss -------------------------------------
-    box(ax, 4.0, 7.85, 3.4, 0.7, "A person dies of Ebola",
+    box(ax, 5.6, 7.85, 3.4, 0.7, "A person dies of Ebola",
         fc="#f4f4f4", ec=MUTED, tc=INK, fs=11.5, weight="bold")
 
-    box(ax, 9.6, 7.85, 4.6, 1.5,
+    box(ax, 11.2, 7.85, 4.6, 1.5,
         "Body never swabbed\nrefusal · burial before the team · failure\n\n"
         "NEVER CONFIRMED — in no stream\ncount unknown, anywhere in the source",
-        fc="#f7f7f7", ec=LOST, tc=MUTED, ls=(0, (4, 3)), fs=9.5)
-    arrow(ax, (5.75, 7.85), (7.2, 7.85), color=LOST, ls=(0, (4, 3)))
+        fc="#ffffff", ec=UNOBS, tc=MUTED, ls=(0, (4, 3)), fs=9.5)
+    arrow(ax, (7.35, 7.85), (8.8, 7.85), color=UNOBS, ls=(0, (4, 3)))
 
     # ---- confirmed --------------------------------------------------------
-    box(ax, 4.0, 6.1, 3.4, 0.8, f"Confirmed death\n{inwin:,} in this window",
+    box(ax, 5.6, 6.1, 3.4, 0.8, f"Confirmed death\n{inwin:,} in this window",
         fc="#eef3f8", ec=INK, fs=10.5, weight="bold")
-    arrow(ax, (4.0, 7.48), (4.0, 6.53), label="swab+, or\ndied a known case",
+    arrow(ax, (5.6, 7.48), (5.6, 6.53), label="swab+, or\ndied a known case",
           lx=-1.5, fs=9, tc=MUTED)
 
-    # every confirmed death reaches the death stream
-    box(ax, 1.5, 4.3, 2.7, 0.9,
+    # EVERY confirmed death reaches the death stream, classified or not --
+    # the fact the old drawing obscured by dashing the unclassified edge.
+    box(ax, 3.1, 4.3, 2.7, 0.9,
         f"deaths_{s}.tsv\n{total_stream:,} deaths, all weeks",
         fc="#ffffff", ec=INK, fs=10, weight="bold")
-    arrow(ax, (2.9, 5.78), (1.8, 4.8), label="all\nof them", lx=-0.5, ly=0.25,
+    arrow(ax, (4.5, 5.78), (3.4, 4.8), label="all\nof them", lx=-0.5, ly=0.25,
           fs=9, tc=MUTED)
 
     # ---- classified or not ------------------------------------------------
-    box(ax, 5.3, 4.3, 3.2, 0.9,
+    box(ax, 6.9, 4.3, 3.2, 0.9,
         f"Classified that day\n{split:,} — the denominator",
         fc="#ffffff", ec=INK, fs=10, weight="bold")
-    arrow(ax, (4.4, 5.68), (5.1, 4.79))
+    arrow(ax, (6.0, 5.68), (6.7, 4.79))
 
-    box(ax, 9.6, 4.3, 4.6, 1.2,
-        f"Never classified — {unclassified:,}\n"
+    box(ax, 11.2, 4.3, 4.6, 1.2,
+        f"Not classified — {unclassified:,}\n"
         "silent days · batch consolidations\n"
-        "in the death stream, not in the split",
-        fc="#f7f7f7", ec=LOST, tc=MUTED, ls=(0, (4, 3)), fs=9.5)
-    arrow(ax, (5.4, 5.7), (7.9, 4.75), color=LOST, ls=(0, (4, 3)))
+        "counted in the death stream; only the\ncommunity/care status is unknown",
+        fc="#efefef", ec=UNCLASS, tc=INK, fs=9.5)
+    arrow(ax, (7.0, 5.7), (9.5, 4.75), color=UNCLASS)
 
     # ---- the two classes --------------------------------------------------
-    box(ax, 3.5, 2.5, 3.1, 0.95,
+    box(ax, 5.1, 2.5, 3.1, 0.95,
         f"Never under care\n{comm:,}  ·  post-mortem Swab+",
         fc="#fdece2", ec=COMM, tc=INK, fs=10, weight="bold")
-    box(ax, 7.2, 2.5, 3.1, 0.95,
+    box(ax, 8.8, 2.5, 3.1, 0.95,
         f"Died under care\n{care:,}  ·  CTE / CT / hospital",
         fc="#e6f0f7", ec=CARE, tc=INK, fs=10, weight="bold")
-    arrow(ax, (4.9, 3.83), (3.8, 3.0), color=COMM)
-    arrow(ax, (5.7, 3.83), (6.9, 3.0), color=CARE)
+    arrow(ax, (6.5, 3.83), (5.4, 3.0), color=COMM)
+    arrow(ax, (7.3, 3.83), (8.5, 3.0), color=CARE)
 
     # ---- the emitted stream ------------------------------------------------
-    box(ax, 5.3, 0.95, 5.6, 1.1,
+    box(ax, 6.9, 0.95, 5.6, 1.1,
         f"community_deaths_{s}.tsv\n"
         f"numerator {comm:,}   ·   denominator {split:,}\n"
         f"two counts, never a ratio",
         fc="#ffffff", ec=INK, fs=10.5, weight="bold")
-    arrow(ax, (3.5, 2.01), (4.3, 1.53), color=COMM)
-    arrow(ax, (7.2, 2.01), (6.3, 1.53), color=CARE)
+    arrow(ax, (5.1, 2.01), (5.9, 1.53), color=COMM)
+    arrow(ax, (8.8, 2.01), (7.9, 1.53), color=CARE)
 
-    ax.text(10.6, 0.95, "model infers\n"
+    ax.text(12.2, 0.95, "model infers\n"
             + r"$P(\mathrm{never\ isolated}\mid\mathrm{confirmed\ death})$"
             + "\nbeta-binomial", ha="center", va="center", fontsize=10,
             color=INK, linespacing=1.7)
-    arrow(ax, (8.15, 0.95), (9.05, 0.95))
+    arrow(ax, (9.75, 0.95), (10.65, 0.95))
+
+    # ---- legend: the three states, stated once -----------------------------
+    lx, ly0, dy = 0.35, 7.9, 0.62
+    ax.text(lx, ly0 + 0.5, "each box is one of three states",
+            ha="left", va="center", fontsize=9, color=MUTED, style="italic")
+    for i, (ec, fc, ls, lab) in enumerate([
+            (KEPT, "#ffffff", "solid", "extracted and emitted\nthe model reads it"),
+            (UNCLASS, "#efefef", "solid",
+             "extracted, counted, unclassified\nin the death stream only"),
+            (UNOBS, "#ffffff", (0, (4, 3)),
+             "never observed\nno count exists")]):
+        y = ly0 - i * dy
+        ax.add_patch(FancyBboxPatch((lx, y - 0.11), 0.42, 0.22,
+                                    boxstyle="round,pad=0.01", facecolor=fc,
+                                    edgecolor=ec, linewidth=1.4, linestyle=ls))
+        ax.text(lx + 0.55, y, lab, ha="left", va="center", fontsize=8.5,
+                color=MUTED, linespacing=1.35)
 
     ax.text(0.1, 0.02,
             f"Counts: {args.scope.replace('_', '-')}, {w0} to {w1} — the "
             f"window in which the source prints the split.   "
-            f"Dashed = lost to the observation process.",
+            f"The grey state is a missing CLASSIFICATION, not a missing "
+            f"death: those {unclassified:,} are in the fitted death stream.",
             ha="left", va="bottom", fontsize=9, color=MUTED)
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
