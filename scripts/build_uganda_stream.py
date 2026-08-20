@@ -37,6 +37,13 @@ set by the last observed export, not by a known policy date. Measures plausibly
 began in late May, inside the window being treated as unrestricted, so the fitted
 export rate is a LOWER bound on the true unrestricted rate and the prevalence it
 implies is a lower bound on true prevalence.
+
+NO `days_covered` / `n_report_days` HERE, DELIBERATELY. Every other stream
+file carries the span of the window its count accumulates over; these rows
+are CUMULATIVE importation counts read at two bulletin moments -- a stock,
+not an interval count -- so a span column would assert a window that does
+not exist. The absence is the signal that this file follows a different
+convention from the incidence streams beside it.
 """
 
 from __future__ import annotations

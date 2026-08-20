@@ -217,6 +217,25 @@ def weekly_increments(cum: pl.DataFrame,
     return out.filter(pl.col("n_report_days") > 0)
 
 
+def spans(times, left) -> list[int]:
+    """How many days each row's window covers: `(previous time, this time]`,
+    with `left` standing in as the boundary before the first row.
+
+    EVERY EMITTED FILE CARRIES THIS, weekly ones included. The row spacing of
+    a "weekly" stream is 4 to 8 days (the lab stream's is 2 to 9), because
+    observation times are the last REPORT day in each bin and the source does
+    not publish on a fixed cadence -- so a consumer inferring the interval
+    from the filename, or from the gap to the next row, infers it wrong
+    exactly where it matters. Stating it per row makes the accumulation
+    window a property of the data rather than of a naming convention.
+    """
+    out, prev = [], left
+    for t in times:
+        out.append(int((t - prev).days))
+        prev = t
+    return out
+
+
 def daily_increments(cum: pl.DataFrame, report_dates: pl.Series) -> pl.DataFrame:
     """One row per REPORT DAY: the cumulative's movement since the previous
     report day, and the length of the interval that movement covers.
@@ -342,13 +361,18 @@ def ascertainment(panel: pl.DataFrame,
     vs = {"n_compared": chk.height,
           "n_equal": chk.height - bad.height,
           "dates_disagree": [str(x) for x in bad["date"].to_list()]}
+    # `n_report_days` is the coverage number that matters for a flow SUM: the
+    # row's calendar span says how wide its window is, this says how much of
+    # that window the source actually reported on.
     weekly = (printed.with_columns(
                   (((pl.col("date") - pl.lit(DAY0)).dt.total_days() - 1)
                    // BIN_DAYS).alias("bin"))
               .group_by("bin")
               .agg(pl.col("deaths_community").sum(),
                    pl.col("deaths_total").sum(),
-                   pl.col("date").max().alias("time"))
+                   pl.col("date").max().alias("time"),
+                   pl.len().alias("n_report_days"),
+                   pl.col("date").min().alias("first_day"))
               .sort("bin"))
     return weekly, vs
 
@@ -551,16 +575,25 @@ def main() -> None:
                     "worst_gap_date": str(worst[0]),
                     "final_gap": int(chk["gap"][-1]),
                 }
-            (weekly.select(pl.col("time").dt.to_string("%Y-%m-%d"),
-                           pl.col("count").alias(name))
+            (weekly.with_columns(
+                pl.Series("days_covered",
+                          spans(weekly["time"].to_list(), cum["date"][0])))
+             .select(pl.col("time").dt.to_string("%Y-%m-%d"),
+                     pl.col("count").alias(name),
+                     "days_covered", "n_report_days")
              .write_csv(args.out_dir / f"{name}.tsv", separator="\t"))
 
         asc, asc_vs = ascertainment(panel, prov)
         if not asc.is_empty():
-            (asc.select(pl.col("time").dt.to_string("%Y-%m-%d"),
-                        pl.col("deaths_community")
-                        .alias(f"community_deaths_{slug}"),
-                        pl.col("deaths_total").alias(f"deaths_split_{slug}"))
+            (asc.with_columns(
+                pl.Series("days_covered",
+                          spans(asc["time"].to_list(),
+                                asc["first_day"][0] - dt.timedelta(days=1))))
+             .select(pl.col("time").dt.to_string("%Y-%m-%d"),
+                     pl.col("deaths_community")
+                     .alias(f"community_deaths_{slug}"),
+                     pl.col("deaths_total").alias(f"deaths_split_{slug}"),
+                     "days_covered", "n_report_days")
              .write_csv(args.out_dir / f"community_deaths_{slug}.tsv",
                         separator="\t"))
             recon[f"community_deaths_{slug}"] = {
@@ -670,8 +703,12 @@ def main() -> None:
                 print(f"    bin {r['bin']} ({r['time']}): "
                       f"unattributed {r['unattributed']:+d}", file=sys.stderr)
 
-        (weekly.select(pl.col("time").dt.to_string("%Y-%m-%d"),
-                       pl.col("count").alias(name))
+        (weekly.with_columns(
+            pl.Series("days_covered",
+                      spans(weekly["time"].to_list(), cum["date"][0])))
+         .select(pl.col("time").dt.to_string("%Y-%m-%d"),
+                 pl.col("count").alias(name),
+                 "days_covered", "n_report_days")
          .write_csv(args.out_dir / f"{name}.tsv", separator="\t"))
 
     # National ascertainment, from the printed national row's daily split --
@@ -701,12 +738,18 @@ def main() -> None:
                   .group_by("bin")
                   .agg(pl.col("deaths_community").sum(),
                        pl.col("deaths_total").sum(),
-                       pl.col("date").max().alias("time"))
+                       pl.col("date").max().alias("time"),
+                       pl.len().alias("n_report_days"),
+                       pl.col("date").min().alias("first_day"))
                   .sort("bin"))
-        (weekly.select(pl.col("time").dt.to_string("%Y-%m-%d"),
-                       pl.col("deaths_community")
-                       .alias("community_deaths_national"),
-                       pl.col("deaths_total").alias("deaths_split_national"))
+        (weekly.with_columns(
+            pl.Series("days_covered",
+                      spans(weekly["time"].to_list(),
+                            weekly["first_day"][0] - dt.timedelta(days=1))))
+         .select(pl.col("time").dt.to_string("%Y-%m-%d"),
+                 pl.col("deaths_community").alias("community_deaths_national"),
+                 pl.col("deaths_total").alias("deaths_split_national"),
+                 "days_covered", "n_report_days")
          .write_csv(args.out_dir / "community_deaths_national.tsv",
                     separator="\t"))
         recon["community_deaths_national"] = {
@@ -738,7 +781,7 @@ def main() -> None:
                               comment_prefix="#", infer_schema_length=None)
                   if args.exceptions and args.exceptions.exists() else None)
 
-    def emit_daily(name: str, cum: pl.DataFrame, reps: pl.Series,
+    def emit_daily(name: str, obs: str, cum: pl.DataFrame, reps: pl.Series,
                    province: str) -> None:
         d = daily_increments(cum, reps)
         if d.is_empty():
@@ -759,8 +802,17 @@ def main() -> None:
         }
         if emitted != delta:
             failures.append(name)
-        (d.select(pl.col("date").dt.to_string("%Y-%m-%d").alias("time"),
-                  pl.col("count").alias(name), "days_covered", "flags")
+        # THE COLUMN NAMES THE OBSERVABLE, NOT THE BINNING. `cases_ituri` is
+        # `cases_ituri` in the weekly file and in the daily one: the binning
+        # is a property of the table (its filename, and the per-row
+        # `days_covered`), not of the variable, so a consumer reading both
+        # needs one code path and a model can swap resolutions by changing a
+        # path. It is also the honest name -- a "daily" row covers 2 or 3
+        # days on 5 of 82, and a "weekly" row 4 to 8.
+        (d.with_columns(pl.lit(1, pl.Int64).alias("n_report_days"))
+         .select(pl.col("date").dt.to_string("%Y-%m-%d").alias("time"),
+                 pl.col("count").alias(obs), "days_covered", "n_report_days",
+                 "flags")
          .write_csv(args.out_dir / f"{name}.tsv", separator="\t"))
 
     for prov, slug in STREAM_PROVINCES.items():
@@ -772,12 +824,13 @@ def main() -> None:
                                  & pl.col("level").is_in(["zone", "unassigned"])
                                  & pl.col(col).is_not_null())
                     .select(pl.col("date").str.to_date()).unique()["date"])
-            emit_daily(f"{stem}_daily_{slug}", cum, reps, prov)
+            emit_daily(f"{stem}_daily_{slug}", f"{stem}_{slug}", cum, reps, prov)
     for col, stem in (("cum_cases", "cases"), ("cum_deaths", "deaths")):
         printed = national_printed(panel, summary, prose, col)
         cum = national_cumulative_grid(printed)
         if not cum.is_empty():
-            emit_daily(f"{stem}_daily_national", cum, printed["date"], "national")
+            emit_daily(f"{stem}_daily_national", f"{stem}_national", cum,
+                       printed["date"], "national")
 
     # The daily ascertainment split: these columns are ALREADY the day's own
     # 24-hour flows as the source prints them, so a row covers one day
@@ -798,14 +851,15 @@ def main() -> None:
              .sort("date")
              .with_columns((pl.col("date") - pl.col("date").shift(1))
                            .dt.total_days().fill_null(1)
-                           .alias("days_since_prev_report")))
+                           .alias("days_covered")))
         d = d.with_columns(daily_flags(d["date"], caveat, exceptions,
                                        prov or "national"))
         name = f"community_deaths_daily_{slug}"
-        (d.select(pl.col("date").dt.to_string("%Y-%m-%d").alias("time"),
-                  pl.col("deaths_community").alias(name),
-                  pl.col("deaths_total").alias(f"deaths_split_daily_{slug}"),
-                  "days_since_prev_report", "flags")
+        (d.with_columns(pl.lit(1, pl.Int64).alias("n_report_days"))
+         .select(pl.col("date").dt.to_string("%Y-%m-%d").alias("time"),
+                 pl.col("deaths_community").alias(f"community_deaths_{slug}"),
+                 pl.col("deaths_total").alias(f"deaths_split_{slug}"),
+                 "days_covered", "n_report_days", "flags")
          .write_csv(args.out_dir / f"{name}.tsv", separator="\t"))
         recon[name] = {"n_obs": d.height,
                        "emitted": int(d["deaths_community"].sum()),
@@ -837,9 +891,14 @@ def main() -> None:
                            pl.len().alias("n_report_days"),
                            pl.col("n_prov").sum().alias("n_province_days"))
                       .sort("bin"))
-            (weekly.select(pl.col("time").dt.to_string("%Y-%m-%d"),
-                           pl.col("positives").alias("positives_national"),
-                           pl.col("samples").alias("tests_national"))
+            (weekly.with_columns(
+                pl.Series("days_covered",
+                          spans(weekly["time"].to_list(),
+                                daily["date"].min() - dt.timedelta(days=1))))
+             .select(pl.col("time").dt.to_string("%Y-%m-%d"),
+                     pl.col("positives").alias("positives_national"),
+                     pl.col("samples").alias("tests_national"),
+                     "days_covered", "n_report_days")
              .write_csv(args.out_dir / "lab_national.tsv", separator="\t"))
             # THE DAILY FORM IS THE COVERAGE-HONEST ONE, and this stream needs
             # it most: a weekly total is the sum over however many report-days
@@ -851,14 +910,15 @@ def main() -> None:
             # change in testing effort.
             dl = daily.sort("date").with_columns(
                 (pl.col("date") - pl.col("date").shift(1)).dt.total_days()
-                .fill_null(1).alias("days_since_prev_report"))
+                .fill_null(1).alias("days_covered"))
             dl = dl.with_columns(daily_flags(dl["date"], caveat, exceptions,
                                              "national"))
-            (dl.select(pl.col("date").dt.to_string("%Y-%m-%d").alias("time"),
-                       pl.col("positives").alias("positives_daily_national"),
-                       pl.col("samples").alias("tests_daily_national"),
-                       pl.col("n_prov").alias("n_provinces"),
-                       "days_since_prev_report", "flags")
+            (dl.with_columns(pl.lit(1, pl.Int64).alias("n_report_days"))
+             .select(pl.col("date").dt.to_string("%Y-%m-%d").alias("time"),
+                     pl.col("positives").alias("positives_national"),
+                     pl.col("samples").alias("tests_national"),
+                     "days_covered", "n_report_days",
+                     pl.col("n_prov").alias("n_provinces"), "flags")
              .write_csv(args.out_dir / "lab_daily_national.tsv", separator="\t"))
             recon["lab_daily_national"] = {
                 "n_obs": dl.height,
