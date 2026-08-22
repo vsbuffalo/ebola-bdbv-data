@@ -313,12 +313,12 @@ def draw_streams_detail(inputs: dict[str, Path], out: Path) -> None:
          "its own printed positivity"),
     ]
 
-    fig = plt.figure(figsize=(11, 3.1 * len(rows) + 3.7),
+    fig = plt.figure(figsize=(11, 3.1 * len(rows) + 7.0),
                      constrained_layout=True)
     fig.get_layout_engine().set(rect=(0, 0, 1, 0.965))
     all_axes: list = []
-    gs = fig.add_gridspec(len(rows) + 1, 2,
-                          height_ratios=[1.0] * len(rows) + [1.25])
+    gs = fig.add_gridspec(len(rows) + 2, 2,
+                          height_ratios=[1.0] * len(rows) + [1.25, 1.25])
 
     for ri, (kind, label) in enumerate(rows):
         axs = []
@@ -442,11 +442,49 @@ def draw_streams_detail(inputs: dict[str, Path], out: Path) -> None:
             a.spines[sp].set_visible(False)
         a.xaxis.set_major_formatter(mdates.DateFormatter("%d %b"))
 
+    # THE NATIONAL STOCKS, on their own row. These are readings at an
+    # instant, not flows, so they are drawn as levels rather than smoothed
+    # rates -- and the isolation census is split, because the banner's
+    # headline counts SUSPECTS TOO (a median 61% of it), so only the
+    # confirmed part observes a confirmed-case compartment.
+    axi = fig.add_subplot(gs[len(rows) + 1, 0])
+    axr = fig.add_subplot(gs[len(rows) + 1, 1])
+    bn = pl.read_csv(inputs["banner"], infer_schema_length=None)
+    tot = bn.filter(pl.col("patients_isolated").is_not_null()).sort("date")
+    cnf = bn.filter(pl.col("patients_isolated_confirmed").is_not_null()).sort("date")
+    if tot.height:
+        axi.plot(_dates(tot["date"]), tot["patients_isolated"].to_list(),
+                 color="#777777", linewidth=1.7, marker="o", markersize=3,
+                 label="all in isolation (confirmed + suspected)")
+    if cnf.height:
+        axi.plot(_dates(cnf["date"]),
+                 cnf["patients_isolated_confirmed"].to_list(),
+                 color="#0072B2", linewidth=1.9, marker="o", markersize=3,
+                 label="of those, confirmed")
+    axi.legend(frameon=False, fontsize=7.5, loc="upper left")
+    axi.set_title("NATIONAL ONLY — patients in isolation, a stock\n"
+                  "the headline census counts suspects too",
+                  loc="left", fontsize=9.5, fontweight="bold")
+    rec = bn.filter(pl.col("cumul_recovered").is_not_null()).sort("date")
+    if rec.height:
+        axr.plot(_dates(rec["date"]), rec["cumul_recovered"].to_list(),
+                 color="#009E73", linewidth=1.9, marker="o", markersize=3)
+    axr.set_title("NATIONAL ONLY — cumulative recoveries\n"
+                  "a running total, printed from 12 July",
+                  loc="left", fontsize=9.5, fontweight="bold")
+    for a in (axi, axr):
+        a.grid(True, **GRID)
+        a.margins(x=0.05)
+        for sp in ("top", "right"):
+            a.spines[sp].set_visible(False)
+        a.xaxis.set_major_formatter(mdates.DateFormatter("%d %b"))
+        _caveat_rug(a, caveat)
+
     # ONE CALENDAR FOR EVERY PANEL. A stream that starts on 13 July must show
     # ten empty weeks before it, or its late start reads as a full history.
     xlim = (min(a.get_xlim()[0] for a in all_axes + [axn]),
             max(a.get_xlim()[1] for a in all_axes + [axn]))
-    for a in all_axes + [axn, axs2]:
+    for a in all_axes + [axn, axs2, axi, axr]:
         a.set_xlim(xlim)
 
     fig.suptitle(
@@ -555,7 +593,8 @@ FIGURES = {
                         "caveat": "data/build/series/provisional_caveat.csv",
                         "summary": "data/build/series/province_summary.csv",
                         "prose": "data/build/series/prose_provinces.csv",
-                        "lab": "data/build/series/lab_prose.csv"}),
+                        "lab": "data/build/series/lab_prose.csv",
+                        "banner": "data/build/series/banner.csv"}),
     "availability": (draw_availability,
                      {"zone_table": "data/build/series/zone_table.csv",
                       "zone_status": "data/build/series/zone_table_status.csv",

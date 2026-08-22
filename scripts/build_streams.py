@@ -492,6 +492,9 @@ def main() -> None:
     ap.add_argument("--lab", type=Path, default=None,
                     help="lab_prose.csv: licensed daily testing volume and "
                          "positives, for the national testing stream")
+    ap.add_argument("--banner", type=Path, default=None,
+                    help="banner.csv: the front-page census of people in "
+                         "isolation and the cumulative recoveries")
     ap.add_argument("--caveat", type=Path, default=None,
                     help="provisional_caveat.csv, so daily rows carry the "
                          "source's own consolidation flags")
@@ -958,6 +961,29 @@ def main() -> None:
                         for r in bad.iter_rows(named=True))},
             }
 
+    # ---- national STOCK observations ---------------------------------
+    # Readings at an instant, not counts accumulated over a window: no
+    # differencing, and no `days_covered` (the rule uganda_exports follows).
+    # `patients_isolated` counts CONFIRMED AND SUSPECTED people in care --
+    # sitrep 070 prints 766 and its own occupancy table splits that into 278
+    # confirmed and 488 suspects -- so a model observing a confirmed-case
+    # compartment wants `patients_isolated_confirmed`, whose share of the
+    # total runs 0.23 to 0.53.
+    if args.banner and args.banner.exists():
+        bn = pl.read_csv(args.banner, infer_schema_length=None)
+        for col in ("patients_isolated", "patients_isolated_confirmed",
+                    "cumul_recovered"):
+            d = bn.filter(pl.col(col).is_not_null()).sort("date")
+            if d.is_empty():
+                continue
+            (d.select(pl.col("date").alias("time"), pl.col(col))
+             .write_csv(args.out_dir / f"{col}.tsv", separator="\t"))
+            recon[col] = {"n_obs": d.height, "kind": "stock",
+                          "first_date": d["date"][0],
+                          "last_date": d["date"][-1],
+                          "first_value": int(d[col][0]),
+                          "last_value": int(d[col][-1])}
+
     last = panel.filter(pl.col("date") == panel["date"].max())
     meta = {
         "day0": str(DAY0),
@@ -976,6 +1002,11 @@ def main() -> None:
                                                        sort_keys=True) + "\n")
 
     for name, r in sorted(recon.items()):
+        if r.get("kind") == "stock":
+            print(f"  {name:<26} {r['n_obs']:>3} obs   {r['first_value']} "
+                  f"({r['first_date']}) -> {r['last_value']} ({r['last_date']})"
+                  f"   [stock, no accumulation window]")
+            continue
         if "tests" in r:                 # a testing stream
             pv = r.get("positives_vs_new_cases")
             cov = r.get("n_provinces")

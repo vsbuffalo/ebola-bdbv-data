@@ -222,6 +222,14 @@ every printed province row.
 ```{python}
 lines = []
 for name, r in sorted(meta["reconciliation"].items()):
+    if r.get("kind") == "stock":
+        # A reading at an instant: no accumulation window, so no emitted-vs-
+        # moved identity to report — the span is the series' own extent.
+        lines.append(
+            f"| `{name}` | {r['n_obs']} | {stat(r['first_value'])} → "
+            f"{stat(r['last_value'])} | — | stock, {r['first_date']} to "
+            f"{r['last_date']} | — |")
+        continue
     if "tests" in r:
         # The testing stream: licensed prose, checked against new cases.
         # Its daily companion carries province coverage instead.

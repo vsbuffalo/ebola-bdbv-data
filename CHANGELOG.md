@@ -16,6 +16,44 @@ carries the rest.
 
 ---
 
+## `data/2026-08-15-r8` — 2026-08-19 — addition
+
+Three national **stock** observations, read from the front-page banner and
+the care-occupancy table (`extract_banner.py`, a new route — the "national
+dashboard" the README listed as unread):
+
+| file | what it is |
+| --- | --- |
+| `patients_isolated.tsv` | everyone in isolation or a treatment centre at that moment — **confirmed AND suspected** |
+| `patients_isolated_confirmed.tsv` | of those, the confirmed ones |
+| `cumul_recovered.tsv` | recoveries to date, national |
+
+**Read the two isolation series carefully: only the second observes a
+compartment of confirmed cases.** Sitrep 070 prints the banner headline as
+766 and its own occupancy table splits that into 278 confirmed and 488
+suspects, with the narrative saying so in words. Across the archive the
+confirmed share runs 0.23–0.53 (median 0.39), and it moves with testing and
+triage rather than with transmission — so fitting the headline census to an
+isolated-*case* compartment would score a mostly-suspect population against a
+confirmed-case state.
+
+These are **stocks**: a reading at an instant, not a count accumulated over a
+window, so like `uganda_exports.tsv` they carry neither `days_covered` nor
+`n_report_days`. Absence of those columns is the marker of an instantaneous
+observation.
+
+Extracted from the pages, not adopted from the epiforecasts scan, which
+carries the same two headline fields: the scan is a check and never a trunk,
+and its series would also stop eight reports early. Cross-check where both
+exist: **49/49 agree on the isolation census, 24/24 on recoveries.** One
+disagreement was resolved in our favour by reading the page — sitrep 061
+prints 737, the scan has 736, which is what that report's own province
+breakdown (544 + 188 + 4) sums to; the page contradicts itself and we take
+the printed total.
+
+Coverage: isolation 58 reports (confirmed split on 49), recoveries 33. Early
+reports print no such tile; the value is null, never inferred.
+
 ## `data/2026-08-15-r7` — 2026-08-19 — **BREAKING (schema)**
 
 Column conventions, at the modelling repo's request. No value changes: every

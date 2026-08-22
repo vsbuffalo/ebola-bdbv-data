@@ -70,6 +70,9 @@ build:
 	uv run python scripts/extract_lab_prose.py \
 		--pdfs data/raw/sitrep_pdfs --quiet \
 		--out data/build/series/lab_prose.csv
+	uv run python scripts/extract_banner.py \
+		--pdfs data/raw/sitrep_pdfs --quiet \
+		--out data/build/series/banner.csv
 	# exit 1 = some reports print no total to check against (a reported gap
 	# in the evidence, not a failure); exit 2 = a total disagrees, stop.
 	uv run python scripts/aggregate_provinces.py \
@@ -82,6 +85,7 @@ build:
 	#   data/build/series/province_summary_status.csv
 	#   data/build/series/prose_provinces_status.csv
 	#   data/build/series/lab_prose_status.csv
+	#   data/build/series/banner_status.csv
 	#   data/build/series/province_series_reconciliation.csv
 
 ## streams -- OFFLINE. The weekly observation streams the models fit.
@@ -95,6 +99,7 @@ streams:
 		--prose data/build/series/prose_provinces.csv \
 		--lab data/build/series/lab_prose.csv \
 		--caveat data/build/series/provisional_caveat.csv \
+		--banner data/build/series/banner.csv \
 		--geojson data/raw/health_zones.geojson \
 		--population data/raw/zone_population.csv \
 		--out-dir data/build/streams
@@ -114,6 +119,11 @@ streams:
 	#   data/build/streams/deaths_daily_{ituri,nord_kivu,haut_uele,national}.tsv
 	#   data/build/streams/community_deaths_daily_{ituri,nord_kivu,haut_uele,national}.tsv
 	#   data/build/streams/lab_daily_national.tsv
+	# and the national STOCK observations (a reading at an instant, so no
+	# days_covered -- see uganda_exports for the same rule):
+	#   data/build/streams/patients_isolated.tsv
+	#   data/build/streams/patients_isolated_confirmed.tsv
+	#   data/build/streams/cumul_recovered.tsv
 	#   data/build/streams/meta.json
 	uv run python scripts/build_uganda_stream.py \
 		--uganda data/raw/uganda_cases.toml \
