@@ -2,7 +2,7 @@
 # by design: `build` and `doc` never touch the network, so a rebuild can never
 # silently change what the source says.
 
-.PHONY: release-check oneoff-testing oneoff-death-split oneoff-death-flow cron-install cron-uninstall check fetch refresh verify build streams compare figures external \
+.PHONY: watch-data-channel release-check oneoff-testing oneoff-death-split oneoff-death-flow cron-install cron-uninstall check fetch refresh verify build streams compare figures external \
 	external-update scan-refresh doc serve test
 
 ## check   -- is the archive current, and does the source still look the same?
@@ -205,6 +205,16 @@ figures:
 	# channel can link to a figure that survives (data/build is gitignored).
 	mkdir -p docs/figures
 	cp data/build/figures/streams_detail.png docs/figures/
+
+## watch-data-channel -- poll the shared data channel (which lives in the
+##            modelling repo's tree) and exit as soon as they write, printing
+##            the added lines. Run it in the background; the exit is the
+##            notification. Copied from their watcher so both sides behave
+##            the same way.
+CHANNEL ?= ../ebola-bdbv-camdl/data-agent-channel.md
+watch-data-channel:
+	uv run python scripts/watch_data_channel.py --file $(CHANNEL) \
+		--interval $(or $(INTERVAL),60) --timeout $(or $(TIMEOUT),21600)
 
 ## release-check -- build the COMMITTED state in a scratch clone before
 ##            tagging. Exists because r5 shipped a build that crashed after
