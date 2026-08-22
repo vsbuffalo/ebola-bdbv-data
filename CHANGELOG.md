@@ -16,6 +16,43 @@ carries the rest.
 
 ---
 
+## `data/2026-08-18-r2` — 2026-08-22 — new streams
+
+**Not breaking**: three files added, nothing changed or removed.
+
+    lab_daily_ituri.tsv       56 obs   9,038 tests   2,687 positives
+    lab_daily_nord_kivu.tsv   47 obs   4,866 tests     406 positives
+    lab_daily_haut_uele.tsv    5 obs      60 tests      19 positives
+
+Same column convention as every other daily stream: `time`,
+`positives_<slug>`, `tests_<slug>`, `days_covered`, `n_report_days`, `flags`.
+
+**Why they exist.** `lab_daily_national` carries 0.77 laboratory positives per
+new confirmed case, and that ratio was being read downstream as a laboratory
+reporting probability. It is not one. The laboratory paragraph does not always
+write out every province, and the ratio splits cleanly by the `n_provinces`
+column already published beside the counts:
+
+| provinces covered | report-days | ratio |
+|---|---|---|
+| 1 | 8 | 0.404 |
+| 2 | 37 | 0.756 |
+| 3 | 12 | **0.997** |
+| 4 | 1 | **1.000** |
+
+When the paragraph covers the country, laboratory positives and new confirmed
+cases agree to within 0.3 %. A fitted "laboratory reporting probability" of
+0.77 was therefore measuring how much of the country the paragraph described.
+
+Matching province against province removes it without conditioning on
+coverage at all. Excluding backlog-consolidation days, positives/cases is
+0.972 in Ituri and 1.048 in Nord-Kivu — **0.979 combined**. (Nord-Kivu above 1
+is repeat specimens from already-confirmed patients, *reprélèvements*, which
+the reports count as positives and which no reporting probability below 1 can
+produce.)
+
+---
+
 ## `data/2026-08-18-r1` — 2026-08-22 — fix
 
 **Not breaking**: no column added, removed, or renamed. Two national
