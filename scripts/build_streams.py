@@ -931,6 +931,45 @@ def main() -> None:
                                 "min": int(dl["n_prov"].min()),
                                 "max": int(dl["n_prov"].max())},
             }
+            # PER-PROVINCE DAILY LABORATORY STREAMS, so a consumer never has
+            # to model coverage at all. The national stream's coverage varies
+            # (n_provinces runs 1 to 4) because the laboratory paragraph does
+            # not always write out every province, and a model that fits the
+            # national total against a national latent must either condition
+            # on `n_provinces` or absorb the deficit into a free reporting
+            # probability. The second is what happened downstream: the
+            # national ratio of laboratory positives to new confirmed cases
+            # is 0.404 on one-province days, 0.756 on two, and 0.997 on
+            # three -- so a fitted "laboratory reporting probability" of
+            # ~0.77 was measuring how much of the country the paragraph
+            # described, not any property of the reporting pipeline.
+            # Matched province against province, that parameter has nothing
+            # left to explain.
+            labp = lab.with_columns(pl.col("date").str.to_date())
+            for prov, slug in STREAM_PROVINCES.items():
+                d = (labp.filter(pl.col("province") == prov)
+                     .group_by("date")
+                     .agg(pl.col("samples").sum(), pl.col("positives").sum())
+                     .sort("date"))
+                if d.is_empty():
+                    continue
+                d = d.with_columns(
+                    (pl.col("date") - pl.col("date").shift(1)).dt.total_days()
+                    .fill_null(1).alias("days_covered"))
+                d = d.with_columns(daily_flags(d["date"], caveat, exceptions,
+                                               prov))
+                name = f"lab_daily_{slug}"
+                (d.with_columns(pl.lit(1, pl.Int64).alias("n_report_days"))
+                 .select(pl.col("date").dt.to_string("%Y-%m-%d").alias("time"),
+                         pl.col("positives").alias(f"positives_{slug}"),
+                         pl.col("samples").alias(f"tests_{slug}"),
+                         "days_covered", "n_report_days", "flags")
+                 .write_csv(args.out_dir / f"{name}.tsv", separator="\t"))
+                recon[name] = {
+                    "n_obs": d.height,
+                    "tests": int(d["samples"].sum()),
+                    "positives": int(d["positives"].sum()),
+                }
             # Cross-check: a day's positives should be the day's newly
             # confirmed cases, province by province. Equality on most dates is
             # what licenses reading this stream as testing effort; the
