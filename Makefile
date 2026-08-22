@@ -201,6 +201,10 @@ figures:
 		--out data/build/figures/streams_detail.png
 	uv run python scripts/plot_figures.py --figure residuals \
 		--out data/build/figures/residuals.png
+	# COMMITTED COPY of the streams panel, so the README and the cross-repo
+	# channel can link to a figure that survives (data/build is gitignored).
+	mkdir -p docs/figures
+	cp data/build/figures/streams_detail.png docs/figures/
 
 ## release-check -- build the COMMITTED state in a scratch clone before
 ##            tagging. Exists because r5 shipped a build that crashed after
