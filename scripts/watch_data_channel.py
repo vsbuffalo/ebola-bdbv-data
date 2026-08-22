@@ -22,6 +22,12 @@ and diff behaviour, with the camdl version probe dropped (nothing on this side
 depends on it) and the default file pointed at the shared data channel, which
 lives in the modelling repository's working tree.
 
+ONE-SHOT ON PURPOSE. It exits when the other side writes, because the exit is
+the notification: run under a harness that re-invokes on completion and the
+agent wakes with the added lines already in hand. `--notify` additionally
+raises a macOS banner so a human sees it too, and `--loop` re-arms instead of
+exiting for the case where nobody is waiting on the exit.
+
 Exit codes: 0 a change was seen and reported; 2 the timeout expired with no
 change; 3 the file went missing.
 """
@@ -32,6 +38,7 @@ import argparse
 import datetime as dt
 import difflib
 import hashlib
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -55,6 +62,10 @@ def main() -> int:
     ap.add_argument("--timeout", type=float, default=6 * 3600)
     ap.add_argument("--context", type=int, default=0,
                     help="also show this many lines of trailing context")
+    ap.add_argument("--notify", action="store_true",
+                    help="also raise a macOS notification on a change")
+    ap.add_argument("--loop", action="store_true",
+                    help="re-arm after reporting instead of exiting")
     args = ap.parse_args()
 
     if not args.file.exists():
@@ -98,7 +109,16 @@ def main() -> int:
         print("-" * 72)
         print("\n".join(added) if added else "(no added lines; content was removed or edited)")
         print("-" * 72, flush=True)
-        return 0
+        if args.notify:
+            head = next((l for l in added if l.startswith("## ")), "")[:90]
+            subprocess.run(["osascript", "-e",
+                            f'display notification "{head or args.file.name} updated"'
+                            f' with title "data-agent-channel"'],
+                           capture_output=True)
+        if not args.loop:
+            return 0
+        base_hash, base_lines = h, lines
+        print(f"{stamp()}  re-armed", flush=True)
 
     print(f"\n{stamp()}  timeout after {args.timeout / 3600:.1f}h, no change "
           f"(sha still {base_hash[:12]})", flush=True)

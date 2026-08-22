@@ -213,7 +213,7 @@ figures:
 ##            the same way.
 CHANNEL ?= ../ebola-bdbv-camdl/data-agent-channel.md
 watch-data-channel:
-	uv run python scripts/watch_data_channel.py --file $(CHANNEL) \
+	uv run python scripts/watch_data_channel.py --file $(CHANNEL) --notify \
 		--interval $(or $(INTERVAL),60) --timeout $(or $(TIMEOUT),21600)
 
 ## release-check -- build the COMMITTED state in a scratch clone before
