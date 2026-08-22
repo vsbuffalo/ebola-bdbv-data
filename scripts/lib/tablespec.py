@@ -75,6 +75,17 @@ class Role(StrEnum):
     # WHO's DRC "community death" (an isolation-status notion), except that
     # a recognised case dying in a non-ETC facility falls on the CTE side
     # here where WHO's location rule would call it community.
+    # AND IT COUNTS ONLY DEATHS FIRST CONFIRMED AT DEATH. `deaths_community`
+    # equals the dead half of the day's new positive results on 24 of 26
+    # province-days where the report prints both (sitrep 093 Ituri: "89
+    # nouveaux resultats positifs (59 vivants et 30 deces)" against a printed
+    # deaths_community of 30). A case confirmed while alive who later
+    # absconds and dies at home is not a new positive, so it cannot enter
+    # this column -- sitrep 018 records exactly such a death. The column
+    # therefore observes the unascertained-infection -> confirmed-at-death
+    # transition, NOT a transition out of the confirmed-case compartment.
+    # Consequence for any consumer: a community death is inside the
+    # confirmed-case denominator too, entering cum_cases on the same day.
     DEATHS_COMMUNITY = "deaths_community"    # died outside case management; Swab+
     DEATHS_CTE = "deaths_treatment_centre"   # died under care (CTE/CT/hospital-as-CT)
     DEATHS_TOTAL = "deaths_total"            # confirmed deaths in the last 24 h

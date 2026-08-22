@@ -30,6 +30,14 @@ series against the page, and would end these streams eight reports early
 ourselves makes the scan an independent validation whose disagreements are
 findings.
 
+WHAT THE ISOLATION CENSUS IS NOT. It is not a count of active confirmed
+cases. Beyond the suspect share above, the published books do not close
+around it: at 15 August the national figures imply ~1,580 active confirmed
+cases (4,945 - 2,325 deaths - 1,040 recovered) against an isolation census of
+730 including suspects. Roughly 1,300 confirmed cases sit in no published
+outcome -- not dead, not recovered, not in care -- so neither this series nor
+`cumul_recovered` is a complete accounting of exits.
+
 BOTH QUANTITIES ARE STOCKS, NOT FLOWS. `patients_isolated` is a prevalence --
 how many people are in care right now -- and `cumul_recovered` is a running
 total. Neither accumulates over an interval, so neither is differenced and
