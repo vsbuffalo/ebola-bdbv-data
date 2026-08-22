@@ -2,7 +2,7 @@
 # by design: `build` and `doc` never touch the network, so a rebuild can never
 # silently change what the source says.
 
-.PHONY: watch-data-channel release-check escape-fraction oneoff-testing oneoff-death-split oneoff-death-flow cron-install cron-uninstall check fetch refresh verify build streams compare figures external \
+.PHONY: watch-data-channel release-check escape-fraction care-ledger oneoff-testing oneoff-death-split oneoff-death-flow cron-install cron-uninstall check fetch refresh verify build streams compare figures external \
 	external-update scan-refresh doc serve test
 
 ## check   -- is the archive current, and does the source still look the same?
@@ -237,6 +237,13 @@ release-check:
 ##            for the modelling repo without any disease-course assumption.
 escape-fraction:
 	uv run python scripts/escape_fraction.py --streams data/build/streams
+
+## care-ledger -- the care exit rate (delta) and the fatality among those who
+##            reach care (f_cfr), from the census, recovery and death-split
+##            streams. Community deaths are held OUT: they never entered the
+##            census, and charging them against it inflates both.
+care-ledger:
+	uv run python scripts/care_ledger.py --streams data/build/streams
 
 ## oneoff-death-flow -- DISPOSABLE diagram: where a death goes, from the
 ##            event to the likelihood, with the two lossy edges named.

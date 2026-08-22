@@ -138,10 +138,9 @@ then updates.
 | quantity | measured | source | use |
 | --- | --- | --- | --- |
 | e_obs (confirmed-at-death share) | **0.288 – 0.352** | 32 national report-days, four exclusion rules | pins γq/τ = 0.41 – 0.54 |
-| ρ (registry → report) | **≈ 1** | positives = new cases, 44/53 | fix, do not estimate |
-| δ (care exit rate) | **0.141 /day (7.1 d mean stay)** | 727 itemised exits over 17 d against a mean confirmed census of 303 | prior centre |
-| f_cfr (facility) | **0.524**, or 0.470 counting absconders as non-death exits | 339 deaths, 308 recoveries, 75 absconded | prior centre |
-| absconder share of exits | **0.103** | same ledger | supports an explicit non-recovery exit |
+| ρ (registry → report) | **≈ 1** | positives = new cases on 53 of 62 province-days | fix, do not estimate |
+| δ (care exit rate) | **≥ 0.112 /day (stay ≤ 8.9 d)** | 664 exits from care over 20 d against a mean confirmed census of 297 | prior centre |
+| f_cfr (in care) | **≤ 0.456** | 303 treatment-centre deaths against 664 exits from care | prior centre |
 | never-retained-in-care | **~0.20** of new confirmations | compartment balance, 16 Jul – 2 Aug | bounds p_h below 1 |
 | bed occupancy | **0.84–0.89** | 15 reports printing patients/beds | the census may be censored, not proportional |
 
@@ -169,10 +168,10 @@ series as a death without a swab. Incubation mean 11.3 d (n = 3 only).
 Disease duration: survivors median **18 d** (8–26), deceased median **15 d**
 (4–28).
 
-This verifies the "Kratz ≈ 0.50" anchor as a **facility** CFR, and it sits
-almost exactly on our own ledger's 0.524. Two independent lineages agreeing
-at ~0.50 is a strong argument that the fit's **f_cfr = 0.310 is too low**,
-not that the data are wrong.
+This verifies the "Kratz ≈ 0.50" anchor as a **treatment-centre** CFR. Our
+own care ledger gives ≤ 0.456 over 664 exits, so the two bracket roughly
+0.46–0.50 — still a strong argument that the fit's **f_cfr = 0.310 is too
+low**, though from a slightly lower centre than I first wrote.
 
 **The dwell in I is not exponential, and this is the factor-3–4 lever.** WHO
 Ebola Response Team, *NEJM* 371:1481, 2014, "Ebola Virus Disease in West
@@ -189,7 +188,7 @@ interval **15.3 ± 9.3 d, gamma with CV 0.66**; onset→hospitalisation 5.0 ±
 | **ρ** (registry→report) | **fix at 1**, or Beta(60, 2) | measured: positives = published, 44/53 |
 | **ρ_lab** (true ascertainment) | keep as the single free ascertainment parameter; weakly informative | nothing in the national data measures absolute size; do not let two parameters carry it |
 | **q_comm** | Beta with mean **0.45**, sd ≈ 0.12 (≈ Beta(7.3, 8.9)) | q = (unisolated fatality) × (swab ascertainment); BDBV untreated fatality plausibly 0.5–0.7 against Isiro's 53.8 % overall, times swab coverage < 1 |
-| **f_cfr** (facility) | Normal/Beta centred **0.50**, sd ≈ 0.06 | Kratz ETC 9/18 = 0.500 and our ledger 0.524, two independent lineages |
+| **f_cfr** (in care) | Beta centred **0.47**, sd ≈ 0.05 | our ledger ≤ 0.456 and Kratz ETC 9/18 = 0.500 bracket it |
 | **δ** (care exit rate) | Gamma centred **0.14 /day** (7.1 d), sd ≈ 0.03 | our exit ledger; consistent with WHO admission→death 4.2 d plus longer recoveries |
 | **p_h** (share reaching care) | Beta centred **0.80**, sd ≈ 0.07 | the ~20 % never-retained balance |
 | **dwell shape in I** | **Erlang shape 2–3**, not exponential | serial-interval gamma CV 0.66 ⟹ shape ≈ 2.3 |
