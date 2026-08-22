@@ -744,6 +744,32 @@ def test_lab_prose_sitrep_093():
 
 
 @needs_pdfs
+def test_lab_prose_death_split_is_not_a_positivity():
+    """Sitrep 080's Ituri passage carries BOTH a death split and a real
+    positivity, and the death split alone satisfies the licence: "23 décès
+    dont 14 communautaires (60,9 %)" offers (14, 23) reproducing 60,9 %
+    exactly. It was licensed, so the day read 14 positives out of 23 samples
+    instead of the printed 53 out of 210. The guard is arithmetic and the
+    ambiguity is semantic, so the clause has to leave the pool before the
+    pair is chosen."""
+    import extract_lab_prose as L
+    got, _ = L.extract(pdf(80))
+    itu = [r for r in got if r["province"] == "Ituri"]
+    assert itu, "sitrep 080 licenses an Ituri lab row"
+    assert (itu[0]["samples"], itu[0]["positives"]) == (210, 53)
+
+
+def test_death_split_clause_leaves_the_pool():
+    """The clause is removed whether or not it prints its own percentage,
+    and a positivity sentence without a death split is untouched."""
+    import extract_lab_prose as L
+    assert "14" not in L.DEATH_SPLIT.sub(" ", "23 décès dont 14 communautaires (60,9 %)")
+    assert "14" not in L.DEATH_SPLIT.sub(" ", "23 deces dont 14 communautaires")
+    keep = "82 échantillons collectés et analysés (18 positifs)"
+    assert L.DEATH_SPLIT.sub(" ", keep) == keep
+
+
+@needs_pdfs
 def test_lab_prose_flow_not_stock():
     """Sitrep 020's bullet vintage states no flow word; the laboratory
     section is daily by construction and the positives equal the day's

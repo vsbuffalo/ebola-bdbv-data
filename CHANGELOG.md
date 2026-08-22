@@ -16,6 +16,47 @@ carries the rest.
 
 ---
 
+## `data/2026-08-18-r1` — 2026-08-22 — fix
+
+**Not breaking**: no column added, removed, or renamed. Two national
+laboratory series move, and a consumer that has fitted to them should refit.
+
+**A death split was read as a test positivity.** Sitrep 080's Ituri passage
+prints both a real laboratory line and a death split, and the death split
+alone satisfies the licence: *"23 décès dont 14 communautaires (60,9 %)"*
+offers the pair (14, 23), which reproduces 60,9 % exactly. It was accepted,
+so 2 August recorded **14 positives out of 23 samples** in place of the
+printed **53 out of 210** (*"210 échantillons … dont 53 positifs … soit une
+positivité apparente de 25,2 %"*).
+
+The licence-or-refuse rule asks whether a pair reproduces a printed
+percentage. It cannot ask what the percentage *means*, and a death split has
+the same arithmetic shape as a positivity — a subset, a total, and their
+ratio. So the rule was necessary and not sufficient, and no tolerance change
+would have caught it. Death-split clauses now leave the pool before the pair
+is chosen; deaths and their community share come from the tables, which is
+where they belong. One row of 134 was affected.
+
+Moved series, both national:
+
+| stream | was | now |
+|---|---|---|
+| `lab_daily_national` (2026-08-02) | 32 positives / 155 tests | **71 / 342** |
+| `lab_national`, `lab_daily_national` (totals) | 3,076 / 13,914 | **3,115 / 14,101** |
+
+Case, death, community-death, isolation and recovery streams are unchanged —
+`lab_prose` feeds only the testing streams and `meta.json`, whose
+`lab_national` reconciliation record also updates (`positives_vs_new_cases`
+now 53 of 62 province-days equal, from 52).
+
+**A note for anyone modelling ρ (registry → report).** The same sentence
+states why laboratory positives run slightly *above* new confirmed cases:
+*"53 positifs … 39 nouveaux cas confirmés et 18 reprélèvements"* — re-swabs
+of already-confirmed patients test positive again. Positives and new cases
+are different events, and the gap is re-testing, not unreported cases.
+
+---
+
 ## `data/2026-08-18` — 2026-08-21 — data + fix
 
 **Three new reports: sitreps 094, 095, 096** (data dates 16–18 August). INSP

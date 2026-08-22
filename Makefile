@@ -2,7 +2,7 @@
 # by design: `build` and `doc` never touch the network, so a rebuild can never
 # silently change what the source says.
 
-.PHONY: watch-data-channel release-check oneoff-testing oneoff-death-split oneoff-death-flow cron-install cron-uninstall check fetch refresh verify build streams compare figures external \
+.PHONY: watch-data-channel release-check escape-fraction oneoff-testing oneoff-death-split oneoff-death-flow cron-install cron-uninstall check fetch refresh verify build streams compare figures external \
 	external-update scan-refresh doc serve test
 
 ## check   -- is the archive current, and does the source still look the same?
@@ -214,6 +214,7 @@ figures:
 CHANNEL ?= ../ebola-bdbv-camdl/data-agent-channel.md
 watch-data-channel:
 	uv run python scripts/watch_data_channel.py --file $(CHANNEL) --notify \
+		--loop --state logs/.data_channel_seen \
 		--interval $(or $(INTERVAL),60) --timeout $(or $(TIMEOUT),21600)
 
 ## release-check -- build the COMMITTED state in a scratch clone before
@@ -228,6 +229,14 @@ release-check:
 	ln -s $$(pwd)/data/raw/sitrep_pdfs $(RC_DIR)/data/raw/sitrep_pdfs
 	cd $(RC_DIR) && make build && make streams
 	@echo "release-check PASSED: the committed state builds from a fresh clone"
+
+## escape-fraction -- the share of confirmed cases first ascertained AT DEATH
+##            rather than alive, reported under four exclusion rules because
+##            backlog releases and span mismatches both bias it downward.
+##            Read-only diagnostic over the built streams; pins gamma*q/tau
+##            for the modelling repo without any disease-course assumption.
+escape-fraction:
+	uv run python scripts/escape_fraction.py --streams data/build/streams
 
 ## oneoff-death-flow -- DISPOSABLE diagram: where a death goes, from the
 ##            event to the likelihood, with the two lossy edges named.

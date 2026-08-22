@@ -59,6 +59,19 @@ PROVINCES = {
 PROV_RE = re.compile(r"\b(Ituri|Nord[-\s]Kivu|Sud[-\s]Kivu|Haut[-\s]U[ée]l[ée]"
                      r"|Bas[-\s]U[ée]l[ée]|Tshopo)\b", re.I)
 LAB_WORD = re.compile(r"[ée]chantillons?|pr[ée]l[èe]vements?", re.I)
+
+# A DEATH SPLIT HAS THE SAME ARITHMETIC SHAPE AS A POSITIVITY, so the
+# licence-or-refuse rule cannot tell them apart: "23 décès dont 14
+# communautaires (60,9 %)" offers the pair (14, 23) reproducing 60,9 %
+# exactly, and it was licensed as 14 positives out of 23 samples on
+# 2026-08-02 Ituri -- a day whose real testing figures are elsewhere. The
+# guard is arithmetic and the ambiguity is semantic, so no tolerance change
+# fixes it; the clause has to leave the pool before the pair is chosen.
+# Deaths and their community share are already extracted from the tables,
+# which is where they belong.
+DEATH_SPLIT = re.compile(
+    r"\d+\s+d[ée]c[èe]s\s+dont\s+\d+\s+communautaires?\s*"
+    r"(?:\(\s*[\d,.]+\s*%\s*\))?", re.I)
 FLOW_WORD = re.compile(r"nouveaux?|nouvelles?|derni[èe]res?\s+24|du\s+jour", re.I)
 PCT = re.compile(r"(\d{1,2}(?:[.,]\d{1,2})?)\s*%")
 #: The lookahead also refuses `,\d` and `.\d`: a decimal percentage's integer
@@ -145,8 +158,11 @@ def extract(pdf: Path) -> tuple[list[dict], list[dict]]:
         if not LAB_WORD.search(seg):
             continue
         prov = _norm_prov(m.group(1))
-        pcts = [float(p.replace(",", ".")) for p in PCT.findall(seg)]
-        ints = [int(x) for x in INT.findall(seg)]
+        # Harvest from the segment with death-split clauses removed; the
+        # stored sentence stays whole so the refusal is auditable.
+        pool = DEATH_SPLIT.sub(" ", seg)
+        pcts = [float(p.replace(",", ".")) for p in PCT.findall(pool)]
+        ints = [int(x) for x in INT.findall(pool)]
         # Flow-ness may be stated once for the whole passage ("Au cours des
         # dernières 24 heures..." heading a chain of provinces), so a little
         # preceding context votes too -- but a stock marker INSIDE the
