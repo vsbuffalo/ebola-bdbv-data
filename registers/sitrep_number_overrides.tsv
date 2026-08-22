@@ -61,3 +61,12 @@ Draft_SitRep_MVE_RDC_N°050_04_07_2026.pdf	50	2026-07-03
 84.pdf	84	2026-08-06
 85.pdf	85	2026-08-07
 91.pdf	91	2026-08-13
+# Verified 2026-08-21 against each PDF's own front page, which states both the
+# number and the data date: "SitRep N°094/MVEBDB/16/08/2026 · Date de
+# rapportage : 16 août 2026" (and likewise 095/17 août, 096/18 août). All three
+# were uploaded on 2026-08-20 as bare-numbered files, the same shape as 83-85
+# and 91; the number in the filename happens to match the report here, but it
+# is recorded from the page because the filename is not evidence.
+94.pdf	94	2026-08-16
+95.pdf	95	2026-08-17
+96.pdf	96	2026-08-18

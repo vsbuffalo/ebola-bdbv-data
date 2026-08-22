@@ -16,6 +16,40 @@ carries the rest.
 
 ---
 
+## `data/2026-08-18` — 2026-08-21 — data + fix
+
+**Three new reports: sitreps 094, 095, 096** (data dates 16–18 August). INSP
+published all three on 20 August as bare-numbered uploads (`94.pdf`,
+`95.pdf`, `96.pdf`), which the fetch guard refused to classify — correctly,
+and it blocked the modelling repo's vendor step until a human read them. Each
+front page states its own identity ("SitRep N°094/MVEBDB/16/08/2026 · Date de
+rapportage : 16 août 2026"); recorded in
+`registers/sitrep_number_overrides.tsv` from the page, not the filename.
+
+**Two extraction fixes that sitrep 095 exposed**, both in the handling of a
+table whose first page outdents the province name into its own label column
+while its continuation carries zones in one:
+
+- The chain remap forced the continuation's single label column onto the
+  first page, dropping the column the province row sat in. The report's
+  national identity failed by exactly Ituri's 4,309 cases. Value columns must
+  agree across a chain; label columns are per-page typography, and the page's
+  own classified labels now win where it has them.
+- `parent()` returned the leftmost label column whether or not the name came
+  from that same column, so rows outdented into it were emitted as their own
+  parent. The carry then read `Adja` and `Aru` as merged province labels,
+  found no such province, and left all 55 of that report's zone rows
+  unattributed. A row is not its own parent.
+
+Both defects were caught by the page's own arithmetic, not by inspection.
+
+Identities after the fixes: **278 province-reports reconcile, 10 carry a
+verified exception, 0 disagree**; all three new reports close exactly. Stream
+totals equal the source's cumulative movement as always; `cases_ituri` now
+agrees with the printed province row on 69 of 71 dates. `deaths_ituri`'s
+worst grid gap returns to the registered −66 (sitrep 059) after briefly
+showing a spurious −37.
+
 ## `data/2026-08-15-r8` — 2026-08-19 — addition
 
 Three national **stock** observations, read from the front-page banner and

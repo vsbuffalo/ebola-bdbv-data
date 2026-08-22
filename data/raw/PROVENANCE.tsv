@@ -1,5 +1,6 @@
 path	source_url	sha256	bytes	fetched_utc
 data/raw/health_zones.geojson	https://raw.githubusercontent.com/INRB-UMIE/BDBV2026-Data/main/build/drc_health_zones.geojson	5666c9bd219d6cf24148669f724ee1298f716ddfbd7cdfc00d4249a1bf812a01	854543	2026-08-16
+data/raw/insp_sitrep_index.tsv	https://insp.cd/wp-json/wp/v2/media?after=2026-05-01T00:00:00&per_page=100&orderby=date&order=asc&_fields=id,date,source_url	1c1b62de7380712d1b443c9f40d8bdc778a49447e93cc524165c99cc5eed89fd	15377	2026-08-22
 data/raw/insp_sitrep_index.tsv	https://insp.cd/wp-json/wp/v2/media?after=2026-05-01T00:00:00&per_page=100&orderby=date&order=asc&_fields=id,date,source_url	8378207a9fd91de20a29f6002487e20413afc8629d6a2aa0accccddb7eba17b3	15101	2026-08-17
 data/raw/insp_sitrep_index.tsv	https://insp.cd/wp-json/wp/v2/media?after=2026-05-01T00:00:00&per_page=100&orderby=date&order=asc&_fields=id,date,source_url	b33ffb2fd88e3ac2a4362f73beb06285f372fbe5c2cf1a25dd9cbc57098a552b	14941	2026-08-16
 data/raw/sitrep_pdfs/sitrep_005_2026-05-19.pdf	https://insp.cd/wp-content/uploads/2026/05/Draft_SitRep_MVE_RDC_20260520_vf1.pdf	3ca1c8204515b4d22772a4ad271e7f64bc95acf58f5b736df5647af38ea49e7a	1233908	2026-08-15
@@ -86,5 +87,8 @@ data/raw/sitrep_pdfs/sitrep_090_2026-08-12.pdf	https://insp.cd/wp-content/upload
 data/raw/sitrep_pdfs/sitrep_091_2026-08-13.pdf	https://insp.cd/wp-content/uploads/2026/08/91.pdf	863a16b2bb8ff3ce88e8eb1bcad2f53f23a1c9e29c4e52ead7e95b1b29f73841	679091	2026-08-16
 data/raw/sitrep_pdfs/sitrep_092_2026-08-14.pdf	https://insp.cd/wp-content/uploads/2026/08/SitRep_MVEBDB_092_14_08_2026.pdf	068fa46ceee414b6d4b9da384d40522fd30076b5a20e1bb8efe0f117592a01e4	692706	2026-08-16
 data/raw/sitrep_pdfs/sitrep_093_2026-08-15.pdf	https://insp.cd/wp-content/uploads/2026/08/SitRep_MVEBDB_093_15_08_2026.pdf	0697ebde50404f283a1a143d471b2eb12aaf12a3cdc2b1371d516e7041888c2a	697123	2026-08-16
+data/raw/sitrep_pdfs/sitrep_094_2026-08-16.pdf	https://insp.cd/wp-content/uploads/2026/08/94.pdf	dae42a524c828eb942c1d8dcd3ed18729e62b55e5f7ddfacbc4669286b5fb288	691363	2026-08-22
+data/raw/sitrep_pdfs/sitrep_095_2026-08-17.pdf	https://insp.cd/wp-content/uploads/2026/08/95.pdf	dec201b4126f10944d6f5e60c8a6d1d43dba1ad87b67f87f37817e06943a275a	699854	2026-08-22
+data/raw/sitrep_pdfs/sitrep_096_2026-08-18.pdf	https://insp.cd/wp-content/uploads/2026/08/96.pdf	1f500978f1dece31299fe4260e8baaa4896693f89ef235c035381ea9c9bb7380	720592	2026-08-22
 data/raw/zone_aliases.csv	https://raw.githubusercontent.com/INRB-UMIE/BDBV2026-Data/main/data/aliases.csv	4d73b83971157669502b043a3f618e829e47b79a1020db0672607da08a83b9b6	8317	2026-08-16
 data/raw/zone_population.csv	https://raw.githubusercontent.com/INRB-UMIE/BDBV2026-Data/main/data/worldpop/processed/worldpop__pop_count__static.csv	264b8a57c53da82f25a5eba2ce2afbcc3f54503dabe9e2c651aeefac0725852f	3725	2026-08-16

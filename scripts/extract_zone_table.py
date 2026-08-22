@@ -212,7 +212,16 @@ def row_name(page, cells) -> tuple[str, str]:
         joined = strip_ordinal(" ".join(parts))
         if level_of(joined) != "zone":
             return joined, ""
-    return strip_ordinal(page.label(cells)), page.parent(cells)
+    name = strip_ordinal(page.label(cells))
+    parent = page.parent(cells)
+    # A ROW IS NOT ITS OWN PARENT. `parent()` reads the leftmost label column
+    # whether or not the name came from that same column, and where a table
+    # outdents some rows into it -- sitrep 095 prints its province row and two
+    # of its zones at the left margin, the rest indented -- those rows were
+    # emitted with `province_printed` equal to their own name. The carry then
+    # took `Adja` and `Aru` for merged province labels, found no such
+    # province, and left all 55 of that report's zone rows unattributed.
+    return name, ("" if parent == name else parent)
 
 
 def extract(pdf: Path, specs=SPECS) -> tuple[list[dict], str]:

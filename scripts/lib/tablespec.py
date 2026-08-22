@@ -641,21 +641,30 @@ def _remap_by_x(table, spec: TableSpec, ref: Mapped) -> Mapped | None:
         used.add(got[1])
     if not roles:
         return None
-    # LABELS COME FROM THE REFERENCE PAGE TOO. Deriving them from this page's
-    # own text ("everything textual left of the first value column") swept in
-    # prose fragments as a second label column on sitrep 058's last page --
-    # every row's own name then doubled as its printed parent, the carry took
-    # those names for province anchors, and forty zones landed in Haut-Uélé.
-    # One table, one label set: each reference label column maps to this
-    # page's nearest column by x.
-    labels = []
-    for rj in ref.labels:
-        cx = center(ref.table, rj)
-        got = min(((abs(center(table, j) - cx), j) for j in range(table.ncols)
-                   if j not in used), default=None)
-        if got is not None and got[0] <= _ALIGN_TOL:
-            labels.append(got[1])
-    return Mapped(table=table, roles=roles, labels=tuple(sorted(labels)))
+    # VALUE columns must agree across the chain -- that is what this remap is
+    # for. LABEL columns must not be forced to agree, because they are
+    # per-page typography: sitrep 095's first page outdents the province name
+    # into its own column and indents the zones into a second, while its
+    # continuation carries zones alone in one column. Mapping the
+    # continuation's single label column onto the first page dropped the
+    # column Ituri sat in, and the report's national identity failed by
+    # exactly Ituri's 4,309 cases.
+    #
+    # So the page's own classified labels win where it has them. The
+    # reference's are the fallback for a page whose data is too thin to
+    # classify at all -- deriving labels from raw text there swept prose
+    # fragments in as a second label column on sitrep 058 and sent forty
+    # zones into Haut-Uélé.
+    labels, _values = classify(table, start=table.header_rows())
+    if not labels:
+        for rj in ref.labels:
+            cx = center(ref.table, rj)
+            got = min(((abs(center(table, j) - cx), j)
+                       for j in range(table.ncols) if j not in used),
+                      default=None)
+            if got is not None and got[0] <= _ALIGN_TOL:
+                labels.append(got[1])
+    return Mapped(table=table, roles=roles, labels=tuple(sorted(set(labels))))
 
 
 def select(tables: Iterable, spec: TableSpec) -> Resolved | None:
