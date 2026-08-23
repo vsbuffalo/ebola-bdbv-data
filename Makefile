@@ -195,6 +195,11 @@ compare:
 figures: 
 	uv run python scripts/plot_figures.py --figure availability \
 		--out data/build/figures/availability.png
+	# SLIDE FIGURE, 16:9 at PowerPoint widescreen size (13.333 x 7.5 in).
+	# One cell per released stream x report day, over the format eras and the
+	# days whose own arithmetic does not close.
+	uv run python scripts/plot_figures.py --figure release_grid \
+		--out data/build/figures/release_grid.png
 	uv run python scripts/plot_figures.py --figure province_series \
 		--out data/build/figures/province_series.png
 	uv run python scripts/plot_figures.py --figure streams_detail \
@@ -205,6 +210,7 @@ figures:
 	# channel can link to a figure that survives (data/build is gitignored).
 	mkdir -p docs/figures
 	cp data/build/figures/streams_detail.png docs/figures/
+	cp data/build/figures/release_grid.png docs/figures/
 
 ## watch-data-channel -- poll the shared data channel (which lives in the
 ##            modelling repo's tree) and exit as soon as they write, printing

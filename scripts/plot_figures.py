@@ -159,6 +159,212 @@ def draw_availability(inputs: dict[str, Path], out: Path) -> None:
     plt.close(fig)
 
 
+#: The released daily streams, in the order a reader should scan them, with
+#: the display label. Stocks come last because they are instants, not flows.
+RELEASE_ROWS = [
+    ("cases_daily_national", "cases — national"),
+    ("cases_daily_ituri", "cases — Ituri"),
+    ("cases_daily_nord_kivu", "cases — Nord-Kivu"),
+    ("cases_daily_haut_uele", "cases — Haut-Uélé"),
+    ("deaths_daily_national", "deaths — national"),
+    ("deaths_daily_ituri", "deaths — Ituri"),
+    ("deaths_daily_nord_kivu", "deaths — Nord-Kivu"),
+    ("deaths_daily_haut_uele", "deaths — Haut-Uélé"),
+    ("community_deaths_daily_national", "community deaths — national"),
+    ("community_deaths_daily_ituri", "community deaths — Ituri"),
+    ("community_deaths_daily_nord_kivu", "community deaths — Nord-Kivu"),
+    ("community_deaths_daily_haut_uele", "community deaths — Haut-Uélé"),
+    ("lab_daily_national", "laboratory — national"),
+    ("lab_daily_ituri", "laboratory — Ituri"),
+    ("lab_daily_nord_kivu", "laboratory — Nord-Kivu"),
+    ("lab_daily_haut_uele", "laboratory — Haut-Uélé"),
+    ("patients_isolated", "in isolation (stock)"),
+    ("patients_isolated_confirmed", "in isolation, confirmed (stock)"),
+    ("cumul_recovered", "recovered, cumulative (stock)"),
+]
+
+#: What a published cell can be. Status, not identity, so these are a reserved
+#: status ramp and every one is labelled in the legend -- never colour alone.
+FLAG_COLOR = {
+    "-": "#1a4f72",                       # clean
+    "consolidating": "#E69F00",           # a backlog release
+    "harmonisation": "#CC79A7",           # the source restating earlier days
+    "harmonisation_undercount": "#B05A8A",
+    "stale_distribution": "#D55E00",      # a distribution carried forward
+}
+FLAG_LABEL = {
+    "-": "clean",
+    "consolidating": "backlog consolidation",
+    "harmonisation": "harmonisation",
+    "harmonisation_undercount": "harmonisation (undercount)",
+    "stale_distribution": "stale distribution",
+}
+
+#: Extraction route -> the report layout it implies. A change here is a change
+#: in the source's FORMAT, which is why the route is worth plotting: it is the
+#: only record we keep of when INSP reformatted the bulletin.
+ROUTE_LABEL = {
+    "zone_early": "early zone table",
+    "zone_cumulative": "zone table (cumulative)",
+    "zone_mixed": "mixed daily/cumulative",
+    "zone_daily": "daily flows only",
+}
+
+
+def _flag_of(row: dict) -> str:
+    """The dominant flag on a stream row. A row can carry several, pipe
+    separated; the first recognised one wins, so a cell is one colour."""
+    raw = str(row.get("flags") or "-")
+    for part in raw.split("|"):
+        if part in FLAG_COLOR:
+            return part
+    return "-"
+
+
+def draw_release_grid(inputs: dict[str, Path], out: Path) -> None:
+    """One cell per (released stream x report day), at slide proportions.
+
+    THIS IS THE FIGURE THAT SAYS WHAT WE ACTUALLY SHIP. `availability` shows
+    what the SOURCE states; this shows what survives into the release, which
+    is a different and smaller thing. Coverage is not a rectangle, and the
+    holes are the argument: the laboratory rows stop where the paragraph stops
+    naming provinces, and the two stock rows begin late because the early
+    dashboard prints its tiles above their labels rather than below.
+
+    Three annotation layers, all drawn from artefacts rather than typed in:
+      * cell colour   -- the row's own `flags`, so backlog and harmonisation
+                         days are visible rather than averaged away;
+      * era bands     -- the extraction route from `zone_table.table`, which
+                         changes exactly when the bulletin is reformatted;
+      * event ticks   -- the reconciliation exception register, i.e. the days
+                         the page's own arithmetic does not close.
+    """
+    streams = {name: pl.read_csv(p, separator="\t", infer_schema_length=None)
+               for name, p in inputs.items() if name.startswith("stream_")}
+    zone = pl.read_csv(inputs["zone_table"], infer_schema_length=None)
+    exc = pl.read_csv(inputs["exceptions"], separator="\t", comment_prefix="#",
+                      infer_schema_length=None)
+
+    rows = [(k, lab) for k, lab in RELEASE_ROWS if f"stream_{k}" in streams]
+    all_dates = sorted({d for s in streams.values() for d in s["time"].to_list()})
+    x = {d: i for i, d in enumerate(all_dates)}
+    nx, ny = len(all_dates), len(rows)
+
+    fig, (ax, era) = plt.subplots(
+        2, 1, figsize=(13.333, 7.5), height_ratios=[ny, 2.4],
+        constrained_layout=True)
+
+    # --- the grid itself -------------------------------------------------
+    ax.set_facecolor("#f7f7f7")            # the ground IS "no observation"
+    seen_flags: set[str] = set()
+    for yi, (key, label) in enumerate(reversed(rows)):
+        df = streams[f"stream_{key}"]
+        has_flags = "flags" in df.columns
+        for r in df.iter_rows(named=True):
+            xi = x.get(r["time"])
+            if xi is None:
+                continue
+            flag = _flag_of(r) if has_flags else "-"
+            seen_flags.add(flag)
+            ax.add_patch(plt.Rectangle(
+                (xi + 0.12, yi + 0.12), 0.76, 0.76,
+                facecolor=FLAG_COLOR[flag], edgecolor="none"))
+        ax.text(-0.006, yi + 0.5, label, transform=ax.get_yaxis_transform(),
+                ha="right", va="center", fontsize=8.5)
+
+    # group separators, so the eye reads families rather than 19 rows
+    for boundary in (3, 7, 11, 15):
+        ax.axhline(ny - 1 - boundary, color="#ffffff", linewidth=2.4)
+
+    ax.set_xlim(0, nx)
+    ax.set_ylim(0, ny)
+    ax.set_yticks([])
+    ax.set_xticks([])
+    for s in ax.spines.values():
+        s.set_visible(False)
+
+    # --- reconciliation events, as ticks above the grid ------------------
+    exc_dates = {d for d in exc["date"].to_list() if d in x}
+    for d in exc_dates:
+        ax.plot([x[d] + 0.5], [ny + 0.42], marker="v", markersize=5,
+                color="#D55E00", clip_on=False)
+
+    # --- format eras, from the route each report was read through --------
+    # A report with no zone table is not a gap in the format record: it IS a
+    # format, and one worth seeing, so it gets its own band rather than
+    # breaking the span either side of it into two.
+    route = {d: (r or "none") for d, r in
+             zone.select("date", "table").unique().iter_rows()}
+    era.set_xlim(0, nx)
+    era.set_ylim(0, 1)
+    spans, start, cur = [], 0, route.get(all_dates[0], "none")
+    for i, d in enumerate(all_dates):
+        r = route.get(d, "none")
+        if r != cur:
+            spans.append((start, i, cur))
+            start, cur = i, r
+    spans.append((start, nx, cur))
+
+    era_fill = {"zone_early": "#c9dcea", "zone_cumulative": "#7fb2d4",
+                "zone_mixed": "#4d94c4", "zone_daily": "#2c6e9e",
+                "none": "#e4e4e4"}
+    widest: dict[str, tuple[int, int]] = {}
+    for a, b, r in spans:
+        if r not in widest or (b - a) > (widest[r][1] - widest[r][0]):
+            widest[r] = (a, b)
+    for a, b, r in spans:
+        era.add_patch(plt.Rectangle((a, 0.62), b - a, 0.34,
+                                    facecolor=era_fill.get(r, "#e4e4e4"),
+                                    edgecolor="white", linewidth=1.0))
+        lab = ROUTE_LABEL.get(r, "no zone table")
+        # only the widest run of each route is labelled: a format that resumes
+        # after an interruption is the same format, not a new one
+        if (a, b) == widest.get(r) and b - a >= max(6, len(lab) * 0.40):
+            era.text((a + b) / 2, 0.79, lab, ha="center", va="center",
+                     fontsize=7.5,
+                     color="white" if r in ("zone_mixed", "zone_daily",
+                                            "zone_cumulative") else "#20415c")
+    era.text(-0.006, 0.79, "report format", transform=era.get_yaxis_transform(),
+             ha="right", va="center", fontsize=8.5)
+
+    # month ticks, under the era band and clear of the legend
+    month_at: dict[str, int] = {}
+    for i, d in enumerate(all_dates):
+        month_at.setdefault(d[:7], i)
+    for m, i in month_at.items():
+        era.axvline(i, ymin=0.48, ymax=0.62, color="#999999", linewidth=0.8)
+        era.text(i + 0.5, 0.40,
+                 mdates.num2date(mdates.datestr2num(m + "-01")).strftime("%B %Y"),
+                 ha="left", va="center", fontsize=9, color="#333333")
+    era.set_xticks([])
+    era.set_yticks([])
+    for s in era.spines.values():
+        s.set_visible(False)
+
+    # --- legend, along the very bottom so nothing collides ---------------
+    handles = [plt.Rectangle((0, 0), 1, 1, facecolor=FLAG_COLOR[f],
+                             label=FLAG_LABEL[f])
+               for f in FLAG_COLOR if f in seen_flags]
+    handles.append(plt.Rectangle((0, 0), 1, 1, facecolor="#f7f7f7",
+                                 edgecolor="#cccccc", label="no observation"))
+    handles.append(plt.Line2D([], [], linestyle="none", marker="v",
+                              color="#D55E00", markersize=6,
+                              label="the page's own arithmetic does not close"))
+    fig.legend(handles=handles, loc="lower center", ncol=len(handles),
+               frameon=False, fontsize=8.5, handlelength=1.1,
+               handleheight=1.1, columnspacing=1.5,
+               bbox_to_anchor=(0.5, -0.012))
+
+    fig.suptitle("What the release contains, report by report",
+                 x=0.008, ha="left", fontsize=14, fontweight="bold")
+    ax.set_title(f"{nx} report-days carrying at least one observation · "
+                 f"{ny} published streams · {all_dates[0]} to {all_dates[-1]}",
+                 loc="left", fontsize=9.5, color="#555555", pad=26)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out, dpi=200)
+    plt.close(fig)
+
+
 def draw_province_series(inputs: dict[str, Path], out: Path) -> None:
     series = pl.read_csv(inputs["province_series"], infer_schema_length=None)
     summary = pl.read_csv(inputs["summary"], infer_schema_length=None)
@@ -586,6 +792,13 @@ def draw_residuals(inputs: dict[str, Path], out: Path) -> None:
 
 
 FIGURES = {
+    # The declared inputs ARE the dependency set, so the stream files are
+    # listed one by one rather than hidden behind a directory glob.
+    "release_grid": (draw_release_grid,
+                     {**{f"stream_{n}": f"data/build/streams/{n}.tsv"
+                         for n, _ in RELEASE_ROWS},
+                      "zone_table": "data/build/series/zone_table.csv",
+                      "exceptions": "registers/reconciliation_exceptions.tsv"}),
     "residuals": (draw_residuals,
                   {"province_series": "data/build/series/province_series.csv"}),
     "streams_detail": (draw_streams_detail,
