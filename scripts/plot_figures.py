@@ -207,14 +207,14 @@ FLAG_COLOR = {
     "consolidating": "#E69F00",           # a backlog release
     "harmonisation": "#CC79A7",           # the source restating earlier days
     "harmonisation_undercount": "#B05A8A",
-    "stale_distribution": "#D55E00",      # a distribution carried forward
+    "stale_distribution": "#D55E00",      # zone breakdown older than the total
 }
 FLAG_LABEL = {
     "-": "no caveat printed",
     "consolidating": "source calls recent data provisional",
     "harmonisation": "may be revised",
     "harmonisation_undercount": "source says too low",
-    "stale_distribution": "distribution carried forward",
+    "stale_distribution": "zone breakdown out of date",
 }
 
 #: Extraction route -> the report layout it implies. A change here is a change
