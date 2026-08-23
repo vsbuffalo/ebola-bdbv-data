@@ -421,7 +421,7 @@ def draw_release_grid(inputs: dict[str, Path], out: Path) -> None:
     # constrained_layout does not reserve space for a figure legend, so the
     # band is carved out of the layout rect explicitly or the second row
     # falls off the page.
-    fig.get_layout_engine().set(rect=(0, 0.105, 1, 0.895))
+    fig.get_layout_engine().set(rect=(0, 0.105, 1, 0.875))
     leg1 = fig.legend(handles=handles, loc="lower left", ncol=2,
                       frameon=False, fontsize=8.5, handlelength=1.1,
                       handleheight=1.1, columnspacing=1.6, labelspacing=0.6,
@@ -453,7 +453,7 @@ def draw_release_grid(inputs: dict[str, Path], out: Path) -> None:
                  x=0.008, ha="left", fontsize=14, fontweight="bold")
     ax.set_title(f"{nx} report-days carrying at least one observation · "
                  f"{ny} published streams · {all_dates[0]} to {all_dates[-1]}",
-                 loc="left", fontsize=9.5, color="#555555", pad=30)
+                 loc="left", fontsize=9.5, color="#555555", pad=8)
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, dpi=200)
     plt.close(fig)
@@ -575,24 +575,27 @@ def draw_ascertainment(inputs: dict[str, Path], out: Path) -> None:
                                        - mdates.date2num(lo_d)) / 2
         ax.axvspan(mdates.date2num(lo_d) - 0.5, mdates.date2num(hi_d) + 0.5,
                    color="#f0f0f0", zorder=0)
-        ax.text(mid, top * 0.40, why, rotation=90, ha="center", va="center",
+        # Both bands carry their label at the SAME height, lifted above the
+        # dashed national-total outlines that sit inside the August band.
+        ax.text(mid, top * 0.56, why, rotation=90, ha="center", va="center",
                 fontsize=7.5, color="#8a8a8a")
 
     ax.set_ylim(0, top)
     ax.set_axisbelow(True)          # gridlines behind the bars, not through them
     ax.set_ylabel("confirmed deaths per day", fontsize=10)
-    # upper right: the two clipped bars sit centre-left. A translucent white
-    # box so the entries stay legible where they cross gridlines and bars.
-    leg = ax.legend(loc="upper right", fontsize=9.5, frameon=True, framealpha=0.9,
-              facecolor="white", edgecolor="#8a8a8a", borderpad=0.7)
-    leg.get_frame().set_linewidth(0.7)
+    # ABOVE the axes, not inside them. The header band is empty to the right
+    # of the subtitle, and a legend sitting in the plot area covers data --
+    # here the August gap band and the clipped 22 July bar.
+    leg = ax.legend(loc="lower right", bbox_to_anchor=(1.0, 1.055),
+                    fontsize=9.5, frameon=False, ncol=2, columnspacing=1.8,
+                    handlelength=1.3, handleheight=1.1, borderpad=0.4)
     ax.grid(axis="y", **GRID)
 
     sh.plot(t, share, marker="o", markersize=4.5, linewidth=1.4, color=COMM)
     sh.axhline(pooled, color="#555555", linewidth=1.0, linestyle=(0, (4, 3)))
     # text starts at the left edge of the series and points up to the line
     sh.annotate(f"pooled share of\nclassified deaths  {pooled:.0%}",
-                xy=(t[2], pooled), xytext=(t[0], 0.28),
+                xy=(t[2], pooled), xytext=(t[0], 0.30),
                 textcoords="data", ha="left", va="center",
                 fontsize=9.5, color="#444444", linespacing=1.5,
                 arrowprops=dict(arrowstyle="->", color="#777777",
@@ -602,8 +605,7 @@ def draw_ascertainment(inputs: dict[str, Path], out: Path) -> None:
     sh.set_yticks([0, 0.2, 0.4, 0.6, 0.8, 1.0])
     sh.set_yticklabels([f"{v:.0%}" for v in (0, .2, .4, .6, .8, 1.0)])
     sh.set_ylabel("community share", fontsize=10)
-    sh.set_title(f"The share never in care — flat near {pooled:.0%}, "
-                 "not climbing",
+    sh.set_title(f"The share never in care — flat near {pooled:.0%}",
                  loc="left", fontsize=11, color="#333333")
     sh.grid(axis="y", **GRID)
     sh.xaxis.set_major_locator(mdates.WeekdayLocator(byweekday=mdates.MO))

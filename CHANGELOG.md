@@ -16,6 +16,38 @@ carries the rest.
 
 ---
 
+## `data/2026-08-18-r3` — 2026-08-23 — fix
+
+**Not breaking**: no column added, removed or renamed. Two national daily
+series gain a report-day; **no count changes**, only the interval a count is
+attributed to.
+
+**A printed national total was being lost to a page break.** Sitrep 085
+(7 August) splits its provincial summary across two pages, with the national
+`Total` row alone at the top of page 2, where the alerts table's title box is
+drawn over it. The two grids touch, so they were read as one table whose
+extent matched neither, and the continuation was refused — while
+`province_summary_status` recorded the read as `ok`. The loss was silent.
+
+| stream | was | now |
+|---|---|---|
+| `cases_daily_national` | `2026-08-08  174  days_covered 2` | `2026-08-07  89  1` + `2026-08-08  85  1` |
+| `deaths_daily_national` | `2026-08-08  73  days_covered 2` | `2026-08-07  29  1` + `2026-08-08  44  1` |
+| `cases_national` / `deaths_national`, week to 08-11 | `n_report_days 6` | `n_report_days 7` |
+
+The two-day totals are conserved — 89 + 85 = 174, 29 + 44 = 73 — so a
+consumer aggregating over any window wider than a day sees no change. What
+changes is that 7 August is now its own observation rather than being folded
+into the 8th, and the week to 11 August is fully covered.
+
+Validated against the epiforecasts scan, an independent hand transcription of
+the same PDFs: it records sitrep 085's national cumulative as 4,209, and all
+71 comparable reports now agree. Across the provincial-summary route,
+`not_checkable` goes from 1 to 0 — every report yielding summary rows now
+prints a total we read and check.
+
+---
+
 ## `data/2026-08-18-r2` — 2026-08-22 — new streams
 
 **Not breaking**: three files added, nothing changed or removed.
