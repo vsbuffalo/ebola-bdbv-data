@@ -735,24 +735,38 @@ def draw_validation(inputs: dict[str, Path], out: Path) -> None:
     # --- coverage, the half of the story agreement cannot tell -------------
     ours_days = (zt.filter(pl.col("level") == "zone")
                  .with_columns(pl.col("date").str.to_date()))
+    # THE INRB SIDE IS A PINNED SNAPSHOT, NOT INRB TODAY. external.lock fixes
+    # their repository at one commit so the comparison is reproducible, which
+    # means their extent here is bounded by when that pin was taken. Reporting
+    # "we run later" without saying so compares our current data against their
+    # stale checkout and calls the difference a coverage win. The pin date is
+    # therefore on the label, and it is read from the lockfile rather than
+    # typed, so it cannot drift from the checkout it describes.
+    pin = "unknown"
+    for line in Path(inputs["lock"]).read_text().splitlines():
+        if line.startswith("BDBV2026-Data"):
+            pin = line.split("\t")[-1].strip()
     rows = [
         ("ours", ours_days["date"].min(), ours_days["date"].max(),
-         im["ours_zone_days"], OURS),
+         im["ours_zone_days"], OURS, "to " + f"{dt.date.fromisoformat(str(ours_days['date'].max())):%d %b}"),
         ("INRB-UMIE", zc["date"].min(), im["inrb_last_date"],
-         im["inrb_zone_days"], INRB),
+         im["inrb_zone_days"], INRB,
+         f"to {dt.date.fromisoformat(im['inrb_last_date']):%d %b} "
+         f"in the snapshot pinned {dt.date.fromisoformat(pin):%d %b}"),
     ]
-    for yi, (name, lo, hi, n, colour) in enumerate(reversed(rows)):
+    for yi, (name, lo, hi, n, colour, extent) in enumerate(reversed(rows)):
         a = mdates.date2num(dt.date.fromisoformat(str(lo)))
         b = mdates.date2num(dt.date.fromisoformat(str(hi)))
         cov.barh(yi, b - a, left=a, height=0.32, color=colour, alpha=0.85)
-        cov.text(b + 1.5, yi, f"{n:,} zone-days  ·  to {dt.date.fromisoformat(str(hi)):%d %b}",
+        cov.text(b + 1.5, yi, f"{n:,} zone-days  ·  {extent}",
                  va="center", ha="left", fontsize=9.5, color="#333333")
         cov.text(-0.008, yi, name, transform=cov.get_yaxis_transform(),
                  ha="right", va="center", fontsize=10)
     cov.set_ylim(-0.6, len(rows) - 0.4)
     cov.set_yticks([])
     cov.set_xlim(ax.get_xlim())
-    cov.set_title("…but the lineages do not cover the same ground",
+    cov.set_title("…but the lineages do not cover the same ground "
+                  "(INRB as pinned, not as it stands today)",
                   loc="left", fontsize=10.5, color="#333333", pad=6)
     for sp in cov.spines.values():
         sp.set_visible(False)
@@ -1387,7 +1401,8 @@ FIGURES = {
                     "scan": "data/build/compare/scan_comparison.csv",
                     "zone_table": "data/build/series/zone_table.csv",
                     "summary": "data/build/series/province_summary.csv",
-                    "meta": "data/build/compare/compare_meta.json"}),
+                    "meta": "data/build/compare/compare_meta.json",
+                    "lock": "external.lock"}),
     "epi_curve": (draw_epi_curve,
                   {"cases": "data/build/streams/cases_daily_national.tsv",
                    "deaths": "data/build/streams/deaths_daily_national.tsv"}),
