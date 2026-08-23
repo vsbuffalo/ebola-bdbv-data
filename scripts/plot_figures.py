@@ -159,29 +159,46 @@ def draw_availability(inputs: dict[str, Path], out: Path) -> None:
     plt.close(fig)
 
 
-#: The released daily streams, in the order a reader should scan them, with
-#: the display label. Stocks come last because they are instants, not flows.
-RELEASE_ROWS = [
-    ("cases_daily_national", "cases — national"),
-    ("cases_daily_ituri", "cases — Ituri"),
-    ("cases_daily_nord_kivu", "cases — Nord-Kivu"),
-    ("cases_daily_haut_uele", "cases — Haut-Uélé"),
-    ("deaths_daily_national", "deaths — national"),
-    ("deaths_daily_ituri", "deaths — Ituri"),
-    ("deaths_daily_nord_kivu", "deaths — Nord-Kivu"),
-    ("deaths_daily_haut_uele", "deaths — Haut-Uélé"),
-    ("community_deaths_daily_national", "community deaths — national"),
-    ("community_deaths_daily_ituri", "community deaths — Ituri"),
-    ("community_deaths_daily_nord_kivu", "community deaths — Nord-Kivu"),
-    ("community_deaths_daily_haut_uele", "community deaths — Haut-Uélé"),
-    ("lab_daily_national", "laboratory — national"),
-    ("lab_daily_ituri", "laboratory — Ituri"),
-    ("lab_daily_nord_kivu", "laboratory — Nord-Kivu"),
-    ("lab_daily_haut_uele", "laboratory — Haut-Uélé"),
-    ("patients_isolated", "in isolation (stock)"),
-    ("patients_isolated_confirmed", "in isolation, confirmed (stock)"),
-    ("cumul_recovered", "recovered, cumulative (stock)"),
+#: The released streams, grouped by quantity. WITHIN A GROUP THE NATIONAL ROW
+#: SITS LAST, i.e. beneath its provinces, because it is their total: the eye
+#: reads the parts and then the sum, the same order the page prints them.
+#: The group name is carried by a bracket rather than repeated in every row
+#: label. Stocks come last because they are instants, not flows.
+RELEASE_GROUPS = [
+    ("cases", [
+        ("cases_daily_ituri", "Ituri"),
+        ("cases_daily_nord_kivu", "Nord-Kivu"),
+        ("cases_daily_haut_uele", "Haut-Uélé"),
+        ("cases_daily_national", "national"),
+    ]),
+    ("deaths", [
+        ("deaths_daily_ituri", "Ituri"),
+        ("deaths_daily_nord_kivu", "Nord-Kivu"),
+        ("deaths_daily_haut_uele", "Haut-Uélé"),
+        ("deaths_daily_national", "national"),
+    ]),
+    ("community\ndeaths", [
+        ("community_deaths_daily_ituri", "Ituri"),
+        ("community_deaths_daily_nord_kivu", "Nord-Kivu"),
+        ("community_deaths_daily_haut_uele", "Haut-Uélé"),
+        ("community_deaths_daily_national", "national"),
+    ]),
+    ("laboratory", [
+        ("lab_daily_ituri", "Ituri"),
+        ("lab_daily_nord_kivu", "Nord-Kivu"),
+        ("lab_daily_haut_uele", "Haut-Uélé"),
+        ("lab_daily_national", "national"),
+    ]),
+    ("stocks", [
+        ("patients_isolated", "in isolation"),
+        ("patients_isolated_confirmed", "isolation, confirmed"),
+        ("cumul_recovered", "recovered, cumul."),
+    ]),
 ]
+
+#: Flattened, top to bottom -- the registry's dependency set is derived from
+#: this, so the grouping above stays the single source of row order.
+RELEASE_ROWS = [r for _, group in RELEASE_GROUPS for r in group]
 
 #: What a published cell can be. Status, not identity, so these are a reserved
 #: status ramp and every one is labelled in the legend -- never colour alone.
@@ -272,9 +289,31 @@ def draw_release_grid(inputs: dict[str, Path], out: Path) -> None:
         ax.text(-0.006, yi + 0.5, label, transform=ax.get_yaxis_transform(),
                 ha="right", va="center", fontsize=8.5)
 
-    # group separators, so the eye reads families rather than 19 rows
-    for boundary in (3, 7, 11, 15):
-        ax.axhline(ny - 1 - boundary, color="#ffffff", linewidth=2.4)
+    # --- group brackets ---------------------------------------------------
+    # A bracket per quantity, spanning its rows, so the group name is stated
+    # once instead of prefixing every label. Drawn in (axes-x, data-y) so the
+    # bracket keeps its distance from the axis whatever the label widths.
+    tr = ax.get_yaxis_transform()
+    present = [k for k, _ in rows]
+    i = 0
+    for gname, group in RELEASE_GROUPS:
+        members = [k for k, _ in group if k in present]
+        if not members:
+            continue
+        i0, i1 = i, i + len(members)
+        i = i1
+        y0, y1 = ny - i1, ny - i0          # rows are drawn top-down from ny
+        xb, tick = -0.175, 0.012
+        ax.plot([xb, xb], [y0 + 0.15, y1 - 0.15], transform=tr,
+                color="#888888", linewidth=1.0, clip_on=False)
+        for yy in (y0 + 0.15, y1 - 0.15):
+            ax.plot([xb, xb + tick], [yy, yy], transform=tr,
+                    color="#888888", linewidth=1.0, clip_on=False)
+        ax.text(xb - 0.010, (y0 + y1) / 2, gname, transform=tr,
+                ha="right", va="center", fontsize=10, color="#222222")
+        # a hairline between groups, so the bands read as families
+        if i1 < ny:
+            ax.axhline(y0, color="#ffffff", linewidth=2.4)
 
     ax.set_xlim(0, nx)
     ax.set_ylim(0, ny)
