@@ -493,9 +493,9 @@ def draw_epi_curve(inputs: dict[str, Path], out: Path) -> None:
     deaths = pl.read_csv(inputs["deaths"], separator="\t", try_parse_dates=True)
 
     fig = plt.figure(figsize=(13.333, 7.5), constrained_layout=True)
-    outer = fig.add_gridspec(2, 1, height_ratios=[1.25, 1], hspace=0.10)
-    gc = outer[0].subgridspec(2, 1, height_ratios=[1, 5], hspace=0.06)
-    gd = outer[1].subgridspec(2, 1, height_ratios=[1, 5], hspace=0.06)
+    outer = fig.add_gridspec(2, 1, height_ratios=[1.25, 1], hspace=0.08)
+    gc = outer[0].subgridspec(2, 1, height_ratios=[1, 11], hspace=0.035)
+    gd = outer[1].subgridspec(2, 1, height_ratios=[1, 11], hspace=0.035)
     c_hi, c_lo = fig.add_subplot(gc[0]), fig.add_subplot(gc[1])
     d_hi, d_lo = fig.add_subplot(gd[0]), fig.add_subplot(gd[1])
 
@@ -521,7 +521,7 @@ def draw_epi_curve(inputs: dict[str, Path], out: Path) -> None:
             ax.spines["left"].set_color("#999999")
 
         lo.set_ylim(0, cut)
-        hi.set_ylim(peak * 0.94, peak * 1.06)
+        hi.set_ylim(peak * 0.965, peak * 1.035)
         hi.set_yticks([round(peak)])
         hi.tick_params(labelbottom=False, length=0)
         lo.spines["bottom"].set_color("#999999")
@@ -531,8 +531,9 @@ def draw_epi_curve(inputs: dict[str, Path], out: Path) -> None:
         lo.yaxis.set_label_coords(-0.055, 0.62)
 
         # diagonal break marks, drawn in axes coordinates on both edges
-        kw = dict(marker=[(-1, -0.6), (1, 0.6)], markersize=9, linestyle="none",
-                  color="#666666", mec="#666666", mew=1.1, clip_on=False)
+        kw = dict(marker=[(-1, -0.7), (1, 0.7)], markersize=7,
+                  linestyle="none", color="#666666", mec="#666666", mew=1.0,
+                  clip_on=False)
         hi.plot([0, 1], [0, 0], transform=hi.transAxes, **kw)
         lo.plot([0, 1], [1, 1], transform=lo.transAxes, **kw)
         return xs, ys, cut
