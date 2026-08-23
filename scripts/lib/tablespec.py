@@ -478,7 +478,15 @@ SPECS: tuple[TableSpec, ...] = (ZONE_TABLE, MIXED_ZONE_TABLE, EARLY_ZONE_TABLE,
 ALL_SPECS: tuple[TableSpec, ...] = SPECS + (PROVINCIAL_SUMMARY,)
 
 
-def spans_same(a, b, tol: float = 10.0) -> bool:
+#: How far two tables' left and right edges may differ and still be one table
+#: split by a page break. The value is argued for in `spans_same`, which is
+#: where it was measured; `select` uses the same number when it asks whether a
+#: rule inside a fused component was drawn by the table it is chaining, because
+#: that is the same question about the same two edges.
+SPAN_TOL = 10.0
+
+
+def spans_same(a, b, tol: float = SPAN_TOL) -> bool:
     """Two tables have the same left and right edges, so a page break split one table.
 
     BOTH edges must agree, and that is the strength of the test rather than a
@@ -730,16 +738,28 @@ def select(tables: Iterable, spec: TableSpec) -> Resolved | None:
     # So a continuation must be headless AND share the extent AND follow the
     # chain without another table of its own intervening -- the chain grows only
     # into what comes directly next.
+    #
+    # A CONTINUATION NEED NOT BE A COMPONENT OF ITS OWN. Sharing the extent is
+    # tested against the component the rules formed, and where the table that
+    # begins the next page is laid out over the rows the page break carried
+    # onto it, the two grids touch and form ONE component whose extent is the
+    # union of both. `subgrid` recovers the continuation from the rules that
+    # drew it; everything after that -- headless, adjacent, no other table
+    # between -- is tested on the recovered rows exactly as before, so a
+    # component holding no rule of the anchor's width contributes nothing.
     for chain in chains:
         anchor = chain[0]
         pos = max((t.page, t.ys[0]) for t in chain)
         for t in tabs:
-            if (t.page, t.ys[0]) <= pos or not spans_same(t, anchor):
+            if (t.page, t.ys[0]) <= pos:
                 continue
-            if t.header_rows() != 0 or t.page - pos[0] > 1:
+            got = t if spans_same(t, anchor) else t.subgrid(anchor.xs, SPAN_TOL)
+            if got is None:
+                continue
+            if got.header_rows() != 0 or got.page - pos[0] > 1:
                 break
-            chain.append(t)
-            pos = (t.page, t.ys[0])
+            chain.append(got)
+            pos = (got.page, got.ys[0])
         chain.sort(key=lambda t: (t.page, t.ys[0]))
 
     def weight(chain) -> int:

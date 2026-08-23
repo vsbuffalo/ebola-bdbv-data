@@ -705,6 +705,35 @@ def test_092_split_province_labels_in_summary():
 
 
 @needs_pdfs
+def test_085_total_row_carried_onto_the_next_page_is_read():
+    """Sitrep 085's page break leaves the summary's national `Total` row alone
+    at the top of page 2, and the alerts table's title box is drawn over it --
+    the row occupies y=72 to y=91, the title box y=87 to y=115. The two grids
+    touch, so the rules formed ONE component whose outer edges are the union of
+    both and which therefore matched no continuation, and the row was dropped:
+    five province rows, status `ok`, nothing anywhere saying that a printed
+    observation had been lost. The printed row is
+    `Total 4 209 | 1 916 | 45,5 % | 53/140 (37,8 %) | 89`.
+
+    The row count is asserted too, because the risk in reading a continuation
+    out of a fused component is reading the OTHER table with it: the alerts
+    grid beneath this row prints one line per province and a `Total Général`
+    of 1 318.
+    """
+    from lib.tablespec import PROVINCIAL_SUMMARY
+    rows, st = E.extract(pdf(85), specs=(PROVINCIAL_SUMMARY,))
+    assert st == "ok"
+    assert len(rows) == 6, "five provinces and the national total, and nothing "\
+                           "from the alerts table drawn over it"
+    nat = [r for r in rows if r["level"] == "national"]
+    assert len(nat) == 1
+    assert (nat[0]["cum_cases"], nat[0]["cum_deaths"],
+            nat[0]["new_cases"]) == (4209, 1916, 89)
+    assert nat[0]["page"] == 2, "the row is printed on page 2 and is filed there"
+    assert E.reconcile(rows)["identity"] == "ok"
+
+
+@needs_pdfs
 def test_summary_new_cases_column_is_read():
     """`IGNORED` placed for the zones-touched column (which never classifies
     as a value) swallowed `Nouveaux cas confirmés (24h)` instead: null on all

@@ -101,11 +101,16 @@ class Table:
     the text found inside that cell, joined by spaces in reading order; a cell
     with no words is absent from the mapping rather than present and empty, so
     the caller can tell "no ink here" from "a cell holding an empty string".
+
+    `rules` is the component this grid was recovered from, kept because the
+    edges alone cannot say which of two overlapping tables drew a given
+    boundary -- see `subgrid`.
     """
     page: int
     xs: tuple[float, ...]
     ys: tuple[float, ...]
     cells: dict[tuple[int, int], str]
+    rules: tuple[Segment, ...] = ()
 
     @property
     def ncols(self) -> int:
@@ -129,6 +134,71 @@ class Table:
     @cached_property
     def filled(self) -> int:
         return len(self.cells)
+
+    def subgrid(self, xs: tuple[float, ...], tol: float) -> "Table | None":
+        """The sub-table this component draws between the column edges `xs`.
+
+        TWO TABLES THAT OVERLAP ON THE PAGE BECOME ONE COMPONENT. Rules are
+        grouped by touching, and touching is the right test for a table drawn
+        on its own -- but Word does not guarantee that two tables occupy
+        disjoint areas. When a page break leaves a table's last rows at the top
+        of the next page, the box of the table that begins that page is laid
+        out over them: on sitrep 085 the provincial summary's national `Total`
+        row is drawn from y=72 to y=91 and the alerts table's title box from
+        y=87 to y=115, so the title box's top rule crosses the summary's
+        column borders and the two grids union into a single component. That
+        component's outer edges are the union of both tables' edges, so it no
+        longer looks like a continuation of anything, and its column
+        boundaries are both tables' boundaries interleaved -- `4 209` lands in
+        a column whose centre is 17 pt from the summary's own cases column.
+        Nothing caught this: the report simply reported five province rows and
+        no national total, and the printed 4 209 / 1 916 / 45,5 % / 89 was
+        lost.
+
+        The rules say which table drew what, which the edges cannot. A
+        horizontal rule running from `xs[0]` to `xs[-1]` was drawn by the table
+        those edges describe, so the rows that table occupies here are the ones
+        between its own outermost such rules, and its columns are `xs` rather
+        than the component's. Cells are re-bucketed into `xs` by their centre,
+        the same rule by which words were bucketed into cells in the first
+        place.
+
+        WHERE THE TWO TABLES OVERLAP, THE INK IS GENUINELY AMBIGUOUS and this
+        cannot resolve it: the band between y=87 and y=102 lies inside both
+        boxes, so the alerts title comes back as a row of this sub-table. It
+        carries no number in any of the caller's value columns, and a row with
+        no values is not a row -- which is the existing rule, not a new one.
+        Attributing that ink would need to know what the words say, and this
+        module knows only where they are.
+
+        None when this component draws no rule spanning `xs`, which is the
+        ordinary case: an unrelated table shares no boundary with the one the
+        caller is asking about.
+        """
+        edges = [s for s in self.rules if s.horizontal
+                 and abs(s.lo - xs[0]) <= tol and abs(s.hi - xs[-1]) <= tol]
+        if len(edges) < 2:
+            return None
+        top, bottom = min(s.pos for s in edges), max(s.pos for s in edges)
+        band = [i for i in range(self.nrows)
+                if top <= (self.ys[i] + self.ys[i + 1]) / 2 <= bottom]
+        if not band:
+            return None
+
+        cells: dict[tuple[int, int], str] = {}
+        for (i, j), text in sorted(self.cells.items()):
+            if i < band[0] or i > band[-1] or not text.strip():
+                continue
+            j2 = _bucket(list(xs), (self.xs[j] + self.xs[j + 1]) / 2, SNAP_X)
+            if j2 is None:
+                continue
+            k = (i - band[0], j2)
+            cells[k] = f"{cells[k]} {text}".strip() if k in cells else text
+        if not cells:
+            return None
+        return Table(self.page, tuple(xs),
+                     tuple(self.ys[band[0]:band[-1] + 2]), cells,
+                     rules=tuple(edges))
 
     def header_rows(self, *, max_scan: int = 8) -> int:
         """How many leading rows form the column headings.
@@ -418,7 +488,8 @@ def tables(page, *, min_cols: int = MIN_COLS, min_rows: int = MIN_ROWS,
             k: " ".join(t for _, _, t in sorted(v))
             for k, v in cells.items()
         }
-        out.append(Table(page.page_number, tuple(xs), tuple(ys), joined))
+        out.append(Table(page.page_number, tuple(xs), tuple(ys), joined,
+                         rules=tuple(comp)))
 
     out.sort(key=lambda t: (t.ys[0], t.xs[0]))
     return out
