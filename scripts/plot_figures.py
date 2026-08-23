@@ -501,10 +501,10 @@ def draw_ascertainment(inputs: dict[str, Path], out: Path) -> None:
         2, 1, figsize=(13.333, 7.5), height_ratios=[1.45, 1],
         sharex=True, constrained_layout=True)
 
-    ax.bar(t, comm, width=0.8, color=COMM, label="found in the community "
-           "(post-mortem swab) — never isolated")
+    ax.bar(t, comm, width=0.8, color=COMM,
+           label="died in the community — found by post-mortem swab")
     ax.bar(t, etc, width=0.8, bottom=comm, color=ETC,
-           label="died in a treatment centre — already in care")
+           label="died in a treatment centre")
     ax.bar(t, unclass, width=0.8, bottom=[a + b for a, b in zip(comm, etc)],
            color="#c4c4c4", label="confirmed death, unclassified")
     # TWO BACKLOG RELEASES WOULD OTHERWISE SET THE SCALE. 22 July carries 174
@@ -560,18 +560,21 @@ def draw_ascertainment(inputs: dict[str, Path], out: Path) -> None:
     ax.set_ylim(0, top)
     ax.set_axisbelow(True)          # gridlines behind the bars, not through them
     ax.set_ylabel("confirmed deaths per report-day", fontsize=10)
-    # upper right: the two clipped bars sit centre-left
-    ax.legend(loc="upper right", frameon=False, fontsize=9.5)
+    # upper right: the two clipped bars sit centre-left. A translucent white
+    # box so the entries stay legible where they cross gridlines and bars.
+    ax.legend(loc="upper right", fontsize=9.5, frameon=True, framealpha=0.88,
+              facecolor="white", edgecolor="none", borderpad=0.7)
     ax.grid(axis="y", **GRID)
 
     sh.plot(t, share, marker="o", markersize=4.5, linewidth=1.4, color=COMM)
     sh.axhline(pooled, color="#555555", linewidth=1.0, linestyle=(0, (4, 3)))
+    # text starts at the left edge of the series and points up to the line
     sh.annotate(f"pooled share of classified deaths  {pooled:.2f}",
-                xy=(t[2], pooled), xytext=(10, -40),
-                textcoords="offset points", ha="left", va="center",
+                xy=(t[3], pooled), xytext=(t[0], 0.40),
+                textcoords="data", ha="left", va="center",
                 fontsize=9.5, color="#444444",
                 arrowprops=dict(arrowstyle="->", color="#888888",
-                                linewidth=0.8, shrinkA=2, shrinkB=3))
+                                linewidth=0.8, shrinkA=3, shrinkB=3))
     sh.set_axisbelow(True)
     sh.set_ylim(0, 1.05)
     sh.set_ylabel("community share", fontsize=10)
