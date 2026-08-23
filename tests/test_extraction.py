@@ -752,3 +752,251 @@ def test_lab_prose_flow_not_stock():
     got, _ = L.extract(pdf(20))
     itu = [r for r in got if r["province"] == "Ituri"]
     assert itu and itu[0]["positives"] == 18 and itu[0]["samples"] == 82
+
+
+# --------------------------------------------------------------------------
+# Downward revisions: the carry-forward, its record, and the gates
+#
+# INSP revises its own cumulative downward -- Nord-Kivu goes 44 cases /
+# 26 deaths on 10 June to 40 / 24 on 11 June -- and differencing turns that
+# into a negative increment that no count likelihood can evaluate. The deficit
+# is carried into later rows instead of being clipped away, and every case
+# below is one of the two things that can go wrong with that: a total that
+# moves, or a deficit that never discharges.
+# --------------------------------------------------------------------------
+
+import shutil                                                    # noqa: E402
+
+import build_streams as B                                        # noqa: E402
+
+STREAMS = ROOT / "data" / "build" / "streams"
+needs_streams = pytest.mark.skipif(
+    not (STREAMS / "revisions.tsv").exists(),
+    reason="the streams are not built; run `make build && make streams`")
+
+
+def test_carry_forward_leaves_no_negative_and_moves_no_total():
+    """The two properties the whole scheme rests on, on the real shape:
+    Nord-Kivu's 11 June cumulative falls by 4, and 13 June's 22 pays it."""
+    emitted, outstanding = B.carry_forward([3, -4, 0, 22])
+    assert emitted == [3, 0, 0, 18]
+    assert sum(emitted) == sum([3, -4, 0, 22])
+    assert min(emitted) == 0 and outstanding[-1] == 0
+
+
+def test_carry_forward_is_not_clipping():
+    """Clipping `[-4, 9]` gives 9 against a cumulative that moved 5, so the
+    stream would permanently carry the four cases the source withdrew."""
+    emitted, _ = B.carry_forward([-4, 9])
+    assert emitted == [0, 5] and sum(emitted) == 5
+
+
+def test_a_deficit_larger_than_the_next_row_keeps_going():
+    """Haut-Uélé's -6 of 18 July is not repaid until 22 July, across two days
+    that report nothing and one that reports 5."""
+    emitted, outstanding = B.carry_forward([-6, 0, 0, 5, 6])
+    assert emitted == [0, 0, 0, 0, 5]
+    assert outstanding == [6, 6, 6, 1, 0]
+    assert sum(emitted) == 5
+
+
+def test_an_undischarged_deficit_is_reported_not_swallowed():
+    """A withdrawal on the last report has nothing left to come out of. The
+    function does not hide it: the outstanding balance is still 3 at the end,
+    which is what the build's gate reads."""
+    emitted, outstanding = B.carry_forward([10, -5, 2])
+    assert emitted == [10, 0, 0]
+    assert outstanding[-1] == 3
+    assert sum(emitted) == sum([10, -5, 2]) + 3      # short by exactly the carry
+
+
+def test_negative_values_reads_the_published_file(tmp_path):
+    """The non-negativity gate reads back off disk, so it covers a column that
+    never passed through the carry -- a stock reading, or one added later."""
+    good = tmp_path / "cases_x.tsv"
+    good.write_text("time\tcases_x\n2026-06-01\t3\n")
+    assert B.negative_values([good]) == []
+    bad = tmp_path / "cases_y.tsv"
+    bad.write_text("time\tcases_y\n2026-06-01\t3\n2026-06-02\t-1\n")
+    found = B.negative_values([bad])
+    assert len(found) == 1 and "cases_y = -1 at 2026-06-02" in found[0]
+
+
+# -- the eight corrections in the corpus as it stands ----------------------
+
+@needs_streams
+def test_the_built_streams_publish_no_negative_count():
+    every = [p for p in sorted(STREAMS.glob("*.tsv"))
+             if p.name not in ("revisions.tsv", "uganda_exports.tsv")]
+    assert every, "no streams found"
+    assert B.negative_values(every) == []
+
+
+@needs_streams
+def test_the_record_holds_every_revision_the_source_made():
+    """Eight downward revisions exist in the corpus. Each opens a deficit on
+    the row that differenced negative and closes it on a later row; none is
+    left outstanding."""
+    rev = pl.read_csv(STREAMS / "revisions.tsv", separator="\t",
+                      infer_schema_length=None)
+    opened = rev.filter(pl.col("raw") < 0)
+    assert sorted(zip(opened["stream"], opened["time"], opened["raw"])) == [
+        ("cases_daily_haut_uele", "2026-07-18", -6),
+        ("cases_daily_ituri", "2026-07-12", -39),
+        ("cases_daily_nord_kivu", "2026-06-11", -4),
+        ("deaths_daily_haut_uele", "2026-07-18", -3),
+        ("deaths_daily_ituri", "2026-07-12", -23),
+        ("deaths_daily_nord_kivu", "2026-06-11", -2),
+        ("deaths_daily_nord_kivu", "2026-07-12", -1),
+        ("deaths_haut_uele", "2026-07-21", -1),
+    ]
+    # Every deficit discharges: the last row of each (stream, column) run
+    # leaves nothing outstanding.
+    last = (rev.group_by("stream", "column")
+            .agg(pl.col("carry_after").last().alias("residual")))
+    assert last.filter(pl.col("residual") != 0).is_empty()
+
+
+@needs_streams
+@pytest.mark.parametrize("stream, column, total", [
+    ("cases_daily_ituri", "cases_ituri", 4343),
+    ("deaths_daily_ituri", "deaths_ituri", 1923),
+    ("cases_daily_nord_kivu", "cases_nord_kivu", 642),
+    ("deaths_daily_nord_kivu", "deaths_nord_kivu", 434),
+    ("cases_daily_haut_uele", "cases_haut_uele", 152),
+    ("deaths_daily_haut_uele", "deaths_haut_uele", 68),
+    ("cases_haut_uele", "cases_haut_uele", 152),
+    ("deaths_haut_uele", "deaths_haut_uele", 68),
+])
+def test_a_corrected_stream_still_totals_the_source_movement(stream, column,
+                                                             total):
+    """The point of carrying rather than clipping: the corrected stream sums
+    to exactly what the source's cumulative moved, unchanged by the fix."""
+    d = pl.read_csv(STREAMS / f"{stream}.tsv", separator="\t",
+                    infer_schema_length=None)
+    assert int(d[column].sum()) == total
+
+
+# -- the synthetic province whose revision never discharges ----------------
+
+PANEL_COLUMNS = ["sitrep", "date", "zone_reported", "province_printed", "level",
+                 "table", "page", "cum_cases", "cum_deaths", "new_cases",
+                 "deaths_community", "deaths_treatment_centre", "deaths_total",
+                 "suspected", "new_suspected", "suspected_deaths", "contacts"]
+
+
+def _synthetic_panel(path, ituri_cases, ituri_deaths):
+    """A three-province panel with one zone each, over four report days.
+
+    Enough of the real shape for the build to run end to end: a leading
+    province row hands its name to the zone beneath it, and a national row
+    carries the sum, which is what the national streams read.
+    """
+    rows = []
+    dates = ["2026-05-20", "2026-05-21", "2026-05-22", "2026-05-23"]
+    for i, (date, ic, idd) in enumerate(zip(dates, ituri_cases, ituri_deaths)):
+        o = i + 1
+        for prov, zone, c, dth in (("Ituri", "Bunia", ic, idd),
+                                   ("Nord-Kivu", "Katwa", o, o),
+                                   ("Haut-Uélé", "Wamba", o, o)):
+            rows.append(dict(sitrep=5 + i, date=date, zone_reported=prov,
+                             level="province", cum_cases=c, cum_deaths=dth))
+            rows.append(dict(sitrep=5 + i, date=date, zone_reported=zone,
+                             level="zone", cum_cases=c, cum_deaths=dth))
+        rows.append(dict(sitrep=5 + i, date=date, zone_reported="TOTAL",
+                         level="national", cum_cases=ic + 2 * o,
+                         cum_deaths=idd + 2 * o))
+    d = pl.DataFrame(rows)
+    for c in PANEL_COLUMNS:
+        if c not in d.columns:
+            d = d.with_columns(pl.lit(None).alias(c))
+    d.select(PANEL_COLUMNS).write_csv(path)
+
+
+def _run_build(monkeypatch, panel, out_dir):
+    monkeypatch.chdir(ROOT)
+    monkeypatch.setattr(sys, "argv", [
+        "build_streams.py", "--panel", str(panel),
+        "--geojson", str(ROOT / "data/raw/health_zones.geojson"),
+        "--population", str(ROOT / "data/raw/zone_population.csv"),
+        "--out-dir", str(out_dir)])
+    B.main()
+
+
+needs_pdftotext = pytest.mark.skipif(
+    shutil.which("pdftotext") is None,
+    reason="pdftotext is not installed; the build records its version")
+
+
+@needs_pdftotext
+def test_the_build_stops_when_a_revision_never_discharges(monkeypatch, tmp_path):
+    """A withdrawal on the LAST report has no later increment to come out of.
+
+    Ituri's cumulative runs 10, 20, 30 and then the source revises it to 5,
+    with nothing after it. The emitted total is then short of the cumulative's
+    movement by exactly the outstanding deficit -- part of a revision silently
+    dropped, which is the failure this gate exists for. It must stop the build
+    and name the stream, not round the residue away.
+
+    The two resolutions are short by different amounts, and both are right:
+    the daily row for 23 May differences to -25 with nothing after it, while
+    all four days fall in one week whose net movement is -5. Each file's
+    residual is the shortfall in that file.
+    """
+    panel = tmp_path / "panel.csv"
+    _synthetic_panel(panel, [10, 20, 30, 5], [2, 4, 6, 1])
+    out = tmp_path / "streams"
+    with pytest.raises(SystemExit) as e:
+        _run_build(monkeypatch, panel, out)
+    msg = str(e.value)
+    assert "NEVER DISCHARGED" in msg
+    assert "cases_daily_ituri:cases_ituri (25 outstanding)" in msg
+    assert "cases_ituri:cases_ituri (5 outstanding)" in msg
+    # It fails the reconciliation identity too, because those are the same
+    # cases: what is emitted no longer sums to what the cumulative moved.
+    assert "DO NOT RECONCILE" in msg
+    # The record is written BEFORE the gate, so a failing build still leaves
+    # the evidence of what it could not discharge.
+    rev = pl.read_csv(out / "revisions.tsv", separator="\t",
+                      infer_schema_length=None)
+    itu = rev.filter((pl.col("stream") == "cases_daily_ituri")
+                     & (pl.col("time") == "2026-05-23"))
+    assert itu.height == 1 and itu["raw"][0] == -25 and itu["carry_after"][0] == 25
+
+
+@needs_pdftotext
+def test_the_same_build_passes_when_the_revision_discharges(monkeypatch,
+                                                            tmp_path):
+    """The control: move the withdrawal one report earlier, so the last
+    report's increment pays it off. Nothing negative is published, the deficit
+    is recorded and discharged, and the emitted total equals the movement."""
+    panel = tmp_path / "panel.csv"
+    _synthetic_panel(panel, [10, 20, 5, 40], [2, 4, 1, 8])
+    out = tmp_path / "streams"
+    _run_build(monkeypatch, panel, out)             # does not raise
+    d = pl.read_csv(out / "cases_daily_ituri.tsv", separator="\t",
+                    infer_schema_length=None)
+    assert d["cases_ituri"].to_list() == [10, 0, 20]
+    assert int(d["cases_ituri"].sum()) == 30        # 40 - 10, the movement
+    rev = pl.read_csv(out / "revisions.tsv", separator="\t",
+                      infer_schema_length=None)
+    itu = rev.filter(pl.col("stream") == "cases_daily_ituri")
+    assert itu["raw"].to_list() == [-15, 35]
+    assert itu["carry_after"].to_list() == [15, 0]
+    assert B.negative_values([p for p in sorted(out.glob("*.tsv"))
+                              if p.name != "revisions.tsv"]) == []
+
+
+@needs_pdftotext
+def test_an_untouched_build_still_writes_the_empty_record(monkeypatch, tmp_path):
+    """A clean build and a missing artefact must not look the same, so the
+    header is written even when there is nothing to record."""
+    panel = tmp_path / "panel.csv"
+    _synthetic_panel(panel, [10, 20, 30, 40], [2, 4, 6, 8])
+    out = tmp_path / "streams"
+    _run_build(monkeypatch, panel, out)
+    rev = pl.read_csv(out / "revisions.tsv", separator="\t",
+                      infer_schema_length=None)
+    assert rev.height == 0
+    assert rev.columns == ["stream", "column", "time", "raw", "emitted",
+                           "carry_after", "flags"]

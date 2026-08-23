@@ -429,8 +429,12 @@ viewof resStream = Inputs.select(
 ## Weekly fitted streams
 
 The exact series the models consume, from `data/build/streams/` — weekly
-binned, revisions kept negative, every stream ending at a zero gap against the
-printed totals. Solid bars are cases; the paler overlay is deaths.
+binned, every stream ending at a zero gap against the printed totals. Where
+the source revised its cumulative downward, the deficit is carried into
+subsequent rows rather than published as a negative count or clipped away, so
+every bar is a non-negative integer and every stream still totals what the
+cumulative moved; `data/build/streams/revisions.tsv` lists the rows that
+correction touched. Solid bars are cases; the paler overlay is deaths.
 
 ```{ojs}
 {
