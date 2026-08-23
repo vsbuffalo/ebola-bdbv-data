@@ -59,6 +59,7 @@ so this is deliberately loose.
 
 from __future__ import annotations
 
+import bisect
 import math
 from dataclasses import dataclass
 from functools import cached_property
@@ -315,6 +316,106 @@ def _snap(values, tol: float) -> list[float]:
     return out
 
 
+#: How far one filled rectangle may stick out of another and still count as
+#: lying inside it. The shading boxes this separates are inset about 5 pt from
+#: their cell on every side, so the test needs no slack to speak of; the
+#: tolerance is here only for coordinates that agree to within rounding.
+NEST_TOL = 0.5
+
+
+def _nested(boxes: list[tuple[float, float, float, float]],
+            tol: float = NEST_TOL) -> set[int]:
+    """Indices of the filled rectangles that lie inside a LARGER filled rectangle.
+
+    A filled rectangle is normally a cell body, and its four sides are that
+    cell's borders -- which is why they are read as rules. A filled rectangle
+    drawn INSIDE another one is not a cell; it is shading laid over part of a
+    cell, and its edges are where the paint stops rather than where the table
+    divides.
+
+    The distinction is not academic. From sitrep 094 the province rows are
+    printed on a coloured band, and Word draws that band as one filled box per
+    cell PER PRINTED LINE, inset within the cell body. On a province row whose
+    name fits one line every cell has one such box and they all share the same
+    top and bottom, so they add two rules that coincide with nothing and change
+    nothing. On a province row whose name WRAPS -- `Nord-Kivu` and `Haut-Uélé`,
+    the only two names long enough -- the label cell gets two stacked boxes
+    while the value cells keep their single vertically-centred one, and the
+    value cells' box edges fall in the middle of the row: on sitrep 098 at
+    y=168.7 and y=178.1 inside a row running 164.2 to 182.6.
+
+    Those two edges run the width of the table, so they became row boundaries
+    and cut the province row in half. `Nord-` kept the counts and `Kivu` was
+    left alone in a row of its own, which carries no value and is therefore not
+    a row -- so the tail was dropped and the province was published as a health
+    zone called `Nord-`. Both provinces' totals left the province level and
+    were double-counted at zone level, and sitrep 098's national identity
+    failed by exactly their 680 + 165 = 845 cases.
+
+    THE PAGE'S OWN BACKGROUND IS NOT A CONTAINER, and it has to be excluded by
+    the caller before this runs. Some producers wash the whole page with a
+    filled rectangle -- sitrep 099 carries one at 0,0 to 612.25,792.25 -- and
+    it contains every cell on the page, so a containment test that admits it
+    calls every cell shading and the grid disappears entirely. Which producer
+    does this is not a property we can lean on: sitrep 098, the same vintage
+    and the same layout, has no such rectangle.
+
+    A BOX INSIDE A MERGED CELL IS THAT CELL'S ROW STRUCTURE, NOT PAINT, and
+    this is the limit of the rule above. Where a label cell is merged down the
+    page -- the early layout prints the province once against a cell spanning
+    its zones -- the line boxes inside it are the only record of where one
+    printed row ends and the next begins. Sitrep 080 draws `Province /`, `Zone
+    de santé` and `Ituri` as three line boxes inside ONE cell running y=362.8
+    to 413.6, while every other column divides that same span into cells at
+    379.8 and 380.8. Suppressing those three boxes merged the heading's second
+    line into the first data row, the heading block no longer said `zone de
+    santé`, and the report matched no spec at all.
+
+    So the question is not whether a box sits inside another box but whether
+    the table has a row boundary THERE. A container that some other column
+    divides is a merged cell, and its boxes are kept; a container that spans
+    exactly one row of the table is a single cell, and its boxes are paint.
+    That is decided from the cell bodies alone -- the boxes with no container
+    of their own -- so it does not depend on the answer it is computing.
+    """
+    order = sorted(range(len(boxes)),
+                   key=lambda i: ((boxes[i][2] - boxes[i][0])
+                                  * (boxes[i][3] - boxes[i][1])), reverse=True)
+    parent: dict[int, int] = {}
+    for pos, i in enumerate(order):
+        ax0, ay0, ax1, ay1 = boxes[i]
+        for j in order[:pos]:                  # strictly larger by area
+            bx0, by0, bx1, by1 = boxes[j]
+            if (bx0 - tol <= ax0 and ax1 <= bx1 + tol
+                    and by0 - tol <= ay0 and ay1 <= by1 + tol):
+                parent[i] = j
+                break
+
+    # The horizontal edges of every CELL BODY -- a box no other box contains.
+    edges = sorted(e for k in range(len(boxes)) if k not in parent
+                   for e in (boxes[k][1], boxes[k][3]))
+    out: set[int] = set()
+    for i, j in parent.items():
+        top, bottom = boxes[j][1], boxes[j][3]
+        lo = bisect.bisect_right(edges, top + SNAP_Y)
+        hi = bisect.bisect_left(edges, bottom - SNAP_Y)
+        if lo >= hi:                           # nothing divides the container
+            out.add(i)
+    return out
+
+
+#: How far a filled rectangle may fall short of the page and still be a wash
+#: over the whole of it.
+PAGE_TOL = 2.0
+
+
+def _covers_page(obj, page, tol: float = PAGE_TOL) -> bool:
+    """A filled rectangle spanning the page in both directions: a background wash."""
+    x0, top, x1, bottom = page.bbox
+    return (obj["x0"] <= x0 + tol and obj["x1"] >= x1 - tol
+            and obj["top"] <= top + tol and obj["bottom"] >= bottom - tol)
+
+
 def _segments(page) -> list[Segment]:
     """Every drawn rule on the page, from rectangles, lines and straight curves.
 
@@ -323,8 +424,16 @@ def _segments(page) -> list[Segment]:
     thing geometrically and all three appear in this corpus, so all three are
     read rather than assuming one producer.
     """
+    objs = [*page.rects, *page.lines, *page.curves]
+    bodies = [i for i, o in enumerate(objs)
+              if o["x1"] - o["x0"] >= MIN_RULE and o["bottom"] - o["top"] >= MIN_RULE
+              and not _covers_page(o, page)]
+    shading = {bodies[k] for k in _nested(
+        [(objs[i]["x0"], objs[i]["top"], objs[i]["x1"], objs[i]["bottom"])
+         for i in bodies])}
+
     segs: list[Segment] = []
-    for obj in (*page.rects, *page.lines, *page.curves):
+    for idx, obj in enumerate(objs):
         x0, x1 = obj["x0"], obj["x1"]
         y0, y1 = obj["top"], obj["bottom"]
         w, h = x1 - x0, y1 - y0
@@ -333,6 +442,8 @@ def _segments(page) -> list[Segment]:
         elif w < MIN_RULE <= h:
             segs.append(Segment((x0 + x1) / 2, y0, y1, False))
         elif w >= MIN_RULE and h >= MIN_RULE:
+            if idx in shading:
+                continue          # paint inside a cell, not a cell of its own
             # A filled cell body: its four sides are rules.
             segs.append(Segment(y0, x0, x1, True))
             segs.append(Segment(y1, x0, x1, True))
@@ -452,11 +563,62 @@ def _components(segs: list[Segment]) -> list[list[Segment]]:
 #: segments while leaving every run that actually forms a border.
 MIN_RUN = 10.0
 
+#: A vertical piece shorter than this is not a cell's side. A dot is half a
+#: point and a stippled page carries thousands of them; a cell side is a row
+#: tall, twelve points or so here.
+MIN_SIDE = 5.0
+
+#: How many COLUMNS must stop their rule at one y before that y is taken for a
+#: row boundary the page never drew. Two would be met by the two sides of a
+#: single cell; three means the agreement crosses the table.
+MIN_SIDE_SUPPORT = 3
+
+
+def _implied_rows(segs: list[Segment], tol: float = SNAP_Y) -> list[float]:
+    """Row boundaries the page states only by where its column rules stop.
+
+    A ROW BOUNDARY IS NOT ALWAYS DRAWN. Word emits a cell's left border as its
+    own object, so a column rule arrives as one piece per row, and `_coalesce`
+    joins the pieces into the single rule the reader sees. That is right for
+    the rule -- but the joins it dissolves are the only record of the row
+    divisions on a page that draws no horizontal border between two rows.
+
+    Sitreps 099 and 100 both end that way. Bas-Uélé's two health zones, Buta
+    and Viadana, are separated by no horizontal rule at all; nine column rules
+    stop and restart together at y=633.1 and nothing else marks it. The two
+    rows fused, and the damage was not a missing row but a WRONG NUMBER: the
+    fused cell reads `1 1`, and because a space is this source's thousands
+    separator, `to_int` returned ELEVEN. Bas-Uélé's two cases were published as
+    eleven and its province total missed by nine, on both reports.
+
+    So the endpoints are kept where several columns agree on them. One column
+    stopping proves nothing -- a rule is drawn in pieces for its own reasons --
+    but three columns stopping at one y is the table dividing. Pieces shorter
+    than `MIN_SIDE` are excluded so that a stippled page, whose every rule is a
+    run of half-point dots, does not propose a row boundary every half point.
+    """
+    seen: list[tuple[float, float]] = []          # (y, x) of each piece's ends
+    for s in segs:
+        if s.horizontal or s.hi - s.lo < MIN_SIDE:
+            continue
+        seen.append((s.lo, s.pos))
+        seen.append((s.hi, s.pos))
+    if not seen:
+        return []
+    out: list[float] = []
+    for y in _snap([y for y, _ in seen], tol):
+        xs = {round(x / SNAP_X) for yy, x in seen if abs(yy - y) <= tol}
+        if len(xs) >= MIN_SIDE_SUPPORT:
+            out.append(y)
+    return out
+
 
 def tables(page, *, min_cols: int = MIN_COLS, min_rows: int = MIN_ROWS,
            gap: float = COALESCE_GAP) -> list[Table]:
     """Every table on one page, as a cell grid."""
-    segs = [s for s in _coalesce(_segments(page), gap) if s.hi - s.lo >= MIN_RUN]
+    raw = _segments(page)
+    implied = _implied_rows(raw)
+    segs = [s for s in _coalesce(raw, gap) if s.hi - s.lo >= MIN_RUN]
     comps = _components(segs)
     words = page.extract_words()
     out: list[Table] = []
@@ -470,6 +632,13 @@ def tables(page, *, min_cols: int = MIN_COLS, min_rows: int = MIN_ROWS,
                    + [s.hi for s in comp if not s.horizontal], SNAP_Y)
         if len(xs) - 1 < min_cols or len(ys) - 1 < min_rows:
             continue
+        # Row boundaries this component states only by where its column rules
+        # stop (see `_implied_rows`). Added INSIDE the component's own extent
+        # only, and re-snapped, so one that coincides with a drawn rule merges
+        # into it instead of splitting a row in two.
+        inside = [y for y in implied if ys[0] + SNAP_Y < y < ys[-1] - SNAP_Y]
+        if inside:
+            ys = _snap(ys + inside, SNAP_Y)
 
         cells: dict[tuple[int, int], list[tuple[float, float, str]]] = {}
         for w in words:
@@ -484,15 +653,55 @@ def tables(page, *, min_cols: int = MIN_COLS, min_rows: int = MIN_ROWS,
                 continue
             cells.setdefault((i, j), []).append((w["top"], w["x0"], w["text"]))
 
-        joined = {
-            k: " ".join(t for _, _, t in sorted(v))
-            for k, v in cells.items()
-        }
+        joined = {k: _join(v) for k, v in cells.items()}
         out.append(Table(page.page_number, tuple(xs), tuple(ys), joined,
                          rules=tuple(comp)))
 
     out.sort(key=lambda t: (t.ys[0], t.xs[0]))
     return out
+
+
+#: How far two words' tops may differ and still be on one printed line. Lines
+#: within a cell here are 9-12 pt apart, so this separates them with room to
+#: spare while tolerating the sub-point jitter within a line.
+LINE_TOL = 4.0
+
+
+def _join(words: list[tuple[float, float, str]]) -> str:
+    """A cell's words in reading order, rejoining a name broken at a line end.
+
+    A NAME BROKEN ACROSS TWO LINES AT ITS HYPHEN MUST NOT GAIN A SPACE. Word
+    wraps a label too long for its column, and it wraps at a hyphen the name
+    already contains: `Nord-Kivu` prints as `Nord-` above `Kivu`,
+    `Makiso-Kisangani` as `Makiso-` above `Kisangani`. Joining every fragment
+    with a space published those as `Nord- Kivu` and `Makiso- Kisangani` --
+    spellings the page does not print.
+
+    For the health zones that was a transcription error carried into the panel
+    (`zone_reported` is the name AS PRINTED, and it was not). For the provinces
+    it changed the reading of the table: `Nord- Kivu` matches no province, so
+    `level_of` filed Nord-Kivu and Haut-Uélé as health zones.
+
+    `pdftotext` reading the content stream directly -- an independent extraction
+    that never sees our geometry -- returns `NordKivu` and `MakisoKisangani`:
+    one word, no space. That is the confirmation that the break is typography
+    rather than content.
+
+    The hyphen must end a LINE, not merely a word. Within one line a lone `-`
+    is a "not reported" sentinel and a hyphen between words is a real one, and
+    closing either gap would fuse text the source kept apart.
+    """
+    out: list[str] = []
+    prev_top: float | None = None
+    for top, _x, text in sorted(words):
+        wrapped = (out and prev_top is not None
+                   and top - prev_top > LINE_TOL and out[-1].endswith("-"))
+        if wrapped:
+            out[-1] += text
+        else:
+            out.append(text)
+        prev_top = top
+    return " ".join(out)
 
 
 def _bucket(edges: list[float], v: float, tol: float) -> int | None:

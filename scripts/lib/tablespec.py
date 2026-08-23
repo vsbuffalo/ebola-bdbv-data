@@ -217,11 +217,27 @@ class Mapped:
                      if j < len(row) and row[j].strip())
 
     def parent(self, row: Sequence[str]) -> str:
-        """The province printed against this row, when the table prints one separately."""
-        if len(self.labels) < 2:
-            return ""
-        j = self.labels[0]
-        return row[j].strip() if j < len(row) else ""
+        """The province printed against this row, when the table prints one separately.
+
+        THE PARENT IS THE LABEL BESIDE THE NAME, NOT THE TABLE'S LEFTMOST LABEL
+        COLUMN. The two coincide whenever the table has exactly the two label
+        columns the early layout prints, and they part company as soon as it
+        has a third. A table's grid does not stop where its data does: the
+        footnote under sitrep 005's table (`*Ces données sont susceptibles de
+        changer...`) and the section heading below it lie inside the component,
+        their prose falls in the two columns left of `Provinces`, and the
+        classifier -- correctly, on what it can see -- calls those label
+        columns too. Reading the leftmost then asked a footnote for the
+        province, got nothing, and dropped the merged province cell that was
+        sitting one column to the right: Ituri's 48 confirmed cases and
+        Nord-Kivu's 3 went out with no province at all.
+
+        Taking the filled label cell immediately left of the row's own name is
+        the same answer wherever the old rule was right, and is unaffected by
+        what any other row puts in any other label column.
+        """
+        filled = [j for j in self.labels if j < len(row) and row[j].strip()]
+        return row[filled[-2]].strip() if len(filled) >= 2 else ""
 
     def get(self, row: Sequence[str], role: Role) -> str:
         j = self.roles.get(role)

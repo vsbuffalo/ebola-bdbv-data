@@ -734,6 +734,152 @@ def test_085_total_row_carried_onto_the_next_page_is_read():
 
 
 @needs_pdfs
+def test_098_province_names_wrapped_at_their_hyphen_stay_provinces():
+    """Sitrep 098 prints its province rows on a coloured band, and Word draws
+    that band as one filled box per cell PER PRINTED LINE, inset inside the
+    cell. `Nord-Kivu` and `Haut-Uélé` are the only names long enough to wrap,
+    so in those two rows the label cell got two stacked boxes while the value
+    cells kept one vertically-centred box -- whose edges (y=168.7 and y=178.1,
+    inside a row running 164.2 to 182.6) ran the table's width and cut the row
+    in two.
+
+    `Nord-` kept the counts; `Kivu` was left alone in a row carrying no value,
+    which is not a row, so the tail was dropped. `Nord-` matches no province,
+    both rows were filed as health ZONES, and their totals left the province
+    level and were double-counted at zone level. The national identity failed
+    by exactly 680 + 165 = 845 cases.
+    """
+    rows, st = E.extract(pdf(98))
+    assert st == "ok"
+    by = {r["zone_reported"]: r for r in rows}
+    assert "Nord-" not in by and "Haut-" not in by, "a wrapped tail was dropped"
+    assert by["Nord-Kivu"]["level"] == "province"
+    assert by["Haut-Uélé"]["level"] == "province"
+    assert (by["Nord-Kivu"]["cum_cases"], by["Nord-Kivu"]["cum_deaths"]) == (680, 463)
+    assert (by["Haut-Uélé"]["cum_cases"], by["Haut-Uélé"]["cum_deaths"]) == (165, 75)
+    got = E.reconcile(rows)
+    assert got["identity"] == "ok" and got["residual"] == 0
+
+
+@needs_pdfs
+@pytest.mark.parametrize("n, name", [
+    (98, "Makiso-Kisangani"), (98, "Wanie-Rukula"), (98, "Miti-Murhesa"),
+    (100, "Makiso-Kisangani"),
+])
+def test_a_zone_name_wrapped_at_its_hyphen_keeps_the_printed_spelling(n, name):
+    """The same wrap in a zone name was never a level error, only a wrong
+    name: these came out as `Makiso- Kisangani`, a spelling the page does not
+    print. `pdftotext` reading the content stream returns `MakisoKisangani` --
+    one word -- which is what says the break is typography, not content."""
+    rows, _ = E.extract(pdf(n))
+    names = {r["zone_reported"] for r in rows}
+    assert name in names
+    assert name.replace("-", "- ") not in names
+
+
+@needs_pdfs
+def test_099_continuation_page_is_read_and_the_table_completes():
+    """Sitrep 099's zone table breaks across pages 2 and 3, and page 2's
+    component came back as x=[16.9, 599.3] where the table is [77.1, 535.1]:
+    the page footer is a coloured bar 35 pt below the last row, one of its
+    internal boundaries sits at x=210-211 where the shading boxes put a rule at
+    x=211.5, and `_coalesce` -- whose x-clustering is 6 pt and whose gap
+    bridging is 36 pt -- joined footer to table into one vertical running to
+    the foot of the page. The footer's page-wide horizontals then crossed it
+    and the footer became part of the component.
+
+    `select` chains a continuation by comparing its edges with the anchor's, so
+    nothing on page 3 could match: the chain stopped at page 2. The report
+    returned 25 rows ending at Nizi, its identity was `not_checkable`, and
+    Nord-Kivu, Haut-Uélé, Tshopo, Sud-Kivu, Bas-Uélé and the national `Total`
+    were never read.
+
+    This is NOT sitrep 085's defect. There the CONTINUATION was fused and the
+    anchor was sound; here the ANCHOR was fused, so the anchor's own edges were
+    the wrong question to ask.
+    """
+    rows, st = E.extract(pdf(99))
+    assert st == "ok"
+    nat = [r for r in rows if r["level"] == "national"]
+    assert len(nat) == 1, "the national Total row is printed on page 3"
+    assert (nat[0]["cum_cases"], nat[0]["cum_deaths"]) == (5458, 2606)
+    assert nat[0]["page"] == 3
+    provinces = {r["zone_reported"] for r in rows if r["level"] == "province"}
+    assert provinces == {"Ituri", "Nord-Kivu", "Haut-Uélé", "Tshopo",
+                         "Sud-Kivu", "Bas Uélé"}
+    got = E.reconcile(rows)
+    assert got["identity"] == "ok" and got["residual"] == 0
+    assert len(rows) == 65
+
+
+@needs_pdfs
+@pytest.mark.parametrize("n", [99, 100])
+def test_two_rows_with_no_rule_between_them_do_not_become_one_number(n):
+    """Bas-Uélé's two health zones are separated by no horizontal rule at all;
+    nine column rules stop and restart together at y=633.1 and nothing else
+    marks the division. `_coalesce` joins each column's pieces into the single
+    rule the reader sees, which dissolves exactly that evidence, and the two
+    rows fused.
+
+    The damage was not a missing row but a WRONG NUMBER. The fused cell reads
+    `1 1`, and because a space is this source's thousands separator, `to_int`
+    returned ELEVEN: Bas-Uélé's two cases were published as eleven and its
+    deaths as ten, and the province missed its own printed total by nine on
+    both reports. The page prints Buta 1/1 and Viadana 1/0 against a Bas-Uélé
+    row of 2/1.
+    """
+    rows, _ = E.extract(pdf(n))
+    by = {r["zone_reported"]: r for r in rows}
+    assert "Buta Viadana" not in by, "two printed rows read as one"
+    assert (by["Buta"]["cum_cases"], by["Buta"]["cum_deaths"]) == (1, 1)
+    assert (by["Viadana"]["cum_cases"], by["Viadana"]["cum_deaths"]) == (1, 0)
+    prov = by["Bas Uélé"]
+    assert (prov["level"], prov["cum_cases"], prov["cum_deaths"]) == ("province", 2, 1)
+
+
+@needs_pdfs
+@pytest.mark.parametrize("n", [88, 89, 91, 95, 98])
+def test_a_value_in_a_taller_cell_is_not_split_off_its_own_row(n):
+    """The same shading boxes that cut sitrep 098's province rows in half were
+    cutting ordinary zone rows too, wherever a column's cell is taller than the
+    others because its heading wraps. Adja's `Total décès confirmés` is printed
+    3.6 pt below the rest of its row, landed past the spurious edge, and was
+    dropped as a row of its own with no other value in it -- a printed 0 read
+    as "not reported", which is not the same thing."""
+    rows, _ = E.extract(pdf(n))
+    adja = [r for r in rows if r["zone_reported"] == "Adja"][0]
+    assert (adja["cum_cases"], adja["cum_deaths"]) == (11, 1)
+    assert adja["deaths_total"] == 0, "the page prints 0, not nothing"
+
+
+@needs_pdfs
+def test_087_province_beside_the_name_is_read_over_a_third_label_column():
+    """Sitrep 087 prints three label columns -- a `Sous-total` prefix, the
+    province, then the zone -- and `parent()` read the LEFTMOST, which is the
+    prefix column and empty on an ordinary zone row. The province printed
+    directly beside the name went unread."""
+    rows, _ = E.extract(pdf(87))
+    by = {r["zone_reported"]: r for r in rows}
+    assert by["Mongbwalu"]["province_printed"] == "Ituri"
+    assert by["Kalunguta"]["province_printed"] == "Nord-Kivu"
+    assert by["Boma Mangbetu"]["province_printed"] == "Haut-Uélé"
+
+
+@needs_pdfs
+def test_005_merged_province_cell_survives_the_footnote_below_the_table():
+    """Sitrep 005's component reaches past the table's data into the footnote
+    (`*Ces données sont susceptibles de changer...`) and the section heading,
+    whose prose falls in the two columns left of `Provinces`. The classifier
+    calls those label columns, so the table has four; reading the leftmost
+    asked a footnote for the province and got nothing, and the merged province
+    cell one column to the right went unread."""
+    rows, _ = E.extract(pdf(5))
+    by = {r["zone_reported"]: r for r in rows}
+    assert by["Bunia"]["province_printed"] == "Ituri"
+    assert by["Katwa"]["province_printed"] == "Nord-Kivu"
+
+
+@needs_pdfs
 def test_summary_new_cases_column_is_read():
     """`IGNORED` placed for the zones-touched column (which never classifies
     as a value) swallowed `Nouveaux cas confirmés (24h)` instead: null on all
@@ -1288,8 +1434,12 @@ def test_the_two_stock_series_never_fall():
     for k, series in seen.items():
         falls = [(a, b) for a, b in zip(series, series[1:]) if b[1] < a[1]]
         assert not falls, f"{k} falls at {falls}"
-    assert len(seen["cumul_recovered"]) == 86    # sitrep 007 prints ND
-    assert len(seen["cumul_deaths"]) == 87
+    # One per report in the archive, which is 90; sitrep 007 prints ND for
+    # recoveries. These counts move whenever the archive grows, so a failure
+    # here means "reports were fetched", not "the reader broke" -- check the
+    # falls assertion above first, which is the one that is about the data.
+    assert len(seen["cumul_recovered"]) == 89
+    assert len(seen["cumul_deaths"]) == 90
 
 
 @needs_pdfs
@@ -1403,16 +1553,28 @@ def test_the_record_holds_every_revision_the_source_made():
     assert last.filter(pl.col("residual") != 0).is_empty()
 
 
+#: Totals through sitrep 100. They move whenever the archive grows, and the
+#: build itself already enforces the identity these assert -- `build_streams`
+#: fails unless every stream's emitted total equals what the source's
+#: cumulative moved. What these pin is the NUMBER, so that a change in it has
+#: to be looked at and explained rather than absorbed.
+#:
+#: Ituri's two fell by 1,690 cases and 1,076 deaths when sitrep 098's wrapped
+#: province rows were fixed. That is not the archive growing: 098 had been
+#: reading Nord-Kivu's and Haut-Uélé's totals into Ituri, whose cumulative
+#: then spiked to 6,200 and fell back to 3,487 on 099, and the carry that
+#: absorbs a downward revision published the spike. 6 249 - 4 559 = 1 690 is
+#: exactly the province residual that report was failing by.
 @needs_streams
 @pytest.mark.parametrize("stream, column, total", [
-    ("cases_daily_ituri", "cases_ituri", 4343),
-    ("deaths_daily_ituri", "deaths_ituri", 1923),
-    ("cases_daily_nord_kivu", "cases_nord_kivu", 642),
-    ("deaths_daily_nord_kivu", "deaths_nord_kivu", 434),
-    ("cases_daily_haut_uele", "cases_haut_uele", 152),
-    ("deaths_daily_haut_uele", "deaths_haut_uele", 68),
-    ("cases_haut_uele", "cases_haut_uele", 152),
-    ("deaths_haut_uele", "deaths_haut_uele", 68),
+    ("cases_daily_ituri", "cases_ituri", 4559),
+    ("deaths_daily_ituri", "deaths_ituri", 2030),
+    ("cases_daily_nord_kivu", "cases_nord_kivu", 711),
+    ("deaths_daily_nord_kivu", "deaths_nord_kivu", 484),
+    ("cases_daily_haut_uele", "cases_haut_uele", 172),
+    ("deaths_daily_haut_uele", "deaths_haut_uele", 76),
+    ("cases_haut_uele", "cases_haut_uele", 172),
+    ("deaths_haut_uele", "deaths_haut_uele", 76),
 ])
 def test_a_corrected_stream_still_totals_the_source_movement(stream, column,
                                                              total):
