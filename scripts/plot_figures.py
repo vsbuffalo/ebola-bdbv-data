@@ -211,7 +211,7 @@ FLAG_COLOR = {
 }
 FLAG_LABEL = {
     "-": "clean",
-    "consolidating": "backlog consolidation",
+    "consolidating": "source calls recent data provisional",
     "harmonisation": "harmonisation",
     "harmonisation_undercount": "harmonisation (undercount)",
     "stale_distribution": "stale distribution",
@@ -271,6 +271,21 @@ def draw_release_grid(inputs: dict[str, Path], out: Path) -> None:
         2, 1, figsize=(13.333, 7.5), height_ratios=[ny, 2.4],
         constrained_layout=True)
 
+    # Which report-days each stream REFUSED, as opposed to never saw. Only
+    # the routes that keep a refusal channel can answer this; the rest map to
+    # an empty set and their holes stay plain.
+    lab_status = pl.read_csv(inputs["lab_status"], infer_schema_length=None)
+    refusals: dict[str, set[str]] = {}
+    for slug, prov in (("ituri", "Ituri"), ("nord_kivu", "Nord-Kivu"),
+                       ("haut_uele", "Haut-Uélé")):
+        refusals[f"lab_daily_{slug}"] = {
+            r["date"] for r in lab_status.iter_rows(named=True)
+            if prov in str(r["refused"] or "")}
+    refusals["lab_daily_national"] = {
+        r["date"] for r in lab_status.iter_rows(named=True)
+        if str(r["refused"] or "").strip()}
+    drew_refusal = [False]
+
     # --- the grid itself -------------------------------------------------
     ax.set_facecolor("#f7f7f7")            # the ground IS "no observation"
     seen_flags: set[str] = set()
@@ -286,6 +301,19 @@ def draw_release_grid(inputs: dict[str, Path], out: Path) -> None:
             ax.add_patch(plt.Rectangle(
                 (xi + 0.12, yi + 0.12), 0.76, 0.76,
                 facecolor=FLAG_COLOR[flag], edgecolor="none"))
+        # A HOLE IS NOT ALWAYS THE SOURCE'S. Where the page prints a figure we
+        # declined to license, the cell is hatched rather than blank: for
+        # Ituri's laboratory row that is 16 of 31 empty days, so leaving them
+        # the same grey as genuine silence would blame the source for half of
+        # our own gaps.
+        for d in refusals.get(key, set()):
+            xi = x.get(d)
+            if xi is None or d in {r["time"] for r in df.iter_rows(named=True)}:
+                continue
+            ax.add_patch(plt.Rectangle(
+                (xi + 0.12, yi + 0.12), 0.76, 0.76, facecolor="#ffffff",
+                edgecolor="#b0b0b0", linewidth=0.4, hatch="////"))
+            drew_refusal[0] = True
         ax.text(-0.006, yi + 0.5, label, transform=ax.get_yaxis_transform(),
                 ha="right", va="center", fontsize=8.5)
 
@@ -322,11 +350,23 @@ def draw_release_grid(inputs: dict[str, Path], out: Path) -> None:
     for s in ax.spines.values():
         s.set_visible(False)
 
-    # --- reconciliation events, as ticks above the grid ------------------
-    exc_dates = {d for d in exc["date"].to_list() if d in x}
-    for d in exc_dates:
-        ax.plot([x[d] + 0.5], [ny + 0.42], marker="v", markersize=5,
+    # --- reconciliation events, with the size of the disagreement --------
+    # The marker says a day's arithmetic does not close; the number says by
+    # how much, because "does not close" covers both a single miscounted case
+    # and the 66 Ituri cases of 12 July. Where a date carries several
+    # residuals the largest is shown, so it bounds the rest. Heights
+    # alternate so dates two report-days apart do not collide.
+    worst: dict[str, int] = {}
+    for r in exc.iter_rows(named=True):
+        d, g = r["date"], int(r["expected_gap"])
+        if abs(g) > abs(worst.get(d, 0)):
+            worst[d] = g
+    for i, d in enumerate(sorted(k for k in worst if k in x)):
+        hi = ny + (0.42 if i % 2 == 0 else 1.30)
+        ax.plot([x[d] + 0.5], [hi], marker="v", markersize=5,
                 color="#D55E00", clip_on=False)
+        ax.text(x[d] + 0.5, hi + 0.22, f"{worst[d]:+d}", ha="center",
+                va="bottom", fontsize=7.5, color="#D55E00", clip_on=False)
 
     # --- format eras, from the route each report was read through --------
     # A report with no zone table is not a gap in the format record: it IS a
@@ -385,20 +425,29 @@ def draw_release_grid(inputs: dict[str, Path], out: Path) -> None:
                              label=FLAG_LABEL[f])
                for f in FLAG_COLOR if f in seen_flags]
     handles.append(plt.Rectangle((0, 0), 1, 1, facecolor="#f7f7f7",
-                                 edgecolor="#cccccc", label="no observation"))
+                                 edgecolor="#cccccc", label="source silent"))
+    if drew_refusal[0]:
+        handles.append(plt.Rectangle((0, 0), 1, 1, facecolor="#ffffff",
+                                     edgecolor="#b0b0b0", hatch="////",
+                                     label="printed, but we could not license it"))
     handles.append(plt.Line2D([], [], linestyle="none", marker="v",
                               color="#D55E00", markersize=6,
                               label="the page's own arithmetic does not close"))
-    fig.legend(handles=handles, loc="lower center", ncol=len(handles),
+    # Two rows: seven entries in one row overflows a 13.3 in canvas.
+    # constrained_layout does not reserve space for a figure legend, so the
+    # band is carved out of the layout rect explicitly or the second row
+    # falls off the page.
+    fig.get_layout_engine().set(rect=(0, 0.085, 1, 0.915))
+    fig.legend(handles=handles, loc="lower center", ncol=4,
                frameon=False, fontsize=8.5, handlelength=1.1,
-               handleheight=1.1, columnspacing=1.5,
-               bbox_to_anchor=(0.5, -0.012))
+               handleheight=1.1, columnspacing=1.8, labelspacing=0.7,
+               bbox_to_anchor=(0.5, 0.004))
 
     fig.suptitle("What the release contains, report by report",
                  x=0.008, ha="left", fontsize=14, fontweight="bold")
     ax.set_title(f"{nx} report-days carrying at least one observation · "
                  f"{ny} published streams · {all_dates[0]} to {all_dates[-1]}",
-                 loc="left", fontsize=9.5, color="#555555", pad=26)
+                 loc="left", fontsize=9.5, color="#555555", pad=42)
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, dpi=200)
     plt.close(fig)
@@ -837,7 +886,8 @@ FIGURES = {
                      {**{f"stream_{n}": f"data/build/streams/{n}.tsv"
                          for n, _ in RELEASE_ROWS},
                       "zone_table": "data/build/series/zone_table.csv",
-                      "exceptions": "registers/reconciliation_exceptions.tsv"}),
+                      "exceptions": "registers/reconciliation_exceptions.tsv",
+                      "lab_status": "data/build/series/lab_prose_status.csv"}),
     "residuals": (draw_residuals,
                   {"province_series": "data/build/series/province_series.csv"}),
     "streams_detail": (draw_streams_detail,
