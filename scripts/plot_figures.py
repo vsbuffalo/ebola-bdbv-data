@@ -41,6 +41,7 @@ matplotlib.use("Agg")
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import polars as pl
+from matplotlib.ticker import MaxNLocator, MultipleLocator
 
 #: Fixed identity -> colour, in outbreak-size order. Colour follows the
 #: province, never its rank in any particular chart.
@@ -459,6 +460,19 @@ def draw_release_grid(inputs: dict[str, Path], out: Path) -> None:
     plt.close(fig)
 
 
+#: Lower segment height / upper segment height in the broken axes below. The
+#: upper segment only has to hold the top of one bar, and giving it more than
+#: that steals room from the curve.
+BREAK_RATIO = 11
+
+
+def _nice_step(top: float) -> float:
+    """A round gridline interval for a 0..top axis, chosen once and used by
+    BOTH segments of a broken axis so their grids share a spacing."""
+    ticks = MaxNLocator(nbins=7, steps=[1, 2, 2.5, 5, 10]).tick_values(0, top)
+    return ticks[1] - ticks[0]
+
+
 def draw_epi_curve(inputs: dict[str, Path], out: Path) -> None:
     """The outbreak itself: confirmed cases and deaths per day, nationally.
 
@@ -494,8 +508,8 @@ def draw_epi_curve(inputs: dict[str, Path], out: Path) -> None:
 
     fig = plt.figure(figsize=(13.333, 7.5), constrained_layout=True)
     outer = fig.add_gridspec(2, 1, height_ratios=[1.25, 1], hspace=0.08)
-    gc = outer[0].subgridspec(2, 1, height_ratios=[1, 11], hspace=0.035)
-    gd = outer[1].subgridspec(2, 1, height_ratios=[1, 11], hspace=0.035)
+    gc = outer[0].subgridspec(2, 1, height_ratios=[1, BREAK_RATIO], hspace=0.035)
+    gd = outer[1].subgridspec(2, 1, height_ratios=[1, BREAK_RATIO], hspace=0.035)
     c_hi, c_lo = fig.add_subplot(gc[0]), fig.add_subplot(gc[1])
     d_hi, d_lo = fig.add_subplot(gd[0]), fig.add_subplot(gd[1])
 
@@ -520,9 +534,26 @@ def draw_epi_curve(inputs: dict[str, Path], out: Path) -> None:
                 ax.spines[sp].set_visible(False)
             ax.spines["left"].set_color("#999999")
 
+        # THE TWO SEGMENTS MUST SHARE A SCALE. A broken axis whose halves
+        # run at different units-per-pixel is a second, hidden distortion on
+        # top of the break itself: gridlines drawn at one interval would sit
+        # at two different spacings, and the eye reads spacing as magnitude.
+        # The upper segment is 1/BREAK_RATIO of the lower's height, so it
+        # gets 1/BREAK_RATIO of its data range, and one tick interval is then
+        # the same distance in both.
+        step = _nice_step(cut)
+        hi_range = cut / BREAK_RATIO
         lo.set_ylim(0, cut)
-        hi.set_ylim(peak * 0.965, peak * 1.035)
-        hi.set_yticks([round(peak)])
+        hi.set_ylim(peak - hi_range * 0.62, peak + hi_range * 0.38)
+        for ax in (hi, lo):
+            ax.yaxis.set_major_locator(MultipleLocator(step))
+        # The peak's true value goes on the bar, not on a tick: the tick
+        # positions now belong to the shared grid.
+        hi.annotate(f"{int(round(peak * span[ys.index(peak)]))}",
+                    xy=(xs[ys.index(peak)], peak), xytext=(0, 4),
+                    textcoords="offset points", ha="center", va="bottom",
+                    fontsize=8.5, fontweight="bold", color="#7a5200",
+                    annotation_clip=False)
         hi.tick_params(labelbottom=False, length=0)
         lo.spines["bottom"].set_color("#999999")
         hi.spines["bottom"].set_visible(False)
