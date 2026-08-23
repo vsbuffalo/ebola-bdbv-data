@@ -590,10 +590,10 @@ def draw_ascertainment(inputs: dict[str, Path], out: Path) -> None:
     # but keeping its box. Placement and framing are independent in
     # matplotlib; an earlier attempt lost the border only because it also
     # switched the frame off.
-    leg = ax.legend(loc="lower right", bbox_to_anchor=(1.0, 1.045),
+    leg = ax.legend(loc="lower right", bbox_to_anchor=(1.004, 1.015),
                     fontsize=9.5, frameon=True, framealpha=0.95,
                     facecolor="white", edgecolor="#8a8a8a", borderpad=0.6,
-                    ncol=2, columnspacing=1.6, handlelength=1.3)
+                    ncol=1, labelspacing=0.5, handlelength=1.3)
     leg.get_frame().set_linewidth(0.7)
     ax.grid(axis="y", **GRID)
 
