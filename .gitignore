@@ -22,3 +22,6 @@ analysis/data.html
 analysis/*_files/
 analysis/explore.html
 analysis/_explore_data.json
+
+# agent worktrees: isolated checkouts, never part of this repo
+.claude/worktrees/
