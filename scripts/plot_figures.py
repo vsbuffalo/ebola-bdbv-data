@@ -421,7 +421,7 @@ def draw_release_grid(inputs: dict[str, Path], out: Path) -> None:
     # constrained_layout does not reserve space for a figure legend, so the
     # band is carved out of the layout rect explicitly or the second row
     # falls off the page.
-    fig.get_layout_engine().set(rect=(0, 0.105, 1, 0.872))
+    fig.get_layout_engine().set(rect=(0, 0.105, 1, 0.90))
     leg1 = fig.legend(handles=handles, loc="lower left", ncol=2,
                       frameon=False, fontsize=8.5, handlelength=1.1,
                       handleheight=1.1, columnspacing=1.6, labelspacing=0.6,
@@ -590,7 +590,7 @@ def draw_ascertainment(inputs: dict[str, Path], out: Path) -> None:
     # but keeping its box. Placement and framing are independent in
     # matplotlib; an earlier attempt lost the border only because it also
     # switched the frame off.
-    leg = ax.legend(loc="lower right", bbox_to_anchor=(1.004, 1.015),
+    leg = ax.legend(loc="center right", bbox_to_anchor=(1.004, 1.0),
                     fontsize=9.5, frameon=True, framealpha=0.95,
                     facecolor="white", edgecolor="#8a8a8a", borderpad=0.6,
                     ncol=1, labelspacing=0.5, handlelength=1.3)
