@@ -523,6 +523,18 @@ def draw_ascertainment(inputs: dict[str, Path], out: Path) -> None:
                         arrowprops=dict(arrowstyle="->", color="#8a8a8a",
                                         linewidth=0.8,
                                         shrinkA=2, shrinkB=2))
+    unsplit = deaths.filter(
+        pl.col("time").is_between(d["time"].min(), d["time"].max())
+        & ~pl.col("time").is_in(d["time"].to_list()))
+    for r in unsplit.iter_rows(named=True):
+        span = max(1, int(r["days_covered"] or 1))
+        right = mdates.date2num(r["time"]) + 0.5
+        ax.bar(right - span / 2, r["deaths_national"], width=span * 0.94,
+               facecolor="none", edgecolor="#6a6a6a", linewidth=1.1,
+               linestyle=(0, (3, 2)), zorder=3,
+               label="_" if r["time"] != unsplit["time"][0]
+                     else "confirmed deaths, no split published")
+
     # THE TWO GAPS HAVE DIFFERENT CAUSES, and a reader cannot tell them apart
     # from absence alone. 28-29 July is INSP publishing nothing; 6-8 August is
     # three reports that were published but printed no health-zone table, and
@@ -562,17 +574,18 @@ def draw_ascertainment(inputs: dict[str, Path], out: Path) -> None:
     ax.set_ylabel("confirmed deaths per report-day", fontsize=10)
     # upper right: the two clipped bars sit centre-left. A translucent white
     # box so the entries stay legible where they cross gridlines and bars.
-    ax.legend(loc="upper right", fontsize=9.5, frameon=True, framealpha=0.88,
-              facecolor="white", edgecolor="none", borderpad=0.7)
+    leg = ax.legend(loc="upper right", fontsize=9.5, frameon=True, framealpha=0.9,
+              facecolor="white", edgecolor="#8a8a8a", borderpad=0.7)
+    leg.get_frame().set_linewidth(0.7)
     ax.grid(axis="y", **GRID)
 
     sh.plot(t, share, marker="o", markersize=4.5, linewidth=1.4, color=COMM)
     sh.axhline(pooled, color="#555555", linewidth=1.0, linestyle=(0, (4, 3)))
     # text starts at the left edge of the series and points up to the line
-    sh.annotate(f"pooled share of classified deaths  {pooled:.2f}",
-                xy=(t[3], pooled), xytext=(t[0], 0.40),
+    sh.annotate(f"pooled share of\nclassified deaths  {pooled:.2f}",
+                xy=(t[3], pooled), xytext=(t[0], 0.29),
                 textcoords="data", ha="left", va="center",
-                fontsize=9.5, color="#444444",
+                fontsize=9.5, color="#444444", linespacing=1.5,
                 arrowprops=dict(arrowstyle="->", color="#888888",
                                 linewidth=0.8, shrinkA=3, shrinkB=3))
     sh.set_axisbelow(True)
