@@ -16,6 +16,111 @@ carries the rest.
 
 ---
 
+## `data/2026-08-18-r4` — 2026-08-23 — fix
+
+**Not breaking**: no column removed or renamed. Two stock series gain most of
+their history, one weekly series gains an observation and moves one value,
+and `banner.csv` gains a `cumul_deaths` column.
+
+**The front-page dashboard was read in only one of the two layouts the source
+draws.** A tile's value was located by scanning *downward* from its label. The
+earlier vintage prints the row of values *above* the row of labels, so every
+report in it refused, and the refusal was recorded honestly as "label with no
+aligned number beneath it" — for fifty-one of the eighty-seven reports. The
+reader now searches both ways and takes the nearer number; upward it requires
+the line to be a row of nothing but tile values, so the report header above a
+label cannot leak in. Two further defects were in the same path: a
+one-character field was welded to everything after it on its line (every
+single-digit tile value in the archive — sitreps 008, 013, 018, 021 — read as
+`0                  16` and refused), and a value's column was matched only by
+its starting position, which fails where the number is centred over a wider
+label.
+
+| stream | was | now |
+|---|---|---|
+| `cumul_recovered` | 36 obs, opens `2026-07-12` at **333** | **86 obs**, opens `2026-05-19` at **0** |
+| `patients_isolated` | 61 obs, opens `2026-06-02` at 206 | **74 obs**, opens `2026-06-01` at 173 |
+| `deaths_national` | 12 obs, first `2026-06-02` | **13 obs**, first `2026-05-26` |
+| `deaths_daily_national` | 75 obs, opens `2026-05-31` | **86 obs**, opens `2026-05-20` |
+
+**No previously published value in any stream changes except one**, and it
+changes because its window did:
+
+| stream | row | was | now |
+|---|---|---|---|
+| `deaths_national` | `2026-06-02` | `20`, `days_covered 4`, `n_report_days 3` | `45`, `days_covered 7`, `n_report_days 7` |
+
+That bin previously began where the *tables* first printed a cumulative death
+column (29 May, at 42), so 42 deaths sat outside every emitted row and the
+opening bin covered four days. The front page prints the same cumulative from
+the first held report, so the series now starts on 19 May at 4 and the bin is
+whole. `deaths_national` emits 2,472 against 2,434 — **38 deaths that were
+previously outside the series**, all in the growth phase. Every other stream
+file is byte-identical.
+
+**Two definitional questions were decided rather than assumed.**
+
+*Is the early `Guéris` tile a running total or the day's recoveries?* The page
+does not say — the wording `Nombre cumulé des guéris` appears only from sitrep
+019. It is a running total, and `extract_banner._bare_label_is_cumulative` is
+a build-time gate rather than a comment: sitrep 018 (`Guéris`) and sitrep 019
+(cumulative wording) are consecutive days and both print **6**, and the
+bare-label values never fall (0, 0, 0, 0, 0, 1, 1, 2, 2, 6, 6). The same pages
+carry a separate per-zone `Guéris du jour` column, so the day's flow already
+has its own home. If either condition ever stops holding the bare-label values
+are dropped, not published.
+
+*The suspected-case tile is not published, and this change does not start
+publishing it.* It is `Cumul cas suspects` (a running total), `Cas suspects en
+cours d'investigation` (a stock), and `Cas suspects du jour` (a flow) in three
+vintages under near-identical wording. Splicing them into one column would
+join a stock to a flow.
+
+**Two reports are still refused, on purpose.** Sitreps 016 and 017 print `Cas
+suspects en isolement` (101 and 104) — suspects inside the ward, beside a
+separate `Cas confirmés actifs` tile — and print no ward total. The
+all-patients wording appears from sitrep 018. Publishing 101 into a series of
+ward totals would put a sub-count where a total belongs at the point the
+series begins. The epiforecasts scan excludes those two reports for the same
+stated reason. Sitrep 007's recovery tile prints `ND`.
+
+**Cross-checks, now running on every build.** `make compare` gained
+`banner_comparison.csv`: 187 report-values against the epiforecasts scan's
+independent reading, **186 exact**. The one difference is sitrep 083's
+cumulative confirmed deaths, where the page's headline tile prints 1 850 and
+its own Table 1 `Total` prints 1 850 while the province rows sum to 1 851; we
+publish the printed national row, the scan publishes the province sum. `make
+streams` records `deaths_national_banner_vs_table` in `meta.json`: on the 76
+dates where both the tile and a table print a national cumulative death count
+they agree on **75**. The exception is sitrep 059, whose printed `Total` (718)
+sits one below its own province rows and one below the tile (719) — the same
+class of one-unit internal inconsistency, in the other direction.
+
+Reading the tile also closed an over-refusal: sitreps 046, 053 and 058 print
+unambiguous isolation censuses (609, 680, 753) that were discarded because a
+*different* table's confirmed/suspect decomposition did not add up.
+
+**Consumer action.** Re-vendor `cumul_recovered.tsv`, `patients_isolated.tsv`,
+`deaths_national.tsv` and `deaths_daily_national.tsv`. Anything fitted to
+`cumul_recovered` should be refitted: the stream previously entered at a level
+of 333 with its whole prior trajectory unobserved.
+
+**Two retractions in the `-r8` entry below.**
+
+1. "Early reports print no such tile; the value is null, never inferred." The
+   first clause is wrong — they print it, above the labels rather than below —
+   and the coverage figures in that entry are the pre-fix ones. The second
+   clause held throughout: nothing was ever inferred.
+2. "One disagreement was resolved in our favour by reading the page — sitrep
+   061 prints 737, the scan has 736." The reading of the page was right and
+   the conclusion was backwards: `patients_isolated` for 14 July was published
+   as **736** then and is published as 736 now, because the occupancy table
+   supplies it and that table's own `Fin J` row reads 736, as does the tile's
+   province breakdown (544 + 188 + 4). It is the front-page headline, 737,
+   that stands alone. The disagreement was resolved in the *scan's* favour.
+   The tile's 737 is now recorded per report in `banner_status.csv` instead
+   of being invisible.
+
 ## `data/2026-08-18-r3` — 2026-08-23 — fix
 
 **Not breaking**: no column added, removed or renamed. Two national daily
@@ -201,6 +306,10 @@ the printed total.
 
 Coverage: isolation 58 reports (confirmed split on 49), recoveries 33. Early
 reports print no such tile; the value is null, never inferred.
+
+> **Corrected in `-r4` above.** They do print it — above the labels rather
+> than beneath them — and the reader searched only downward. The coverage
+> figures here, and the sitrep 061 paragraph, are superseded.
 
 ## `data/2026-08-15-r7` — 2026-08-19 — **BREAKING (schema)**
 

@@ -807,3 +807,218 @@ def test_lab_prose_flow_not_stock():
     got, _ = L.extract(pdf(20))
     itu = [r for r in got if r["province"] == "Ituri"]
     assert itu and itu[0]["positives"] == 18 and itu[0]["samples"] == 82
+
+
+# --------------------------------------------------------------------------
+# The front-page dashboard banner, in both layouts
+# --------------------------------------------------------------------------
+
+import extract_banner as B                                        # noqa: E402
+
+
+@pytest.mark.parametrize("line, want", [
+    # THE FUSION THAT REFUSED EVERY SINGLE-DIGIT TILE VALUE. A one-character
+    # field used to swallow the rest of its line, so sitrep 008's recovery
+    # count came out as one field, `'0                  16'`, matching no
+    # number and refusing.
+    ("     91               10          0                  16",
+     [(5, "91"), (22, "10"), (34, "0"), (53, "16")]),
+    ("      344*         60        6                  43,9%",
+     [(6, "344*"), (19, "60"), (29, "6"), (48, "43,9%")]),
+    # A single space inside a field is not a column break.
+    ("Cumul cas confirmés       Cumul décès parmi",
+     [(0, "Cumul cas confirmés"), (26, "Cumul décès parmi")]),
+    ("  2", [(2, "2")]),
+])
+def test_fields_do_not_fuse(line, want):
+    assert [(s, t) for s, _, t in B._fields(line)] == want
+
+
+@pytest.mark.parametrize("field, want", [
+    ("173", 173),
+    ("1 333*", 1333),                 # thousands separator plus a marker
+    ("1441", 1441),                   # the early vintage prints no separator
+    ("202(23,1%)", 202),              # a count with a letality beside it
+    ("609(92,7%)", 609),              # ... a bed-occupancy rate
+    ("192(46 décès) **", 192),        # ... a worded sub-count
+    ("1 309 · (44,0%)", 1309),        # ... introduced by a bullet
+    ("719 · 36,6 %**", 719),          # sitrep 059 drops the brackets
+    ("291(26,0%)1", 291),             # sitrep 040: a footnote digit trailing
+    ("82 (17,6%)", 82),
+    ("2911", 2911),                   # a real four-digit count still reads
+    # NOT counts:
+    ("47,5%", None),                  # a letality tile
+    ("82,7", None),                   # sitrep 048 prints the rate unsuffixed
+    ("ND", None), ("N/D", None), ("—", None),
+    ("0                  16", None),  # a fused field must never read as one
+    ("(60 décès)**", None),           # a stranded parenthetical
+])
+def test_tile_count_grammar(field, want):
+    assert B._to_count(field) == want
+
+
+@pytest.mark.parametrize("label, value, want", [
+    ((0, 19), (15, 21), True),        # value centred inside a wider label
+    ((100, 106), (102, 103), True),   # a lone digit under a short label
+    ((99, 112), (106, 108), True),    # starts differ by 7, spans do not meet
+    ((0, 19), (40, 50), False),       # the next tile along
+    ((113, 119), (126, 139), False),  # adjacent tiles, 13 columns apart
+])
+def test_aligned(label, value, want):
+    """A tile's value is CENTRED over its label block and the label wraps to a
+    different width, so start-column proximity alone is not enough: sitrep 046
+    prints `1 333*` at 15-21 above `Cumul cas confirmés` at 3-22."""
+    assert B._aligned(value, label) is want
+
+
+def test_equidistant_numbers_refuse_rather_than_guess():
+    """Nearer-wins needs a tie-break, and there is no honest one: if the page
+    puts an aligned count the same distance above and below a label, it has
+    not said which is the tile's."""
+    lines = ["   11        22",          # a dashboard row, one line above
+             "   Guéris",
+             "   33        44"]          # an aligned count, one line below
+    pat = __import__("re").compile("Guéris")
+    val, note = B._tile_value(lines, 1, (3, 9), pat, "Guéris")
+    assert val is None
+    assert "above (11)" in note and "as near beneath (33)" in note
+
+    # Move the lower one further away and the upper one wins outright.
+    val, note = B._tile_value(lines[:2] + ["", "   33        44"], 1, (3, 9),
+                              pat, "Guéris")
+    assert (val, note) == (11, "")
+
+
+def test_dashboard_row_separates_the_banner_from_the_header():
+    """The upward search accepts only a line of nothing but tile values.
+    Above a label lies the report header, whose dates and zone counts are
+    numbers belonging to no tile."""
+    assert B._dashboard_row("    125     17    906   70,1%    1     ND")
+    assert B._dashboard_row("   1 333*   399(29,7%)   609(92,7%)   189")
+    assert not B._dashboard_row("Date de rapportage             29 mai 2026")
+    assert not B._dashboard_row("Zones de Santé touchées (46)   Ituri (27/36)")
+    assert not B._dashboard_row("       725")          # one field is not a row
+
+
+@needs_pdfs
+@pytest.mark.parametrize("n, isolated, recovered, deaths", [
+    # VALUES ABOVE LABELS. Every one of these refused before the reader
+    # searched upward.
+    (8,  None, 0,   10),      # `Guéris` 0; `Cumul décès parmi les confirmés` 10
+    (13, None, 1,   17),      # the report whose narrative announces the first recovery
+    (15, None, 2,   42),      # the value row is split over two lines
+    (18, 173,  6,   60),      # last report before the label says `cumul`
+    (21, 258,  8,   82),      # `8` and `153` adjacent: the fused-field case
+    (33, 379,  67,  202),
+    (40, 408,  122, 291),     # `291(26,0%)1` -- a footnote digit on the value
+    (46, 609,  189, 399),     # census discarded before, as a sibling table did not add up
+    (48, 641,  213, 452),     # the row ends `82,7`, a rate with no percent sign
+    (53, 680,  280, 580),
+    (55, 764,  295, 625),     # the label stack puts the value seven lines up
+    (58, 753,  318, 702),
+    # LABELS ABOVE VALUES, unchanged by this reader.
+    (62, 725,  390, 828),
+    (70, 766,  540, 1309),
+    (96, 730,  1115, 2476),
+])
+def test_banner_reads_both_layouts(n, isolated, recovered, deaths):
+    got, _, _ = B.extract(pdf(n))
+    assert got.get("patients_isolated") == isolated
+    assert got.get("cumul_recovered") == recovered
+    assert got.get("cumul_deaths") == deaths
+
+
+@needs_pdfs
+@pytest.mark.parametrize("n", [16, 17])
+def test_suspects_in_isolation_is_not_the_ward_census(n):
+    """Sitreps 016 and 017 print `Cas suspects en isolement` -- 101 and 104,
+    suspects only -- beside a separate `Cas confirmés actifs` tile, and print
+    no ward total at all. The all-patients wording arrives with sitrep 018.
+    Reading either as the census would open the series with a sub-count."""
+    got, why, labels = B.extract(pdf(n))
+    assert got.get("patients_isolated") is None
+    assert "Cas suspects en isolement" in labels["patients_isolated"]
+    assert any("not the ward census" in w for w in why)
+
+
+@needs_pdfs
+def test_sitrep_007_recovery_tile_is_nd():
+    """A missing marker is not a zero, in either layout."""
+    got, why, _ = B.extract(pdf(7))
+    assert got.get("cumul_recovered") is None
+    assert got.get("cumul_deaths") == 6
+    assert any("cumul_recovered" in w for w in why)
+
+
+@needs_pdfs
+def test_the_label_stack_is_reassembled_across_interleaved_lines():
+    """Sitrep 055 prints `Nombre cumulé` two lines above `des guéris`, with a
+    neighbouring tile's `jour` between them. The label decides whether a tile
+    is the quantity wanted, so it has to be read whole."""
+    _, _, labels = B.extract(pdf(55))
+    assert labels["cumul_recovered"] == "Nombre cumulé des guéris"
+    assert labels["patients_isolated"] == "Patients en isolement - hospitalisation"
+
+
+@needs_pdfs
+def test_sitrep_061_banner_and_occupancy_disagree_and_the_table_wins():
+    """The page contradicts itself: the headline tile reads 737 while its own
+    province split (544 + 188 + 4) and the occupancy table's `Fin J` row both
+    read 736. The occupancy table keeps precedence -- it is the route that
+    carries the confirmed/suspect split -- and the tile's figure is recorded
+    rather than discarded."""
+    got, why, _ = B.extract(pdf(61))
+    assert got["patients_isolated"] == 736
+    assert any("front-page tile says 737" in w for w in why)
+
+
+def test_bare_gueris_label_is_gated_not_assumed():
+    """`Guéris` without `cumul` could be a stock or the day's flow, and the
+    page does not say. The gate publishes it only while the archive shows the
+    two vintages are one series; a fabricated break must drop it."""
+    good = pl.DataFrame({
+        "sitrep": [17, 18, 19, 20],
+        "cumul_recovered": [6, 6, 6, 7],
+        "_recovery_label_is_bare": [True, True, False, False]})
+    ok, why = B._bare_label_is_cumulative(good)
+    assert ok and "both print 6" in why
+
+    # The value jumps across the label change: the two vintages are no longer
+    # shown to be the same series.
+    broken = good.with_columns(pl.Series("cumul_recovered", [6, 6, 40, 41]))
+    ok, why = B._bare_label_is_cumulative(broken)
+    assert not ok and "not shown to be the same series" in why
+
+    # The bare-label values fall: they cannot be a running total.
+    falling = good.with_columns(pl.Series("cumul_recovered", [9, 6, 6, 7]))
+    ok, why = B._bare_label_is_cumulative(falling)
+    assert not ok and "non-decreasing" in why
+
+
+@needs_pdfs
+def test_the_two_stock_series_never_fall():
+    """A cumulative that decreases is either a source revision -- which these
+    two have never carried -- or a flow read as a stock. This is the standing
+    check over the whole archive behind the bare-label gate."""
+    seen: dict[str, list] = {"cumul_recovered": [], "cumul_deaths": []}
+    for p in sorted(PDFS.glob("sitrep_*.pdf")):
+        got, _, _ = B.extract(p)
+        for k in seen:
+            if got.get(k) is not None:
+                seen[k].append((p.name, got[k]))
+    for k, series in seen.items():
+        falls = [(a, b) for a, b in zip(series, series[1:]) if b[1] < a[1]]
+        assert not falls, f"{k} falls at {falls}"
+    assert len(seen["cumul_recovered"]) == 86    # sitrep 007 prints ND
+    assert len(seen["cumul_deaths"]) == 87
+
+
+@needs_pdfs
+@pytest.mark.parametrize("n", [8, 18, 22])
+def test_the_suspected_case_tile_is_not_published(n):
+    """It is a running total, a stock and a daily flow across three vintages
+    under near-identical wording; nothing observes any of them, and a geometry
+    fix must not start emitting one as a side effect."""
+    got, _, _ = B.extract(pdf(n))
+    assert not any("suspect" in k for k in got), got
+

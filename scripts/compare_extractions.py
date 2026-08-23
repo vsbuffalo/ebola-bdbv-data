@@ -173,6 +173,48 @@ def compare_national(ours_zone_path: Path, summary_path: Path,
                       "diff", "notes").sort("sitrep")
 
 
+#: The banner columns the scan also read, ours -> theirs. The scan is a
+#: SECOND READING OF THE SAME PAGES, so agreement here is evidence about
+#: transcription and tile geometry, not about the underlying census.
+BANNER_VS_SCAN = {"patients_isolated": "patients_isolated",
+                  "cumul_recovered": "cumul_recovered",
+                  "cumul_deaths": "confirmed_deaths"}
+
+
+def compare_banner(banner_path: Path, scan_path: Path) -> pl.DataFrame:
+    """The front-page dashboard values, ours beside the scan's, per report.
+
+    THIS COMPARISON EXISTED ONLY IN A DOCSTRING BEFORE. `extract_banner.py`
+    said the scan validated its two series and named this script as the place
+    it was reported; nothing here read those columns, so a banner value could
+    move without any check firing. Now a difference lands in
+    `banner_comparison.csv` and in the printed summary."""
+    b = pl.read_csv(banner_path, infer_schema_length=None)
+    scan = (pl.read_csv(scan_path, infer_schema_length=None)
+            .with_columns(pl.col("sitrep").cast(pl.Utf8)
+                          .str.extract(r"^(\d+)").cast(pl.Int64)))
+    scan = scan.group_by("sitrep").agg(
+        [pl.col(t).cast(pl.Int64, strict=False).last().alias(f"scan_{o}")
+         for o, t in BANNER_VS_SCAN.items()])
+    rows = []
+    j = b.join(scan, on="sitrep", how="inner")
+    for ours in BANNER_VS_SCAN:
+        if ours not in j.columns:
+            continue
+        d = (j.select("sitrep", "date",
+                      pl.lit(ours).alias("quantity"),
+                      pl.col(ours).alias("ours"),
+                      pl.col(f"scan_{ours}").alias("scan"))
+             .filter(pl.col("ours").is_not_null()
+                     & pl.col("scan").is_not_null()))
+        rows.append(d.with_columns((pl.col("ours") - pl.col("scan"))
+                                   .alias("diff")))
+    return (pl.concat(rows) if rows else
+            pl.DataFrame(schema={"sitrep": pl.Int64, "date": pl.Utf8,
+                                 "quantity": pl.Utf8, "ours": pl.Int64,
+                                 "scan": pl.Int64, "diff": pl.Int64}))
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--zone-table", required=True, type=Path)
@@ -184,6 +226,9 @@ def main() -> None:
     ap.add_argument("--prose", type=Path, default=None,
                     help="prose_provinces.csv, so the prose-only reports "
                          "enter the national comparison")
+    ap.add_argument("--banner", type=Path, default=None,
+                    help="banner.csv, so the front-page dashboard values "
+                         "meet the scan's independent reading of them")
     ap.add_argument("--out-dir", required=True, type=Path)
     ap.add_argument("--figure", type=Path, default=None,
                     help="also draw the comparison figure to this path")
@@ -254,6 +299,21 @@ def main() -> None:
             "differ": n_dis.height,
         },
     }
+    bn = None
+    if args.banner and args.banner.exists():
+        bn = compare_banner(args.banner, args.scan)
+        bn.sort(["quantity", "sitrep"]).write_csv(
+            args.out_dir / "banner_comparison.csv")
+        meta["scan_banner"] = {
+            q: {"compared": int(g.height),
+                "equal": int(g.filter(pl.col("diff") == 0).height),
+                "differ": [{"sitrep": int(r["sitrep"]), "date": r["date"],
+                            "ours": r["ours"], "scan": r["scan"]}
+                           for r in g.filter(pl.col("diff") != 0)
+                           .iter_rows(named=True)]}
+            for q, g in ((q, bn.filter(pl.col("quantity") == q))
+                         for q in bn["quantity"].unique().sort())
+        }
     (args.out_dir / "compare_meta.json").write_text(
         json.dumps(meta, indent=2, sort_keys=True) + "\n")
 
@@ -271,6 +331,19 @@ def main() -> None:
     if n_dis.height:
         with pl.Config(tbl_rows=20, fmt_str_lengths=60):
             print(n_dis)
+
+    if bn is not None:
+        print("== ours vs epiforecasts scan, front-page dashboard tiles ==")
+        for q in bn["quantity"].unique().sort():
+            g = bn.filter(pl.col("quantity") == q)
+            bad = g.filter(pl.col("diff") != 0)
+            print(f"  {q:<20} {g.height:>3} reports compared, "
+                  f"{g.height - bad.height:>3} equal, {bad.height} differ"
+                  + ("".join(f"\n      sitrep {r['sitrep']:03d} "
+                             f"({r['date']}): ours {r['ours']}, "
+                             f"scan {r['scan']}"
+                             for r in bad.iter_rows(named=True))))
+        print(f"  -> {args.out_dir / 'banner_comparison.csv'}")
 
     if args.figure:
         draw_figure(z, n, args.figure)

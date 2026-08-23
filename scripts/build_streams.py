@@ -382,17 +382,45 @@ def ascertainment(panel: pl.DataFrame,
 DROPPED_PROVINCES = ("Tshopo", "Sud-Kivu", "Bas-Uélé")
 
 
+#: The front-page dashboard tile as a LAST-RESORT source for a national
+#: cumulative, keyed by the column it can supply.
+#:
+#: DEATHS ONLY, and the asymmetry is deliberate. The zone and province tables
+#: gained their cumulative-death column on sitrep 015 (29 May) but have
+#: printed a cumulative-case column since the first held report, so the tile
+#: can only ever add dates to the death series -- for cases it would add
+#: nothing and could only introduce a disagreement. It is placed last so that
+#: wherever a table prints the figure the table's value stands unchanged.
+#:
+#: THE TILE IS THE SAME QUANTITY AS THE TABLE, established before wiring and
+#: re-established on every build (`banner_vs_table` in meta.json): on the 76
+#: dates where both print a national cumulative confirmed-death count they
+#: agree on 75. The one exception is sitrep 059, whose printed national
+#: `Total` row (718) sits one below its own province rows (608+100+1+7+3 =
+#: 719) and one below this tile; the register already licenses that report's
+#: internal gaps. The reverse case is sitrep 083, where the tile and the
+#: `Total` row agree at 1850 and the province rows sum to 1851.
+BANNER_NATIONAL = {"cum_deaths": "cumul_deaths"}
+
+
 def national_printed(panel: pl.DataFrame, summary: pl.DataFrame | None,
-                     prose: pl.DataFrame | None, col: str) -> pl.DataFrame:
+                     prose: pl.DataFrame | None, col: str,
+                     banner: pl.DataFrame | None = None) -> pl.DataFrame:
     """The printed national cumulative, one value per report date, coalesced
-    zone route -> provincial summary -> prose -- the same precedence the
-    national comparison uses. BUILT FROM THE PRINTED ROWS, not by summing the
-    emitted province streams: those deliberately exclude three small
-    provinces and whatever the source has not attributed, and a national
+    zone route -> provincial summary -> prose -> front-page tile -- the same
+    precedence the national comparison uses. BUILT FROM THE PRINTED ROWS, not
+    by summing the emitted province streams: those deliberately exclude three
+    small provinces and whatever the source has not attributed, and a national
     series must not inherit that exclusion.
     """
+    sources: list[pl.DataFrame | None] = [panel, summary, prose]
+    tile = BANNER_NATIONAL.get(col)
+    if banner is not None and tile and tile in banner.columns:
+        sources.append(banner.select(
+            "date", pl.col(tile).alias(col),
+            pl.lit("national").alias("level")))
     frames = []
-    for prio, d in enumerate(x for x in (panel, summary, prose)
+    for prio, d in enumerate(x for x in sources
                              if x is not None and col in x.columns):
         n = (d.filter((pl.col("level") == "national")
                       & pl.col(col).is_not_null())
@@ -518,8 +546,14 @@ def main() -> None:
                if args.summary and args.summary.exists() else None)
     prose = (pl.read_csv(args.prose, infer_schema_length=None)
              if args.prose and args.prose.exists() else None)
+    banner = (pl.read_csv(args.banner, infer_schema_length=None)
+              if args.banner and args.banner.exists() else None)
 
     recon: dict[str, dict] = {}
+    #: Not a stream reconciliation but a SOURCE-AGREEMENT check, so it lives
+    #: beside `reconciliation` rather than inside it: every entry there is
+    #: keyed by a stream and read as one by the data document.
+    banner_vs_table: dict[str, dict] = {}
     failures: list[str] = []
     weekly_by_name: dict[str, pl.DataFrame] = {}
     for prov, slug in STREAM_PROVINCES.items():
@@ -631,7 +665,43 @@ def main() -> None:
     # is recorded in the meta file with any unattributed residue, which is
     # the signature of an attribution or double-count defect.
     for col, stem in (("cum_cases", "cases"), ("cum_deaths", "deaths")):
-        printed = national_printed(panel, summary, prose, col)
+        # THE TILE IS NOT ASSUMED TO BE THE TABLE'S QUANTITY; it is checked,
+        # every build, on the dates where both print one. See BANNER_NATIONAL.
+        tile = BANNER_NATIONAL.get(col)
+        if banner is not None and tile and tile in banner.columns:
+            tab = national_printed(panel, summary, prose, col)
+            cmp = (banner.select(pl.col("date").str.to_date(),
+                                 pl.col(tile).alias("tile"))
+                   .join(tab, on="date", how="inner")
+                   .filter(pl.col("tile").is_not_null()
+                           & pl.col("cum").is_not_null()))
+            bad = cmp.filter(pl.col("tile") != pl.col("cum")).sort("date")
+            banner_vs_table[f"{stem}_national"] = {
+                "column": tile,
+                "both_print": cmp.height,
+                "agree": cmp.height - bad.height,
+                "disagree": [{"date": str(r["date"]), "tile": r["tile"],
+                              "table": r["cum"]}
+                             for r in bad.iter_rows(named=True)],
+                "tile_only_dates": int(
+                    banner.filter(pl.col(tile).is_not_null()).height
+                    - cmp.height),
+            }
+            print(f"  {stem}_national: the front-page tile and the printed "
+                  f"table both print a national cumulative on {cmp.height} "
+                  f"date(s) and agree on {cmp.height - bad.height}; the tile "
+                  f"fills "
+                  f"{banner_vs_table[f'{stem}_national']['tile_only_dates']} "
+                  f"date(s) no table prints")
+            if bad.height:
+                print(f"  {stem}_national: the front-page tile and the "
+                      f"printed table disagree on {bad.height} of "
+                      f"{cmp.height} shared date(s) -- "
+                      + ", ".join(f"{r['date']} tile {r['tile']} vs table "
+                                  f"{r['cum']}"
+                                  for r in bad.iter_rows(named=True)))
+
+        printed = national_printed(panel, summary, prose, col, banner)
         cum = national_cumulative_grid(printed)
         if cum.is_empty():
             continue
@@ -829,7 +899,7 @@ def main() -> None:
                     .select(pl.col("date").str.to_date()).unique()["date"])
             emit_daily(f"{stem}_daily_{slug}", f"{stem}_{slug}", cum, reps, prov)
     for col, stem in (("cum_cases", "cases"), ("cum_deaths", "deaths")):
-        printed = national_printed(panel, summary, prose, col)
+        printed = national_printed(panel, summary, prose, col, banner)
         cum = national_cumulative_grid(printed)
         if not cum.is_empty():
             emit_daily(f"{stem}_daily_national", f"{stem}_national", cum,
@@ -1036,6 +1106,9 @@ def main() -> None:
         "dropped_provinces": {(r[0] or "unattributed"): r[1]
                               for r in dropped.iter_rows()},
         "reconciliation": recon,
+        # Is the front-page tile the same quantity as the table it fills gaps
+        # in? Re-established here on every build, never assumed.
+        "banner_vs_table": banner_vs_table,
     }
     (args.out_dir / "meta.json").write_text(json.dumps(meta, indent=2,
                                                        sort_keys=True) + "\n")
