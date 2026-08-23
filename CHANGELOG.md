@@ -16,6 +16,63 @@ carries the rest.
 
 ---
 
+## `data/2026-08-18-r5` — 2026-08-23 — coverage
+
+**Not breaking**: no column added, removed or renamed. Three stock and flow
+series gain substantial history at the left edge, and one published value
+moves. **If you have fitted the recovery stock or anything leaning on the
+first two weeks of deaths, refit.**
+
+**The front-page dashboard was only readable in one of its two layouts.** The
+reader took a tile's value by scanning *downward* from its label. Sitreps
+005–058 print the tiles the other way up — a row of bare numbers with the
+label block beneath — so every one of them refused. It now searches both
+directions and takes the nearer aligned number, with no branch on report
+number or date; where a label has candidates both ways (sitreps 060, 061)
+the arbitration is recorded.
+
+Two further defects sat in the same path and cost as much as the direction
+did. A regex welded a **one-character field to everything after it on its
+line**, which lost *every single-digit tile value in the archive* — sitrep
+008's recovered count read as `'0                  16'`. And column matching
+used the label's start column only, which fails where a value is centred over
+a wider label.
+
+| stream | before | after |
+|---|---|---|
+| `cumul_recovered` | 36 obs, opens 2026-07-12 at 333 | **86 obs, opens 2026-05-19 at 0** |
+| `patients_isolated` | 61 obs | **74 obs** |
+| `deaths_daily_national` | 75 obs, 2,434 deaths | **86 obs, 2,472** |
+| `deaths_national` | 12 obs, opens 2026-06-02 | **13 obs, opens 2026-05-26** |
+
+**One previously published value changes**: `deaths_national`'s opening bin.
+Its window used to start where the *tables* first print a cumulative death
+column (29 May, already standing at 42), leaving those deaths outside every
+emitted row; the front page prints them from 19 May. **38 deaths enter the
+series**, all in the growth phase. Every other stream file is byte-identical.
+
+**Validated against the independent hand transcription**, which had been
+claimed in a docstring and never actually computed: `make compare` now writes
+`banner_comparison.csv` — **186 of 187 report-values identical**
+(`cumul_recovered` 57/57, `patients_isolated` 62/62, `cumul_deaths` 67/68).
+The single difference is sitrep 083, where the tile and Table 1 both print
+1,850 while the province rows sum to 1,851; we publish the printed national
+row, the scan sums the rows. A convention difference, not a transcription
+error. `build_streams` also now checks tile against tables on every run: 76
+shared dates, 75 agree.
+
+**Two refusals kept deliberately.** Sitreps 016 and 017 print `Cas suspects
+en isolement` — suspects *inside* the ward, beside a separate confirmed-active
+tile — and no ward total, so publishing that number would put a sub-count
+where a total belongs at the point the series begins. Sitrep 007's recovery
+tile prints `ND`. The bare `Guéris` label of the early vintage is established
+as cumulative by a build-time gate, not an assumption: sitreps 018 and 019
+are consecutive days printing the same 6 under different labels, the values
+never fall, and those pages carry a separate per-zone `Guéris du jour` column,
+so the day's flow already has its own home.
+
+---
+
 ## `data/2026-08-18-r4` — 2026-08-23 — fix
 
 **Not breaking**: no column added, removed or renamed. One report's daily
@@ -258,6 +315,10 @@ the printed total.
 
 Coverage: isolation 58 reports (confirmed split on 49), recoveries 33. Early
 reports print no such tile; the value is null, never inferred.
+
+> **Corrected in `-r4` above.** They do print it — above the labels rather
+> than beneath them — and the reader searched only downward. The coverage
+> figures here, and the sitrep 061 paragraph, are superseded.
 
 ## `data/2026-08-15-r7` — 2026-08-19 — **BREAKING (schema)**
 

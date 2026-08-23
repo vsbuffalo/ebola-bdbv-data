@@ -22,6 +22,7 @@ analysis/_site/
 data/trial/
 
 # Comparison sources, cloned by `make external`; pinned by the .commit file.
+# Same reason as above for the missing trailing slash.
 external
 analysis/data.html
 analysis/*_files/

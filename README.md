@@ -210,7 +210,7 @@ every held report is covered by the finest one its pages print:
 | zone daily table                    | 1       | sitrep 087 prints only the day's flows per zone, no cumulative anywhere — a fourth layout with its own declared column order |
 | provincial summary                  | 70      | one row per province — the only tabular data on the reports whose vintage dropped the zone table                             |
 | prose sentence                      | 3       | `"121 cas dont 110 en Ituri, 10 au Nord-Kivu et 1 au Sud-Kivu"` — read only because the sentence checks itself               |
-| _(national dashboard)_              | —       | not yet read; the daily suspected inflow after 12 July is the known gap                                                      |
+| national dashboard (page-1 tiles)   | 87      | the isolation census, cumulative recoveries and cumulative confirmed deaths, in both layouts the source draws (values above the labels, or beneath). The suspected-case tile is deliberately not read: it is a running total, a stock and a daily flow in three vintages under near-identical wording |
 
 The source's own caveats are read too: the first six weeks' reports footnote
 their headline cumulative as undergoing harmonisation — from 9 June stating

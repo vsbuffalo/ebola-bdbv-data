@@ -178,6 +178,7 @@ compare:
 		--zone-table data/build/series/zone_table.csv \
 		--summary data/build/series/province_summary.csv \
 		--prose data/build/series/prose_provinces.csv \
+		--banner data/build/series/banner.csv \
 		--province-series data/build/series/province_series_reconciliation.csv \
 		--geojson data/raw/health_zones.geojson \
 		--inrb $(INRB_DIR) --scan $(SCAN) \
@@ -186,6 +187,7 @@ compare:
 		--series-figure data/build/compare/comparison_series.png
 	# also writes: data/build/compare/inrb_disagreements.csv
 	#              data/build/compare/scan_comparison.csv
+	#              data/build/compare/banner_comparison.csv
 	#              data/build/compare/zone_comparison.csv
 	#              data/build/compare/compare_meta.json
 	# COMMITTED COPIES of the two comparison figures, so the README's
