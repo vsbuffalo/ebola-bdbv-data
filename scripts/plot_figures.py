@@ -609,14 +609,15 @@ def draw_epi_curve(inputs: dict[str, Path], out: Path) -> None:
     # Same header block as the ascertainment figure: headline, subtitle just
     # beneath it, and the legend floating across the top axes boundary so it
     # occupies space that is otherwise empty in both the header and the panel.
-    fig.get_layout_engine().set(rect=(0, 0, 1, 0.945))
+    fig.get_layout_engine().set(rect=(0, 0, 1, 0.895))
     fig.suptitle("The 2026 Bundibugyo outbreak, as the situation reports "
-                 "record it", x=0.006, ha="left", fontsize=15,
-                 fontweight="bold")
-    c_hi.set_title(f"{tot_c:,} confirmed cases and {tot_d:,} confirmed deaths"
-                   f" · $\\bf{{{cases['time'].min():%d\\ %b}\\ to\\ "
-                   f"{cases['time'].max():%d\\ %b\\ %Y}}}$",
-                   loc="left", fontsize=11, color="#333333", pad=8)
+                 "record it", x=0.006, y=0.988, ha="left", va="top",
+                 fontsize=15, fontweight="bold")
+    fig.text(0.006, 0.938,
+             f"{tot_c:,} confirmed cases and {tot_d:,} confirmed deaths · "
+             f"$\\bf{{{cases['time'].min():%d\\ %b}\\ to\\ "
+             f"{cases['time'].max():%d\\ %b\\ %Y}}}$",
+             ha="left", va="top", fontsize=11, color="#333333")
     # constrained_layout owns inter-axes spacing and overrides a subgridspec
     # hspace, so the two halves of each break are pinned by hand once it has
     # run: freeze the engine, then drop each upper segment to sit a hair above
