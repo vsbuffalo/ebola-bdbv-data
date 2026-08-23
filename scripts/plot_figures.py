@@ -1278,7 +1278,7 @@ def draw_streams_detail(inputs: dict[str, Path], out: Path) -> None:
         axr.plot(_dates(rec["date"]), rec["cumul_recovered"].to_list(),
                  color="#009E73", linewidth=1.9, marker="o", markersize=3)
     axr.set_title("NATIONAL ONLY — cumulative recoveries\n"
-                  "a running total, printed from 12 July",
+                  "a running total, printed from the first report",
                   loc="left", fontsize=9.5, fontweight="bold")
     for a in (axi, axr):
         a.grid(True, **GRID)
