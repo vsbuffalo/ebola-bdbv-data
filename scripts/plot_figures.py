@@ -465,7 +465,7 @@ def draw_epi_curve(inputs: dict[str, Path], out: Path) -> None:
     THE OPENING FIGURE. Everything else in this repo argues about how the
     numbers were obtained; this one shows what they say.
 
-    Two decisions carry the honesty of it.
+    Three decisions carry the honesty of it.
 
     A BAR'S HEIGHT IS A DAILY RATE AND ITS WIDTH ITS OWN WINDOW, so its area
     is the count. Both of these streams are built by DIFFERENCING a published
@@ -479,72 +479,93 @@ def draw_epi_curve(inputs: dict[str, Path], out: Path) -> None:
     caveat for that report, in the same vocabulary the release-grid figure
     uses, because the tallest bar in the case series -- 369 confirmations on
     22 July against a norm near 80 -- is a backlog release, not a day when
-    369 people were found. Drawing it in the same colour as an ordinary day
-    would make a reporting artefact look like an epidemiological event, which
-    is the single most misleading thing this figure could do.
+    369 people were found.
+
+    AND A CUT AXIS MUST LOOK CUT. That release is twice the height of any
+    real day, so letting it set the scale flattens the curve this figure
+    exists to show. Each panel is therefore a BROKEN axis: a narrow upper
+    segment carrying the outlier's top, a full lower segment for everything
+    else, and diagonal break marks across the join. Simply truncating a bar
+    and hoping a label explains it invites the eye to compare heights that
+    are not on one scale.
     """
     cases = pl.read_csv(inputs["cases"], separator="\t", try_parse_dates=True)
     deaths = pl.read_csv(inputs["deaths"], separator="\t", try_parse_dates=True)
 
-    fig, (ac, ad) = plt.subplots(
-        2, 1, figsize=(13.333, 7.5), height_ratios=[1.25, 1],
-        sharex=True, constrained_layout=True)
+    fig = plt.figure(figsize=(13.333, 7.5), constrained_layout=True)
+    outer = fig.add_gridspec(2, 1, height_ratios=[1.25, 1], hspace=0.10)
+    gc = outer[0].subgridspec(2, 1, height_ratios=[1, 5], hspace=0.06)
+    gd = outer[1].subgridspec(2, 1, height_ratios=[1, 5], hspace=0.06)
+    c_hi, c_lo = fig.add_subplot(gc[0]), fig.add_subplot(gc[1])
+    d_hi, d_lo = fig.add_subplot(gd[0]), fig.add_subplot(gd[1])
 
     seen: set[str] = set()
 
-    def bars(ax, df, col, label):
-        """Draw one panel, clipped so the backlog release does not set the
-        scale. The release is real and stays visible -- it is drawn to the top
-        of the panel and labelled with its true count -- but letting a 369
-        against a norm near 80 fix the y-axis flattens the epidemic curve this
-        figure exists to show."""
+    def panel(hi, lo, df, col, label):
         span = [max(1, int(v or 1)) for v in df["days_covered"].to_list()]
         edge = [mdates.date2num(x) + 0.5 for x in df["time"].to_list()]
         xs = [e - w / 2 for e, w in zip(edge, span)]
         ys = [c / w for c, w in zip(df[col].to_list(), span)]
-        top = 1.22 * max(sorted(ys)[:-1])       # ignore the single outlier
-        for x, y, w, r in zip(xs, ys, span, df.iter_rows(named=True)):
-            f = _flag_of(r)
-            seen.add(f)
-            ax.bar(x, y, width=w * 0.9, color=FLAG_COLOR[f], zorder=2)
-            if y > top:
-                ax.annotate(f"{int(round(y * w))}", xy=(x, top), xytext=(0, -3),
-                            textcoords="offset points", ha="center", va="top",
-                            fontsize=8.5, fontweight="bold", color="#7a5200")
-        ax.set_ylim(0, top)
-        ax.set_ylabel(label, fontsize=10)
-        ax.set_axisbelow(True)
-        ax.grid(axis="y", **GRID)
-        for s in ("top", "right"):
-            ax.spines[s].set_visible(False)
-        for s in ("left", "bottom"):
-            ax.spines[s].set_color("#999999")
-        return xs, ys, span
+        cut = 1.22 * max(sorted(ys)[:-1])       # ignore the single outlier
+        peak = max(ys)
 
-    xs, ys, span = bars(ac, cases, "cases_national", "confirmed cases per day")
-    bars(ad, deaths, "deaths_national", "confirmed deaths per day")
+        for ax in (hi, lo):
+            for x, y, w, r in zip(xs, ys, span, df.iter_rows(named=True)):
+                f = _flag_of(r)
+                seen.add(f)
+                ax.bar(x, y, width=w * 0.9, color=FLAG_COLOR[f], zorder=2)
+            ax.set_axisbelow(True)
+            ax.grid(axis="y", **GRID)
+            for sp in ("top", "right"):
+                ax.spines[sp].set_visible(False)
+            ax.spines["left"].set_color("#999999")
 
-    # Name the backlog release rather than leaving it to be read as a wave.
+        lo.set_ylim(0, cut)
+        hi.set_ylim(peak * 0.94, peak * 1.06)
+        hi.set_yticks([round(peak)])
+        hi.tick_params(labelbottom=False, length=0)
+        lo.spines["bottom"].set_color("#999999")
+        hi.spines["bottom"].set_visible(False)
+        hi.spines["left"].set_color("#999999")
+        lo.set_ylabel(label, fontsize=10)
+        lo.yaxis.set_label_coords(-0.055, 0.62)
+
+        # diagonal break marks, drawn in axes coordinates on both edges
+        kw = dict(marker=[(-1, -0.6), (1, 0.6)], markersize=9, linestyle="none",
+                  color="#666666", mec="#666666", mew=1.1, clip_on=False)
+        hi.plot([0, 1], [0, 0], transform=hi.transAxes, **kw)
+        lo.plot([0, 1], [1, 1], transform=lo.transAxes, **kw)
+        return xs, ys, cut
+
+    xs, ys, cut = panel(c_hi, c_lo, cases, "cases_national",
+                        "confirmed cases per day")
+    panel(d_hi, d_lo, deaths, "deaths_national", "confirmed deaths per day")
+
     peak = max(range(len(ys)), key=lambda i: ys[i])
-    ac.annotate("one report released a backlog of earlier\n"
-                "confirmations — not a day's incidence",
-                xy=(xs[peak] - 0.6, ac.get_ylim()[1] * 0.80),
-                xytext=(-150, 18), textcoords="offset points",
-                ha="left", va="center", fontsize=9, color="#7a5200",
-                arrowprops=dict(arrowstyle="->", color="#b98b00",
-                                linewidth=1.1, shrinkA=3, shrinkB=3))
+    c_lo.annotate("one report released a backlog of earlier\n"
+                  "confirmations — not a day's incidence",
+                  xy=(xs[peak] - 0.6, cut * 0.86), xytext=(-150, 10),
+                  textcoords="offset points", ha="left", va="center",
+                  fontsize=9, color="#7a5200",
+                  arrowprops=dict(arrowstyle="->", color="#b98b00",
+                                  linewidth=1.1, shrinkA=3, shrinkB=3))
 
-    ad.xaxis.set_major_locator(mdates.WeekdayLocator(byweekday=mdates.MO,
-                                                     interval=2))
-    ad.xaxis.set_major_formatter(mdates.DateFormatter("%d %b"))
+    for ax in (c_hi, c_lo, d_hi):
+        ax.tick_params(labelbottom=False)
+    for ax in (c_hi, c_lo, d_hi, d_lo):
+        ax.set_xlim(min(xs) - 2, max(xs) + 2)
+    d_lo.xaxis.set_major_locator(mdates.WeekdayLocator(byweekday=mdates.MO,
+                                                       interval=2))
+    d_lo.xaxis.set_major_formatter(mdates.DateFormatter("%d %b"))
 
     handles = [plt.Rectangle((0, 0), 1, 1, facecolor=FLAG_COLOR[f],
                              label=FLAG_LABEL[f])
                for f in FLAG_COLOR if f in seen]
-    leg = ac.legend(handles=handles, loc="center right",
-                    bbox_to_anchor=(1.004, 1.0), fontsize=9.5, frameon=True,
-                    framealpha=0.95, facecolor="white", edgecolor="#8a8a8a",
-                    borderpad=0.6, ncol=1, labelspacing=0.5, handlelength=1.3)
+    leg = c_hi.legend(handles=handles, loc="center right",
+                      bbox_to_anchor=(1.004, 1.35), fontsize=9.5, frameon=True,
+                      framealpha=0.95, facecolor="white", edgecolor="#8a8a8a",
+                      borderpad=0.6, ncol=1, labelspacing=0.5,
+                      handlelength=1.3)
     leg.get_frame().set_linewidth(0.7)
 
     tot_c = int(cases["cases_national"].sum())
@@ -552,10 +573,10 @@ def draw_epi_curve(inputs: dict[str, Path], out: Path) -> None:
     fig.suptitle("The 2026 Bundibugyo outbreak, as the situation reports "
                  "record it", x=0.006, ha="left", fontsize=15,
                  fontweight="bold")
-    ac.set_title(f"{tot_c:,} confirmed cases and {tot_d:,} confirmed deaths · "
-                 f"$\\bf{{{cases['time'].min():%d\\ %b}\\ to\\ "
-                 f"{cases['time'].max():%d\\ %b\\ %Y}}}$",
-                 loc="left", fontsize=11, color="#333333", pad=8)
+    c_hi.set_title(f"{tot_c:,} confirmed cases and {tot_d:,} confirmed deaths · "
+                   f"$\\bf{{{cases['time'].min():%d\\ %b}\\ to\\ "
+                   f"{cases['time'].max():%d\\ %b\\ %Y}}}$",
+                   loc="left", fontsize=11, color="#333333", pad=8)
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, dpi=200)
     plt.close(fig)
