@@ -508,8 +508,8 @@ def draw_epi_curve(inputs: dict[str, Path], out: Path) -> None:
 
     fig = plt.figure(figsize=(13.333, 7.5), constrained_layout=True)
     outer = fig.add_gridspec(2, 1, height_ratios=[1.25, 1], hspace=0.08)
-    gc = outer[0].subgridspec(2, 1, height_ratios=[1, BREAK_RATIO], hspace=0.035)
-    gd = outer[1].subgridspec(2, 1, height_ratios=[1, BREAK_RATIO], hspace=0.035)
+    gc = outer[0].subgridspec(2, 1, height_ratios=[1, BREAK_RATIO], hspace=0.012)
+    gd = outer[1].subgridspec(2, 1, height_ratios=[1, BREAK_RATIO], hspace=0.012)
     c_hi, c_lo = fig.add_subplot(gc[0]), fig.add_subplot(gc[1])
     d_hi, d_lo = fig.add_subplot(gd[0]), fig.add_subplot(gd[1])
 
@@ -562,7 +562,11 @@ def draw_epi_curve(inputs: dict[str, Path], out: Path) -> None:
         lo.yaxis.set_label_coords(-0.055, 0.62)
 
         # diagonal break marks, drawn in axes coordinates on both edges
-        kw = dict(marker=[(-1, -0.7), (1, 0.7)], markersize=7,
+        # The break symbol is a PAIR of parallel diagonals, one on each side
+        # of the gap. They only read as one symbol if the gap between them is
+        # about as tall as a diagonal is wide, which is what the tight hspace
+        # above is for.
+        kw = dict(marker=[(-1, -0.6), (1, 0.6)], markersize=6,
                   linestyle="none", color="#666666", mec="#666666", mew=1.0,
                   clip_on=False)
         hi.plot([0, 1], [0, 0], transform=hi.transAxes, **kw)
@@ -602,13 +606,29 @@ def draw_epi_curve(inputs: dict[str, Path], out: Path) -> None:
 
     tot_c = int(cases["cases_national"].sum())
     tot_d = int(deaths["deaths_national"].sum())
+    # Headline and its subtitle are one block, set together at the top left;
+    # hung off the first axes the subtitle reads as that panel's label.
+    fig.get_layout_engine().set(rect=(0, 0, 1, 0.905))
     fig.suptitle("The 2026 Bundibugyo outbreak, as the situation reports "
-                 "record it", x=0.006, ha="left", fontsize=15,
-                 fontweight="bold")
-    c_hi.set_title(f"{tot_c:,} confirmed cases and {tot_d:,} confirmed deaths · "
-                   f"$\\bf{{{cases['time'].min():%d\\ %b}\\ to\\ "
-                   f"{cases['time'].max():%d\\ %b\\ %Y}}}$",
-                   loc="left", fontsize=11, color="#333333", pad=8)
+                 "record it", x=0.006, y=0.985, ha="left", va="top",
+                 fontsize=15, fontweight="bold")
+    fig.text(0.006, 0.938,
+             f"{tot_c:,} confirmed cases and {tot_d:,} confirmed deaths · "
+             f"$\\bf{{{cases['time'].min():%d\\ %b}\\ to\\ "
+             f"{cases['time'].max():%d\\ %b\\ %Y}}}$",
+             ha="left", va="top", fontsize=11, color="#333333")
+    # constrained_layout owns inter-axes spacing and overrides a subgridspec
+    # hspace, so the two halves of each break are pinned by hand once it has
+    # run: freeze the engine, then drop each upper segment to sit a hair above
+    # its lower one. The pair of diagonals only reads as ONE break symbol when
+    # the gap between them is about as tall as a diagonal is wide.
+    fig.canvas.draw()
+    fig.set_layout_engine("none")
+    GAP = 0.006                      # figure fraction
+    for hi, lo in ((c_hi, c_lo), (d_hi, d_lo)):
+        lp, hp = lo.get_position(), hi.get_position()
+        hi.set_position([lp.x0, lp.y1 + GAP, lp.width, hp.height])
+
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, dpi=200)
     plt.close(fig)
