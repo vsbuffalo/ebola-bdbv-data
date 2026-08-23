@@ -310,7 +310,7 @@ self-disagreements.](docs/figures/comparison_series.png)
 ![Every zone-day on the identity line against INRB-UMIE, and the
 disagreements, signed, over time.](docs/figures/comparison.png)
 
-These two figures are committed copies (`docs/figures/`), refreshed by
+These figures are committed copies (`docs/figures/`), refreshed by
 `make compare` so they always show the current build's comparison; a diff in
 them is a change in what the comparison shows.
 

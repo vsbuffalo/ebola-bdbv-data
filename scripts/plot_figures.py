@@ -458,6 +458,75 @@ def draw_release_grid(inputs: dict[str, Path], out: Path) -> None:
     plt.close(fig)
 
 
+def draw_ascertainment(inputs: dict[str, Path], out: Path) -> None:
+    """Where confirmed deaths were found, and what share of them the
+    surveillance system never had in care -- at slide proportions.
+
+    THIS IS THE QUANTITY THE MODELS MOST NEED, and the reason the pipeline
+    checks every page's arithmetic rather than trusting what parsed. A death
+    confirmed by post-mortem swab is a death the response never isolated, so
+    the community share is the closest thing the source prints to a
+    measurement of how much transmission is being missed.
+
+    Two panels on one time axis: the daily split in counts, then the share.
+    The share is drawn per report-day rather than smoothed, because its
+    STABILITY is the finding -- it sits near 0.6 for five weeks, and an
+    extraction defect that made it climb toward 1.0 would read as collapsing
+    isolation rather than as a parsing artifact.
+    """
+    d = pl.read_csv(inputs["split"], separator="\t", try_parse_dates=True)
+    d = d.drop_nulls(["community_deaths_national", "deaths_split_national"])
+    d = d.filter(pl.col("deaths_split_national") > 0).sort("time")
+
+    t = [mdates.date2num(x) for x in d["time"].to_list()]
+    comm = d["community_deaths_national"].to_list()
+    total = d["deaths_split_national"].to_list()
+    etc = [a - b for a, b in zip(total, comm)]
+    share = [c / s for c, s in zip(comm, total)]
+    overall = sum(comm) / sum(total)
+
+    COMM, ETC = "#D55E00", "#0072B2"
+    fig, (ax, sh) = plt.subplots(
+        2, 1, figsize=(13.333, 7.5), height_ratios=[1.45, 1],
+        sharex=True, constrained_layout=True)
+
+    ax.bar(t, comm, width=0.8, color=COMM, label="found in the community "
+           "(post-mortem swab) — never isolated")
+    ax.bar(t, etc, width=0.8, bottom=comm, color=ETC,
+           label="died in a treatment centre — already in care")
+    ax.set_axisbelow(True)          # gridlines behind the bars, not through them
+    ax.set_ylabel("confirmed deaths per report-day", fontsize=10)
+    ax.legend(loc="upper left", frameon=False, fontsize=10)
+    ax.set_title("Every confirmed death the reports classify, by where it was found",
+                 loc="left", fontsize=11, color="#333333")
+    ax.grid(axis="y", **GRID)
+
+    sh.plot(t, share, marker="o", markersize=4.5, linewidth=1.4, color=COMM)
+    sh.axhline(overall, color="#555555", linewidth=1.0, linestyle=(0, (4, 3)))
+    sh.text(t[0], overall + 0.022, f"period share  {overall:.2f}", fontsize=9.5,
+            color="#555555")
+    sh.set_axisbelow(True)
+    sh.set_ylim(0, 1.05)
+    sh.set_ylabel("community share", fontsize=10)
+    sh.set_title("The share never in care — flat near 0.6, not climbing",
+                 loc="left", fontsize=11, color="#333333")
+    sh.grid(axis="y", **GRID)
+    sh.xaxis.set_major_locator(mdates.WeekdayLocator(byweekday=mdates.MO))
+    sh.xaxis.set_major_formatter(mdates.DateFormatter("%d %b"))
+
+    for a in (ax, sh):
+        for s in ("top", "right"):
+            a.spines[s].set_visible(False)
+        a.spines["left"].set_color("#999999")
+        a.spines["bottom"].set_color("#999999")
+
+    fig.suptitle("Confirmed deaths found in the community, not in care",
+                 x=0.006, ha="left", fontsize=15, fontweight="bold")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out, dpi=200)
+    plt.close(fig)
+
+
 def draw_province_series(inputs: dict[str, Path], out: Path) -> None:
     series = pl.read_csv(inputs["province_series"], infer_schema_length=None)
     summary = pl.read_csv(inputs["summary"], infer_schema_length=None)
@@ -887,6 +956,9 @@ def draw_residuals(inputs: dict[str, Path], out: Path) -> None:
 FIGURES = {
     # The declared inputs ARE the dependency set, so the stream files are
     # listed one by one rather than hidden behind a directory glob.
+    "ascertainment": (draw_ascertainment,
+                      {"split": "data/build/streams/"
+                                "community_deaths_daily_national.tsv"}),
     "release_grid": (draw_release_grid,
                      {**{f"stream_{n}": f"data/build/streams/{n}.tsv"
                          for n, _ in RELEASE_ROWS},

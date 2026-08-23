@@ -200,6 +200,11 @@ figures:
 	# days whose own arithmetic does not close.
 	uv run python scripts/plot_figures.py --figure release_grid \
 		--out data/build/figures/release_grid.png
+	# SLIDE FIGURE, 16:9. The community share of confirmed deaths -- the
+	# quantity the models most need and the reason every page's arithmetic
+	# is checked.
+	uv run python scripts/plot_figures.py --figure ascertainment \
+		--out data/build/figures/ascertainment.png
 	uv run python scripts/plot_figures.py --figure province_series \
 		--out data/build/figures/province_series.png
 	uv run python scripts/plot_figures.py --figure streams_detail \
@@ -211,6 +216,7 @@ figures:
 	mkdir -p docs/figures
 	cp data/build/figures/streams_detail.png docs/figures/
 	cp data/build/figures/release_grid.png docs/figures/
+	cp data/build/figures/ascertainment.png docs/figures/
 
 ## watch-data-channel -- poll the shared data channel (which lives in the
 ##            modelling repo's tree) and exit as soon as they write, printing
