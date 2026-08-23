@@ -70,3 +70,13 @@ Draft_SitRep_MVE_RDC_N°050_04_07_2026.pdf	50	2026-07-03
 94.pdf	94	2026-08-16
 95.pdf	95	2026-08-17
 96.pdf	96	2026-08-18
+# Verified 2026-08-23 against each PDF's own front page. Same bare-numbered
+# upload shape as 83-85, 91 and 94-96: "99.pdf" and "100.pdf", published
+# 2026-08-23, carrying no series token for any predicate to match.
+#
+# Note the header of report 100 prints "SitRep N°0100/MVEBDB/22/08/2026" -- the
+# leading zero is the three-digit template overflowing at the century mark, not
+# part of the number. The report is 100, and its `Date de rapportage` is 22
+# août 2026 (publication 23 août, one day later, as usual).
+99.pdf	99	2026-08-21
+100.pdf	100	2026-08-22
