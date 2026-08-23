@@ -31,6 +31,7 @@ single-hue sequential treatment, dark to light, never three unrelated hues.
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import sys
 from pathlib import Path
 
@@ -493,9 +494,7 @@ def draw_ascertainment(inputs: dict[str, Path], out: Path) -> None:
                for a, b in zip(d["deaths_national"].to_list(), total)]
     share = [c / s for c, s in zip(comm, total)]
     pooled = sum(comm) / sum(total)
-    # What the unclassified deaths could do to that share, at the extremes.
-    all_deaths = sum(total) + sum(unclass)
-    lo, hi = sum(comm) / all_deaths, (sum(comm) + sum(unclass)) / all_deaths
+
 
     COMM, ETC = "#D55E00", "#0072B2"
     fig, (ax, sh) = plt.subplots(
@@ -507,8 +506,7 @@ def draw_ascertainment(inputs: dict[str, Path], out: Path) -> None:
     ax.bar(t, etc, width=0.8, bottom=comm, color=ETC,
            label="died in a treatment centre — already in care")
     ax.bar(t, unclass, width=0.8, bottom=[a + b for a, b in zip(comm, etc)],
-           color="#c4c4c4", label="counted as a confirmed death, but the "
-           "report classified it neither way")
+           color="#c4c4c4", label="confirmed death, unclassified")
     # TWO BACKLOG RELEASES WOULD OTHERWISE SET THE SCALE. 22 July carries 174
     # unclassified deaths and 30 July 76, against a daily norm near 5, so an
     # honest full-height axis squashes every other day into illegibility. The
@@ -517,11 +515,48 @@ def draw_ascertainment(inputs: dict[str, Path], out: Path) -> None:
     top = max(a + b for a, b in zip(comm, etc)) * 1.30
     for xi, c, e, u in zip(t, comm, etc, unclass):
         if c + e + u > top:
-            ax.annotate(f"{u} unclassified\nof {c + e + u} that day\n"
+            ax.annotate(f"{u} unclassified of {c + e + u}\n"
                         f"(batch consolidation)",
-                        xy=(xi, top), xytext=(0, -6),
-                        textcoords="offset points", ha="center", va="top",
-                        fontsize=7.5, color="#4a4a4a")
+                        xy=(xi - 0.45, top * 0.90), xytext=(-58, 10),
+                        textcoords="offset points", ha="right", va="center",
+                        fontsize=8, color="#4a4a4a",
+                        arrowprops=dict(arrowstyle="->", color="#8a8a8a",
+                                        linewidth=0.8,
+                                        shrinkA=2, shrinkB=2))
+    # THE TWO GAPS HAVE DIFFERENT CAUSES, and a reader cannot tell them apart
+    # from absence alone. 28-29 July is INSP publishing nothing; 6-8 August is
+    # three reports that were published but printed no health-zone table, and
+    # the community/treatment-centre split is only ever printed there.
+    status = pl.read_csv(inputs["zone_status"], infer_schema_length=None)
+    published = {r["date"]: r["status"] for r in status.iter_rows(named=True)}
+    have = {str(v) for v in d["time"].to_list()}
+    day = dt.timedelta(days=1)
+    cur, runs = None, []
+    span_lo, span_hi = d["time"].min(), d["time"].max()
+    probe = span_lo
+    while probe <= span_hi:
+        key = str(probe)
+        missing = key not in have
+        why = ("no report published" if key not in published
+               else "no health-zone table")
+        if missing:
+            if cur and cur[2] == why and cur[1] + day == probe:
+                cur = (cur[0], probe, why)
+            else:
+                if cur:
+                    runs.append(cur)
+                cur = (probe, probe, why)
+        probe += day
+    if cur:
+        runs.append(cur)
+    for lo_d, hi_d, why in runs:
+        mid = mdates.date2num(lo_d) + (mdates.date2num(hi_d)
+                                       - mdates.date2num(lo_d)) / 2
+        ax.axvspan(mdates.date2num(lo_d) - 0.5, mdates.date2num(hi_d) + 0.5,
+                   color="#f0f0f0", zorder=0)
+        ax.text(mid, top * 0.40, why, rotation=90, ha="center", va="center",
+                fontsize=7.5, color="#8a8a8a")
+
     ax.set_ylim(0, top)
     ax.set_axisbelow(True)          # gridlines behind the bars, not through them
     ax.set_ylabel("confirmed deaths per report-day", fontsize=10)
@@ -530,21 +565,13 @@ def draw_ascertainment(inputs: dict[str, Path], out: Path) -> None:
     ax.grid(axis="y", **GRID)
 
     sh.plot(t, share, marker="o", markersize=4.5, linewidth=1.4, color=COMM)
-    # the grey band above has a consequence: it is missing from this
-    # denominator, so show how far it could move the answer
-    sh.axhspan(lo, hi, color="#c4c4c4", alpha=0.35, zorder=0)
     sh.axhline(pooled, color="#555555", linewidth=1.0, linestyle=(0, (4, 3)))
-    sh.annotate(f"pooled share of CLASSIFIED deaths  {pooled:.2f}",
-                xy=(t[len(t) // 3], pooled), xytext=(0, -46),
-                textcoords="offset points", ha="center", fontsize=9.5,
-                color="#444444",
-                arrowprops=dict(arrowstyle="-", color="#888888", linewidth=0.8))
-    sh.annotate(f"where it could sit if every unclassified death were, or were "
-                f"not, a community death  ({lo:.2f}–{hi:.2f})",
-                xy=(t[-1], (lo + hi) / 2), xytext=(-8, 30),
-                textcoords="offset points", ha="right", fontsize=8.5,
-                color="#666666",
-                arrowprops=dict(arrowstyle="-", color="#aaaaaa", linewidth=0.8))
+    sh.annotate(f"pooled share of classified deaths  {pooled:.2f}",
+                xy=(t[2], pooled), xytext=(10, -40),
+                textcoords="offset points", ha="left", va="center",
+                fontsize=9.5, color="#444444",
+                arrowprops=dict(arrowstyle="->", color="#888888",
+                                linewidth=0.8, shrinkA=2, shrinkB=3))
     sh.set_axisbelow(True)
     sh.set_ylim(0, 1.05)
     sh.set_ylabel("community share", fontsize=10)
@@ -1002,7 +1029,9 @@ FIGURES = {
     "ascertainment": (draw_ascertainment,
                       {"split": "data/build/streams/"
                                 "community_deaths_daily_national.tsv",
-                       "deaths": "data/build/streams/deaths_daily_national.tsv"}),
+                       "deaths": "data/build/streams/deaths_daily_national.tsv",
+                       "zone_status":
+                           "data/build/series/zone_table_status.csv"}),
     "release_grid": (draw_release_grid,
                      {**{f"stream_{n}": f"data/build/streams/{n}.tsv"
                          for n, _ in RELEASE_ROWS},
