@@ -475,15 +475,27 @@ def draw_ascertainment(inputs: dict[str, Path], out: Path) -> None:
     isolation rather than as a parsing artifact.
     """
     d = pl.read_csv(inputs["split"], separator="\t", try_parse_dates=True)
-    d = d.drop_nulls(["community_deaths_national", "deaths_split_national"])
-    d = d.filter(pl.col("deaths_split_national") > 0).sort("time")
+    deaths = pl.read_csv(inputs["deaths"], separator="\t", try_parse_dates=True)
+    d = (d.drop_nulls(["community_deaths_national", "deaths_split_national"])
+         .filter(pl.col("deaths_split_national") > 0)
+         .join(deaths.select("time", "deaths_national"), on="time", how="left")
+         .sort("time"))
 
     t = [mdates.date2num(x) for x in d["time"].to_list()]
     comm = d["community_deaths_national"].to_list()
     total = d["deaths_split_national"].to_list()
     etc = [a - b for a, b in zip(total, comm)]
+    # Deaths counted as confirmed but never classified either way. Clamped at
+    # zero: on three days the classified split EXCEEDS the day's cumulative
+    # movement (2 Aug by 22, from sitrep 080, whose daily block is displaced
+    # by one row), which is a source inconsistency, not a negative quantity.
+    unclass = [max(0, (a or 0) - b)
+               for a, b in zip(d["deaths_national"].to_list(), total)]
     share = [c / s for c, s in zip(comm, total)]
-    overall = sum(comm) / sum(total)
+    pooled = sum(comm) / sum(total)
+    # What the unclassified deaths could do to that share, at the extremes.
+    all_deaths = sum(total) + sum(unclass)
+    lo, hi = sum(comm) / all_deaths, (sum(comm) + sum(unclass)) / all_deaths
 
     COMM, ETC = "#D55E00", "#0072B2"
     fig, (ax, sh) = plt.subplots(
@@ -494,17 +506,45 @@ def draw_ascertainment(inputs: dict[str, Path], out: Path) -> None:
            "(post-mortem swab) — never isolated")
     ax.bar(t, etc, width=0.8, bottom=comm, color=ETC,
            label="died in a treatment centre — already in care")
+    ax.bar(t, unclass, width=0.8, bottom=[a + b for a, b in zip(comm, etc)],
+           color="#c4c4c4", label="counted as a confirmed death, but the "
+           "report classified it neither way")
+    # TWO BACKLOG RELEASES WOULD OTHERWISE SET THE SCALE. 22 July carries 174
+    # unclassified deaths and 30 July 76, against a daily norm near 5, so an
+    # honest full-height axis squashes every other day into illegibility. The
+    # axis is clipped to the classified range and the clipped bars are
+    # labelled with their true totals -- the reader loses no number.
+    top = max(a + b for a, b in zip(comm, etc)) * 1.30
+    for xi, c, e, u in zip(t, comm, etc, unclass):
+        if c + e + u > top:
+            ax.annotate(f"{u} unclassified\nof {c + e + u} that day\n"
+                        f"(batch consolidation)",
+                        xy=(xi, top), xytext=(0, -6),
+                        textcoords="offset points", ha="center", va="top",
+                        fontsize=7.5, color="#4a4a4a")
+    ax.set_ylim(0, top)
     ax.set_axisbelow(True)          # gridlines behind the bars, not through them
     ax.set_ylabel("confirmed deaths per report-day", fontsize=10)
-    ax.legend(loc="upper left", frameon=False, fontsize=10)
-    ax.set_title("Every confirmed death the reports classify, by where it was found",
-                 loc="left", fontsize=11, color="#333333")
+    # upper right: the two clipped bars sit centre-left
+    ax.legend(loc="upper right", frameon=False, fontsize=9.5)
     ax.grid(axis="y", **GRID)
 
     sh.plot(t, share, marker="o", markersize=4.5, linewidth=1.4, color=COMM)
-    sh.axhline(overall, color="#555555", linewidth=1.0, linestyle=(0, (4, 3)))
-    sh.text(t[0], overall + 0.022, f"period share  {overall:.2f}", fontsize=9.5,
-            color="#555555")
+    # the grey band above has a consequence: it is missing from this
+    # denominator, so show how far it could move the answer
+    sh.axhspan(lo, hi, color="#c4c4c4", alpha=0.35, zorder=0)
+    sh.axhline(pooled, color="#555555", linewidth=1.0, linestyle=(0, (4, 3)))
+    sh.annotate(f"pooled share of CLASSIFIED deaths  {pooled:.2f}",
+                xy=(t[len(t) // 3], pooled), xytext=(0, -46),
+                textcoords="offset points", ha="center", fontsize=9.5,
+                color="#444444",
+                arrowprops=dict(arrowstyle="-", color="#888888", linewidth=0.8))
+    sh.annotate(f"where it could sit if every unclassified death were, or were "
+                f"not, a community death  ({lo:.2f}–{hi:.2f})",
+                xy=(t[-1], (lo + hi) / 2), xytext=(-8, 30),
+                textcoords="offset points", ha="right", fontsize=8.5,
+                color="#666666",
+                arrowprops=dict(arrowstyle="-", color="#aaaaaa", linewidth=0.8))
     sh.set_axisbelow(True)
     sh.set_ylim(0, 1.05)
     sh.set_ylabel("community share", fontsize=10)
@@ -520,8 +560,11 @@ def draw_ascertainment(inputs: dict[str, Path], out: Path) -> None:
         a.spines["left"].set_color("#999999")
         a.spines["bottom"].set_color("#999999")
 
+    span = f"{d['time'].min():%d %b} to {d['time'].max():%d %b %Y}"
     fig.suptitle("Confirmed deaths found in the community, not in care",
                  x=0.006, ha="left", fontsize=15, fontweight="bold")
+    ax.set_title("Every confirmed death the reports classify, by where it was "
+                 f"found · {span}", loc="left", fontsize=11, color="#333333")
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, dpi=200)
     plt.close(fig)
@@ -958,7 +1001,8 @@ FIGURES = {
     # listed one by one rather than hidden behind a directory glob.
     "ascertainment": (draw_ascertainment,
                       {"split": "data/build/streams/"
-                                "community_deaths_daily_national.tsv"}),
+                                "community_deaths_daily_national.tsv",
+                       "deaths": "data/build/streams/deaths_daily_national.tsv"}),
     "release_grid": (draw_release_grid,
                      {**{f"stream_{n}": f"data/build/streams/{n}.tsv"
                          for n, _ in RELEASE_ROWS},
