@@ -1313,7 +1313,7 @@ def test_the_suspected_case_tile_is_not_published(n):
 
 import shutil                                                    # noqa: E402
 
-import build_streams as B                                        # noqa: E402
+import build_streams as BS                                        # noqa: E402
 
 STREAMS = ROOT / "data" / "build" / "streams"
 needs_streams = pytest.mark.skipif(
@@ -1324,7 +1324,7 @@ needs_streams = pytest.mark.skipif(
 def test_carry_forward_leaves_no_negative_and_moves_no_total():
     """The two properties the whole scheme rests on, on the real shape:
     Nord-Kivu's 11 June cumulative falls by 4, and 13 June's 22 pays it."""
-    emitted, outstanding = B.carry_forward([3, -4, 0, 22])
+    emitted, outstanding = BS.carry_forward([3, -4, 0, 22])
     assert emitted == [3, 0, 0, 18]
     assert sum(emitted) == sum([3, -4, 0, 22])
     assert min(emitted) == 0 and outstanding[-1] == 0
@@ -1333,14 +1333,14 @@ def test_carry_forward_leaves_no_negative_and_moves_no_total():
 def test_carry_forward_is_not_clipping():
     """Clipping `[-4, 9]` gives 9 against a cumulative that moved 5, so the
     stream would permanently carry the four cases the source withdrew."""
-    emitted, _ = B.carry_forward([-4, 9])
+    emitted, _ = BS.carry_forward([-4, 9])
     assert emitted == [0, 5] and sum(emitted) == 5
 
 
 def test_a_deficit_larger_than_the_next_row_keeps_going():
     """Haut-Uélé's -6 of 18 July is not repaid until 22 July, across two days
     that report nothing and one that reports 5."""
-    emitted, outstanding = B.carry_forward([-6, 0, 0, 5, 6])
+    emitted, outstanding = BS.carry_forward([-6, 0, 0, 5, 6])
     assert emitted == [0, 0, 0, 0, 5]
     assert outstanding == [6, 6, 6, 1, 0]
     assert sum(emitted) == 5
@@ -1350,7 +1350,7 @@ def test_an_undischarged_deficit_is_reported_not_swallowed():
     """A withdrawal on the last report has nothing left to come out of. The
     function does not hide it: the outstanding balance is still 3 at the end,
     which is what the build's gate reads."""
-    emitted, outstanding = B.carry_forward([10, -5, 2])
+    emitted, outstanding = BS.carry_forward([10, -5, 2])
     assert emitted == [10, 0, 0]
     assert outstanding[-1] == 3
     assert sum(emitted) == sum([10, -5, 2]) + 3      # short by exactly the carry
@@ -1361,10 +1361,10 @@ def test_negative_values_reads_the_published_file(tmp_path):
     never passed through the carry -- a stock reading, or one added later."""
     good = tmp_path / "cases_x.tsv"
     good.write_text("time\tcases_x\n2026-06-01\t3\n")
-    assert B.negative_values([good]) == []
+    assert BS.negative_values([good]) == []
     bad = tmp_path / "cases_y.tsv"
     bad.write_text("time\tcases_y\n2026-06-01\t3\n2026-06-02\t-1\n")
-    found = B.negative_values([bad])
+    found = BS.negative_values([bad])
     assert len(found) == 1 and "cases_y = -1 at 2026-06-02" in found[0]
 
 
@@ -1375,7 +1375,7 @@ def test_the_built_streams_publish_no_negative_count():
     every = [p for p in sorted(STREAMS.glob("*.tsv"))
              if p.name not in ("revisions.tsv", "uganda_exports.tsv")]
     assert every, "no streams found"
-    assert B.negative_values(every) == []
+    assert BS.negative_values(every) == []
 
 
 @needs_streams
@@ -1466,7 +1466,7 @@ def _run_build(monkeypatch, panel, out_dir):
         "--geojson", str(ROOT / "data/raw/health_zones.geojson"),
         "--population", str(ROOT / "data/raw/zone_population.csv"),
         "--out-dir", str(out_dir)])
-    B.main()
+    BS.main()
 
 
 needs_pdftotext = pytest.mark.skipif(
@@ -1529,7 +1529,7 @@ def test_the_same_build_passes_when_the_revision_discharges(monkeypatch,
     itu = rev.filter(pl.col("stream") == "cases_daily_ituri")
     assert itu["raw"].to_list() == [-15, 35]
     assert itu["carry_after"].to_list() == [15, 0]
-    assert B.negative_values([p for p in sorted(out.glob("*.tsv"))
+    assert BS.negative_values([p for p in sorted(out.glob("*.tsv"))
                               if p.name != "revisions.tsv"]) == []
 
 
