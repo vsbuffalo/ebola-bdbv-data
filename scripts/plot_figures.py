@@ -210,11 +210,11 @@ FLAG_COLOR = {
     "stale_distribution": "#D55E00",      # a distribution carried forward
 }
 FLAG_LABEL = {
-    "-": "clean",
+    "-": "no caveat printed",
     "consolidating": "source calls recent data provisional",
-    "harmonisation": "harmonisation",
-    "harmonisation_undercount": "harmonisation (undercount)",
-    "stale_distribution": "stale distribution",
+    "harmonisation": "may be revised",
+    "harmonisation_undercount": "source says too low",
+    "stale_distribution": "distribution carried forward",
 }
 
 #: Extraction route -> the report layout it implies. A change here is a change
@@ -329,26 +329,19 @@ def draw_release_grid(inputs: dict[str, Path], out: Path) -> None:
     # The marker says a day's arithmetic does not close; the number says by
     # how much, because "does not close" covers both a single miscounted case
     # and the 66 Ituri cases of 12 July. Where a date carries several
-    # residuals the largest is shown, so it bounds the rest. All markers sit
-    # on ONE row; where two dates are close enough that their labels would
-    # touch, the label is nudged sideways rather than the marker moved, so
-    # the row of triangles stays a clean reference line.
+    # residuals the largest is shown, so it bounds the rest. One row, each
+    # label centred on its own marker.
     worst: dict[str, int] = {}
     for r in exc.iter_rows(named=True):
         d, g = r["date"], int(r["expected_gap"])
         if abs(g) > abs(worst.get(d, 0)):
             worst[d] = g
     hi = ny + 0.42
-    ordered = sorted(k for k in worst if k in x)
-    MIN_SEP = 3.2          # columns needed before two labels touch
-    prev_label_x = -1e9
-    for d in ordered:
+    for d in sorted(k for k in worst if k in x):
         cx = x[d] + 0.5
         ax.plot([cx], [hi], marker="v", markersize=5,
                 color="#D55E00", clip_on=False)
-        lx = cx if cx - prev_label_x >= MIN_SEP else prev_label_x + MIN_SEP
-        prev_label_x = lx
-        ax.text(lx, hi + 0.30, f"{worst[d]:+d}", ha="center", va="bottom",
+        ax.text(cx, hi + 0.30, f"{worst[d]:+d}", ha="center", va="bottom",
                 fontsize=7.5, color="#D55E00", clip_on=False)
 
     # --- format eras, from the route each report was read through --------
@@ -427,12 +420,12 @@ def draw_release_grid(inputs: dict[str, Path], out: Path) -> None:
     # constrained_layout does not reserve space for a figure legend, so the
     # band is carved out of the layout rect explicitly or the second row
     # falls off the page.
-    fig.get_layout_engine().set(rect=(0, 0.115, 1, 0.895))
+    fig.get_layout_engine().set(rect=(0, 0.105, 1, 0.895))
     leg1 = fig.legend(handles=handles, loc="lower left", ncol=2,
                       frameon=False, fontsize=8.5, handlelength=1.1,
                       handleheight=1.1, columnspacing=1.6, labelspacing=0.6,
-                      bbox_to_anchor=(0.055, 0.004),
-                      title="what the cell says")
+                      bbox_to_anchor=(0.055, -0.012),
+                      title="Observation status")
     leg1.get_title().set_fontsize(8.5)
     leg1.get_title().set_ha("left")
 
@@ -450,8 +443,8 @@ def draw_release_grid(inputs: dict[str, Path], out: Path) -> None:
     leg2 = fig.legend(handles=rhandles, loc="lower right", ncol=2,
                       frameon=False, fontsize=8.5, handlelength=1.1,
                       handleheight=1.1, columnspacing=1.6, labelspacing=0.6,
-                      bbox_to_anchor=(0.985, 0.004),
-                      title="which table the report printed")
+                      bbox_to_anchor=(0.985, -0.012),
+                      title="Report table type")
     leg2.get_title().set_fontsize(8.5)
     fig.add_artist(leg1)
 
