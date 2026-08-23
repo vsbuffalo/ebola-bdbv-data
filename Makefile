@@ -222,13 +222,37 @@ watch-data-channel:
 ##            writing its files: the working tree masked the exit code, and
 ##            only the consumer's clean-clone rebuild caught it. The PDF
 ##            archive is not committed, so it is shared into the clone.
+##            It also regenerates the COMMITTED figures in the clone and
+##            requires them to be byte-identical to the ones in git. Those
+##            figures are published artefacts -- the README embeds them and
+##            the cross-repo channel links them -- so a stale one is a wrong
+##            claim that travels. They went stale exactly once, silently:
+##            docs/figures/streams_detail.png still showed the pre-r1
+##            laboratory series after the death-split fix landed. Figure
+##            output is byte-deterministic (verified: two builds from
+##            identical data hash the same), so equality is a fair test and a
+##            diff here means the committed copy was not refreshed.
+##            Ephemeral EDA figures under data/build are NOT gated: nothing
+##            links them and they are rebuilt on demand.
 RC_DIR ?= /tmp/ebola-bdbv-release-check
 release-check:
 	rm -rf $(RC_DIR)
 	git clone -q . $(RC_DIR)
 	ln -s $$(pwd)/data/raw/sitrep_pdfs $(RC_DIR)/data/raw/sitrep_pdfs
-	cd $(RC_DIR) && make build && make streams
-	@echo "release-check PASSED: the committed state builds from a fresh clone"
+	# external/ is gitignored but pinned in external.lock, so share the
+	# verified checkout rather than re-cloning it over the network: an
+	# offline gate must stay offline.
+	@test -d external || { echo "release-check needs external/ -- run 'make external'"; exit 2; }
+	ln -s $$(pwd)/external $(RC_DIR)/external
+	cd $(RC_DIR) && make build && make streams && make figures && make compare
+	@echo "--- committed figures must match what the committed state produces ---"
+	@for f in $$(git ls-files 'docs/figures/*.png'); do \
+		cmp -s "$$f" "$(RC_DIR)/$$f" \
+			&& echo "    ok    $$f" \
+			|| { echo "    STALE $$f -- rebuild and commit it"; exit 3; }; \
+	done
+	@echo "release-check PASSED: the committed state builds from a fresh clone,"
+	@echo "and every committed figure is reproducible from it"
 
 ## escape-fraction -- the share of confirmed cases first ascertained AT DEATH
 ##            rather than alive, reported under four exclusion rules because
