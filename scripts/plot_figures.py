@@ -482,18 +482,27 @@ def draw_ascertainment(inputs: dict[str, Path], out: Path) -> None:
          .join(deaths.select("time", "deaths_national"), on="time", how="left")
          .sort("time"))
 
+    # DO NOT DIVIDE THESE BY days_covered. The column means two different
+    # things across this repo's streams, and here it is the WRONG one. The
+    # split is flow-summed -- it is the report's own 24-hour figure -- so
+    # `days_covered` records the gap since the previous observation, not the
+    # span the count covers. Sitrep 089 (9 Aug) carries 51 classified deaths
+    # with days_covered = 4 while its neighbours run 50 to 67 in a single day;
+    # dividing by 4 would draw 13 and invent a collapse that did not happen.
+    # The national total below IS cumulative-differenced, so it divides. The
+    # asymmetry is real and it is the reason this comment exists.
     t = [mdates.date2num(x) for x in d["time"].to_list()]
-    comm = d["community_deaths_national"].to_list()
-    total = d["deaths_split_national"].to_list()
+    comm_n = comm = d["community_deaths_national"].to_list()
+    total_n = total = d["deaths_split_national"].to_list()
     etc = [a - b for a, b in zip(total, comm)]
     # Deaths counted as confirmed but never classified either way. Clamped at
     # zero: on three days the classified split EXCEEDS the day's cumulative
     # movement (2 Aug by 22, from sitrep 080, whose daily block is displaced
     # by one row), which is a source inconsistency, not a negative quantity.
     unclass = [max(0, (a or 0) - b)
-               for a, b in zip(d["deaths_national"].to_list(), total)]
-    share = [c / s for c, s in zip(comm, total)]
-    pooled = sum(comm) / sum(total)
+               for a, b in zip(d["deaths_national"].to_list(), total_n)]
+    share = [c / s for c, s in zip(comm_n, total_n)]
+    pooled = sum(comm_n) / sum(total_n)
 
 
     COMM, ETC = "#D55E00", "#0072B2"
@@ -527,9 +536,9 @@ def draw_ascertainment(inputs: dict[str, Path], out: Path) -> None:
         pl.col("time").is_between(d["time"].min(), d["time"].max())
         & ~pl.col("time").is_in(d["time"].to_list()))
     for r in unsplit.iter_rows(named=True):
-        span = max(1, int(r["days_covered"] or 1))
-        right = mdates.date2num(r["time"]) + 0.5
-        ax.bar(right - span / 2, r["deaths_national"], width=span * 0.94,
+        sp = max(1, int(r["days_covered"] or 1))
+        edge = mdates.date2num(r["time"]) + 0.5
+        ax.bar(edge - sp / 2, r["deaths_national"] / sp, width=sp * 0.94,
                facecolor="none", edgecolor="#6a6a6a", linewidth=1.1,
                linestyle=(0, (3, 2)), zorder=3,
                label="_" if r["time"] != unsplit["time"][0]
@@ -571,7 +580,7 @@ def draw_ascertainment(inputs: dict[str, Path], out: Path) -> None:
 
     ax.set_ylim(0, top)
     ax.set_axisbelow(True)          # gridlines behind the bars, not through them
-    ax.set_ylabel("confirmed deaths per report-day", fontsize=10)
+    ax.set_ylabel("confirmed deaths per day", fontsize=10)
     # upper right: the two clipped bars sit centre-left. A translucent white
     # box so the entries stay legible where they cross gridlines and bars.
     leg = ax.legend(loc="upper right", fontsize=9.5, frameon=True, framealpha=0.9,
@@ -582,16 +591,19 @@ def draw_ascertainment(inputs: dict[str, Path], out: Path) -> None:
     sh.plot(t, share, marker="o", markersize=4.5, linewidth=1.4, color=COMM)
     sh.axhline(pooled, color="#555555", linewidth=1.0, linestyle=(0, (4, 3)))
     # text starts at the left edge of the series and points up to the line
-    sh.annotate(f"pooled share of\nclassified deaths  {pooled:.2f}",
-                xy=(t[3], pooled), xytext=(t[0], 0.29),
+    sh.annotate(f"pooled share of\nclassified deaths  {pooled:.0%}",
+                xy=(t[2], pooled), xytext=(t[0], 0.28),
                 textcoords="data", ha="left", va="center",
                 fontsize=9.5, color="#444444", linespacing=1.5,
-                arrowprops=dict(arrowstyle="->", color="#888888",
-                                linewidth=0.8, shrinkA=3, shrinkB=3))
+                arrowprops=dict(arrowstyle="->", color="#777777",
+                                linewidth=1.3, shrinkA=4, shrinkB=4))
     sh.set_axisbelow(True)
     sh.set_ylim(0, 1.05)
+    sh.set_yticks([0, 0.2, 0.4, 0.6, 0.8, 1.0])
+    sh.set_yticklabels([f"{v:.0%}" for v in (0, .2, .4, .6, .8, 1.0)])
     sh.set_ylabel("community share", fontsize=10)
-    sh.set_title("The share never in care — flat near 0.6, not climbing",
+    sh.set_title(f"The share never in care — flat near {pooled:.0%}, "
+                 "not climbing",
                  loc="left", fontsize=11, color="#333333")
     sh.grid(axis="y", **GRID)
     sh.xaxis.set_major_locator(mdates.WeekdayLocator(byweekday=mdates.MO))
@@ -603,11 +615,13 @@ def draw_ascertainment(inputs: dict[str, Path], out: Path) -> None:
         a.spines["left"].set_color("#999999")
         a.spines["bottom"].set_color("#999999")
 
-    span = f"{d['time'].min():%d %b} to {d['time'].max():%d %b %Y}"
+    bold_span = (f"{d['time'].min():%d\\ %b}\\ to\\ "
+                 f"{d['time'].max():%d\\ %b\\ %Y}")
     fig.suptitle("Confirmed deaths found in the community, not in care",
                  x=0.006, ha="left", fontsize=15, fontweight="bold")
     ax.set_title("Every confirmed death the reports classify, by where it was "
-                 f"found · {span}", loc="left", fontsize=11, color="#333333")
+                 f"found · $\\bf{{{bold_span}}}$",
+                 loc="left", fontsize=11, color="#333333")
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, dpi=200)
     plt.close(fig)
