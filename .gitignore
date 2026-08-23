@@ -1,7 +1,13 @@
 # The PDF archive: ~141 MB, regenerable from the committed index and manifest.
 # Pinned instead by data/raw/insp_sitrep_index.tsv (what exists upstream),
 # data/raw/sitrep_pdfs.manifest.tsv (sha256 per file) and data/raw/PROVENANCE.tsv.
-data/raw/sitrep_pdfs/
+#
+# NO TRAILING SLASH, deliberately: a second worktree or a scratch clone
+# usually reaches the archive by SYMLINK rather than holding a copy -- which
+# is what `make release-check` does -- and a trailing slash matches only real
+# directories, so the link showed up as an untracked file one `git add -A`
+# away from committing a path that exists on one machine.
+data/raw/sitrep_pdfs
 
 # Everything under build/ has a rule. Delete it and `make build` returns it.
 data/build/
@@ -17,7 +23,8 @@ analysis/_site/
 data/trial/
 
 # Comparison sources, cloned by `make external`; pinned by the .commit file.
-external/
+# Same reason as above for the missing trailing slash.
+external
 analysis/data.html
 analysis/*_files/
 analysis/explore.html
