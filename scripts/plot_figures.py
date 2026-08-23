@@ -459,6 +459,108 @@ def draw_release_grid(inputs: dict[str, Path], out: Path) -> None:
     plt.close(fig)
 
 
+def draw_epi_curve(inputs: dict[str, Path], out: Path) -> None:
+    """The outbreak itself: confirmed cases and deaths per day, nationally.
+
+    THE OPENING FIGURE. Everything else in this repo argues about how the
+    numbers were obtained; this one shows what they say.
+
+    Two decisions carry the honesty of it.
+
+    A BAR'S HEIGHT IS A DAILY RATE AND ITS WIDTH ITS OWN WINDOW, so its area
+    is the count. Both of these streams are built by DIFFERENCING a published
+    cumulative, which absorbs days when no report appeared -- so here
+    `days_covered` genuinely is the span the count covers and dividing by it
+    is right. (It would be wrong for the flow-summed streams, where the same
+    column means the gap since the last observation. The column carries two
+    meanings across this repo; see notes/2026-08-22-pipeline-audit.md.)
+
+    A SPIKE IS NOT ALWAYS AN EPIDEMIC. Bars are coloured by the source's own
+    caveat for that report, in the same vocabulary the release-grid figure
+    uses, because the tallest bar in the case series -- 369 confirmations on
+    22 July against a norm near 80 -- is a backlog release, not a day when
+    369 people were found. Drawing it in the same colour as an ordinary day
+    would make a reporting artefact look like an epidemiological event, which
+    is the single most misleading thing this figure could do.
+    """
+    cases = pl.read_csv(inputs["cases"], separator="\t", try_parse_dates=True)
+    deaths = pl.read_csv(inputs["deaths"], separator="\t", try_parse_dates=True)
+
+    fig, (ac, ad) = plt.subplots(
+        2, 1, figsize=(13.333, 7.5), height_ratios=[1.25, 1],
+        sharex=True, constrained_layout=True)
+
+    seen: set[str] = set()
+
+    def bars(ax, df, col, label):
+        """Draw one panel, clipped so the backlog release does not set the
+        scale. The release is real and stays visible -- it is drawn to the top
+        of the panel and labelled with its true count -- but letting a 369
+        against a norm near 80 fix the y-axis flattens the epidemic curve this
+        figure exists to show."""
+        span = [max(1, int(v or 1)) for v in df["days_covered"].to_list()]
+        edge = [mdates.date2num(x) + 0.5 for x in df["time"].to_list()]
+        xs = [e - w / 2 for e, w in zip(edge, span)]
+        ys = [c / w for c, w in zip(df[col].to_list(), span)]
+        top = 1.22 * max(sorted(ys)[:-1])       # ignore the single outlier
+        for x, y, w, r in zip(xs, ys, span, df.iter_rows(named=True)):
+            f = _flag_of(r)
+            seen.add(f)
+            ax.bar(x, y, width=w * 0.9, color=FLAG_COLOR[f], zorder=2)
+            if y > top:
+                ax.annotate(f"{int(round(y * w))}", xy=(x, top), xytext=(0, -3),
+                            textcoords="offset points", ha="center", va="top",
+                            fontsize=8.5, fontweight="bold", color="#7a5200")
+        ax.set_ylim(0, top)
+        ax.set_ylabel(label, fontsize=10)
+        ax.set_axisbelow(True)
+        ax.grid(axis="y", **GRID)
+        for s in ("top", "right"):
+            ax.spines[s].set_visible(False)
+        for s in ("left", "bottom"):
+            ax.spines[s].set_color("#999999")
+        return xs, ys, span
+
+    xs, ys, span = bars(ac, cases, "cases_national", "confirmed cases per day")
+    bars(ad, deaths, "deaths_national", "confirmed deaths per day")
+
+    # Name the backlog release rather than leaving it to be read as a wave.
+    peak = max(range(len(ys)), key=lambda i: ys[i])
+    ac.annotate("one report released a backlog of earlier\n"
+                "confirmations — not a day's incidence",
+                xy=(xs[peak] - 0.6, ac.get_ylim()[1] * 0.80),
+                xytext=(-150, 18), textcoords="offset points",
+                ha="left", va="center", fontsize=9, color="#7a5200",
+                arrowprops=dict(arrowstyle="->", color="#b98b00",
+                                linewidth=1.1, shrinkA=3, shrinkB=3))
+
+    ad.xaxis.set_major_locator(mdates.WeekdayLocator(byweekday=mdates.MO,
+                                                     interval=2))
+    ad.xaxis.set_major_formatter(mdates.DateFormatter("%d %b"))
+
+    handles = [plt.Rectangle((0, 0), 1, 1, facecolor=FLAG_COLOR[f],
+                             label=FLAG_LABEL[f])
+               for f in FLAG_COLOR if f in seen]
+    leg = ac.legend(handles=handles, loc="center right",
+                    bbox_to_anchor=(1.004, 1.0), fontsize=9.5, frameon=True,
+                    framealpha=0.95, facecolor="white", edgecolor="#8a8a8a",
+                    borderpad=0.6, ncol=1, labelspacing=0.5, handlelength=1.3)
+    leg.get_frame().set_linewidth(0.7)
+
+    tot_c = int(cases["cases_national"].sum())
+    tot_d = int(deaths["deaths_national"].sum())
+    fig.suptitle("The 2026 Bundibugyo outbreak, as the situation reports "
+                 "record it", x=0.006, ha="left", fontsize=15,
+                 fontweight="bold")
+    ac.set_title(f"{tot_c:,} confirmed cases and {tot_d:,} confirmed deaths · "
+                 f"$\\bf{{{cases['time'].min():%d\\ %b}\\ to\\ "
+                 f"{cases['time'].max():%d\\ %b\\ %Y}}}$",
+                 loc="left", fontsize=11, color="#333333", pad=8)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out, dpi=200)
+    plt.close(fig)
+
+
 def draw_ascertainment(inputs: dict[str, Path], out: Path) -> None:
     """Where confirmed deaths were found, and what share of them the
     surveillance system never had in care -- at slide proportions.
@@ -1064,6 +1166,9 @@ def draw_residuals(inputs: dict[str, Path], out: Path) -> None:
 FIGURES = {
     # The declared inputs ARE the dependency set, so the stream files are
     # listed one by one rather than hidden behind a directory glob.
+    "epi_curve": (draw_epi_curve,
+                  {"cases": "data/build/streams/cases_daily_national.tsv",
+                   "deaths": "data/build/streams/deaths_daily_national.tsv"}),
     "ascertainment": (draw_ascertainment,
                       {"split": "data/build/streams/"
                                 "community_deaths_daily_national.tsv",
