@@ -421,7 +421,7 @@ def draw_release_grid(inputs: dict[str, Path], out: Path) -> None:
     # constrained_layout does not reserve space for a figure legend, so the
     # band is carved out of the layout rect explicitly or the second row
     # falls off the page.
-    fig.get_layout_engine().set(rect=(0, 0.105, 1, 0.875))
+    fig.get_layout_engine().set(rect=(0, 0.105, 1, 0.895))
     leg1 = fig.legend(handles=handles, loc="lower left", ncol=2,
                       frameon=False, fontsize=8.5, handlelength=1.1,
                       handleheight=1.1, columnspacing=1.6, labelspacing=0.6,
@@ -453,7 +453,7 @@ def draw_release_grid(inputs: dict[str, Path], out: Path) -> None:
                  x=0.008, ha="left", fontsize=14, fontweight="bold")
     ax.set_title(f"{nx} report-days carrying at least one observation · "
                  f"{ny} published streams · {all_dates[0]} to {all_dates[-1]}",
-                 loc="left", fontsize=9.5, color="#555555", pad=8)
+                 loc="left", fontsize=9.5, color="#555555", pad=30)
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, dpi=200)
     plt.close(fig)
@@ -586,9 +586,13 @@ def draw_ascertainment(inputs: dict[str, Path], out: Path) -> None:
     # ABOVE the axes, not inside them. The header band is empty to the right
     # of the subtitle, and a legend sitting in the plot area covers data --
     # here the August gap band and the clipped 22 July bar.
-    leg = ax.legend(loc="lower right", bbox_to_anchor=(1.0, 1.055),
-                    fontsize=9.5, frameon=False, ncol=2, columnspacing=1.8,
-                    handlelength=1.3, handleheight=1.1, borderpad=0.4)
+    # Inside the axes, hard into the top-right corner -- borderaxespad is what
+    # pushes it there. A translucent white box with a thin grey border: over a
+    # bar an unbordered box reads as a hole punched in it.
+    leg = ax.legend(loc="upper right", fontsize=9.5, frameon=True,
+                    framealpha=0.9, facecolor="white", edgecolor="#8a8a8a",
+                    borderpad=0.6, borderaxespad=0.15)
+    leg.get_frame().set_linewidth(0.7)
     ax.grid(axis="y", **GRID)
 
     sh.plot(t, share, marker="o", markersize=4.5, linewidth=1.4, color=COMM)
