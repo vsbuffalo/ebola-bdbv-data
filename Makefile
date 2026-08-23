@@ -205,6 +205,10 @@ figures:
 	# days whose own arithmetic does not close.
 	uv run python scripts/plot_figures.py --figure release_grid \
 		--out data/build/figures/release_grid.png
+	# SLIDE FIGURE, 16:9. Three lineages against each other, and what each
+	# one covers -- the validation slide.
+	uv run python scripts/plot_figures.py --figure validation \
+		--out data/build/figures/validation.png
 	# SLIDE FIGURE, 16:9. The outbreak itself -- the opening slide.
 	uv run python scripts/plot_figures.py --figure epi_curve \
 		--out data/build/figures/epi_curve.png
@@ -226,6 +230,7 @@ figures:
 	cp data/build/figures/release_grid.png docs/figures/
 	cp data/build/figures/ascertainment.png docs/figures/
 	cp data/build/figures/epi_curve.png docs/figures/
+	cp data/build/figures/validation.png docs/figures/
 
 ## watch-data-channel -- poll the shared data channel (which lives in the
 ##            modelling repo's tree) and exit as soon as they write, printing

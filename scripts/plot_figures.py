@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import json
 import math
 import sys
 from pathlib import Path
@@ -646,6 +647,136 @@ def draw_epi_curve(inputs: dict[str, Path], out: Path) -> None:
     plt.close(fig)
 
 
+def draw_validation(inputs: dict[str, Path], out: Path) -> None:
+    """Three independent readings of the same PDFs, and what each one covers.
+
+    THE VALIDATION SLIDE, and it has to make two claims that pull in opposite
+    directions without letting either one swallow the other.
+
+    THE AGREEMENT CLAIM. Three lineages read the same pages: ours, the
+    epiforecasts hand transcription, and INRB-UMIE's. Where they overlap they
+    agree — 71 of 71 national figures against the scan, 2,135 of 2,144
+    zone-day case values against INRB. Drawn as one curve with the others
+    over it, because the point is that you cannot see three lines.
+
+    THE LIMIT OF THAT CLAIM, which the figure must not let a viewer forget:
+    agreement between two readings of one document is evidence about
+    TRANSCRIPTION, never about whether the document is right. All three
+    inherit whatever the source got wrong. That is why the caption says so
+    rather than leaving "validated" to be read as "correct".
+
+    THE COVERAGE CLAIM. Agreement is cheap where lineages overlap; the
+    overlap is the smaller part of the story. We hold 2,940 zone-days against
+    INRB's 2,323 and run a week later, so the lower panel puts the extents
+    side by side. A slide that showed only agreement would imply the lineages
+    are interchangeable, and they are not.
+    """
+    zc = pl.read_csv(inputs["zone_comparison"], infer_schema_length=None)
+    sc = pl.read_csv(inputs["scan"], infer_schema_length=None)
+    zt = pl.read_csv(inputs["zone_table"], infer_schema_length=None)
+    summ = pl.read_csv(inputs["summary"], infer_schema_length=None)
+    meta = json.loads(Path(inputs["meta"]).read_text())
+
+    fig = plt.figure(figsize=(13.333, 7.5), constrained_layout=True)
+    gs = fig.add_gridspec(2, 1, height_ratios=[3.2, 1], hspace=0.05)
+    ax, cov = fig.add_subplot(gs[0]), fig.add_subplot(gs[1])
+    fig.get_layout_engine().set(rect=(0, 0, 1, 0.885))
+
+    OURS, SCAN, INRB = "#0072B2", "#111111", "#D55E00"
+
+    # OURS IS THE PRINTED NATIONAL CUMULATIVE, not a running sum of the daily
+    # stream. Summing increments from zero starts the curve 51 cases low --
+    # the total already standing when the daily series opens on 20 May -- and
+    # would have shown us permanently below two lineages we in fact match.
+    ours = (pl.concat([
+        zt.filter(pl.col("level") == "national")
+          .select("date", "cum_cases"),
+        summ.filter(pl.col("level") == "national")
+            .select("date", "cum_cases")])
+        .drop_nulls("cum_cases")
+        .group_by("date").agg(pl.col("cum_cases").max())
+        .with_columns(pl.col("date").str.to_date()).sort("date"))
+    t = [mdates.date2num(x) for x in ours["date"].to_list()]
+    ax.plot(t, ours["cum_cases"].to_list(), color=OURS, linewidth=2.6,
+            label="ours", zorder=2)
+
+    s = sc.with_columns(pl.col("date").str.to_date()).sort("date")
+    ax.scatter([mdates.date2num(x) for x in s["date"].to_list()],
+               s["scan_cases"].to_list(), s=42, facecolor="none",
+               edgecolor=SCAN, linewidths=1.3, zorder=3,
+               label="epiforecasts hand transcription")
+
+    inrb = (zc.with_columns(pl.col("date").str.to_date())
+            .drop_nulls("inrb_cases").group_by("date")
+            .agg(pl.col("inrb_cases").sum()).sort("date"))
+    ax.plot([mdates.date2num(x) for x in inrb["date"].to_list()],
+            inrb["inrb_cases"].to_list(), color=INRB, linewidth=1.6,
+            linestyle=(0, (5, 3)), zorder=4, label="INRB-UMIE transcription")
+
+    ax.set_ylabel("cumulative confirmed cases, national", fontsize=10)
+    ax.set_axisbelow(True)
+    ax.grid(axis="y", **GRID)
+    for sp in ("top", "right"):
+        ax.spines[sp].set_visible(False)
+    for sp in ("left", "bottom"):
+        ax.spines[sp].set_color("#999999")
+    ax.xaxis.set_major_locator(mdates.WeekdayLocator(byweekday=mdates.MO,
+                                                     interval=2))
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%d %b"))
+
+    sm, im = meta["scan"], meta["inrb"]
+    ax.annotate(f"{sm['equal']} of {sm['compared']} national figures identical "
+                f"to the hand transcription\n"
+                f"{im['cases_equal']:,} of {im['cases_compared']:,} zone-day "
+                f"case values identical to INRB",
+                xy=(0.015, 0.965), xycoords="axes fraction", ha="left",
+                va="top", fontsize=10.5, color="#333333")
+
+    # --- coverage, the half of the story agreement cannot tell -------------
+    ours_days = (zt.filter(pl.col("level") == "zone")
+                 .with_columns(pl.col("date").str.to_date()))
+    rows = [
+        ("ours", ours_days["date"].min(), ours_days["date"].max(),
+         im["ours_zone_days"], OURS),
+        ("INRB-UMIE", zc["date"].min(), im["inrb_last_date"],
+         im["inrb_zone_days"], INRB),
+    ]
+    for yi, (name, lo, hi, n, colour) in enumerate(reversed(rows)):
+        a = mdates.date2num(dt.date.fromisoformat(str(lo)))
+        b = mdates.date2num(dt.date.fromisoformat(str(hi)))
+        cov.barh(yi, b - a, left=a, height=0.32, color=colour, alpha=0.85)
+        cov.text(b + 1.5, yi, f"{n:,} zone-days  ·  to {dt.date.fromisoformat(str(hi)):%d %b}",
+                 va="center", ha="left", fontsize=9.5, color="#333333")
+        cov.text(-0.008, yi, name, transform=cov.get_yaxis_transform(),
+                 ha="right", va="center", fontsize=10)
+    cov.set_ylim(-0.6, len(rows) - 0.4)
+    cov.set_yticks([])
+    cov.set_xlim(ax.get_xlim())
+    cov.set_title("…but the lineages do not cover the same ground",
+                  loc="left", fontsize=10.5, color="#333333", pad=6)
+    for sp in cov.spines.values():
+        sp.set_visible(False)
+    cov.tick_params(labelbottom=False, length=0)
+
+    fig.suptitle("Three independent readings of the same situation reports",
+                 x=0.006, y=0.985, ha="left", va="top", fontsize=15,
+                 fontweight="bold")
+    fig.text(0.006, 0.932,
+             "Agreement between two readings of one document is evidence "
+             "about transcription — never about whether the document is right.",
+             ha="left", va="top", fontsize=11, color="#333333")
+
+    leg = ax.legend(loc="center right", bbox_to_anchor=(1.004, 1.0),
+                    fontsize=9.5, frameon=True, framealpha=0.95,
+                    facecolor="white", edgecolor="#8a8a8a", borderpad=0.6,
+                    labelspacing=0.5, handlelength=1.8)
+    leg.get_frame().set_linewidth(0.7)
+
+    out.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out, dpi=200)
+    plt.close(fig)
+
+
 def draw_ascertainment(inputs: dict[str, Path], out: Path) -> None:
     """Where confirmed deaths were found, and what share of them the
     surveillance system never had in care -- at slide proportions.
@@ -1251,6 +1382,12 @@ def draw_residuals(inputs: dict[str, Path], out: Path) -> None:
 FIGURES = {
     # The declared inputs ARE the dependency set, so the stream files are
     # listed one by one rather than hidden behind a directory glob.
+    "validation": (draw_validation,
+                   {"zone_comparison": "data/build/compare/zone_comparison.csv",
+                    "scan": "data/build/compare/scan_comparison.csv",
+                    "zone_table": "data/build/series/zone_table.csv",
+                    "summary": "data/build/series/province_summary.csv",
+                    "meta": "data/build/compare/compare_meta.json"}),
     "epi_curve": (draw_epi_curve,
                   {"cases": "data/build/streams/cases_daily_national.tsv",
                    "deaths": "data/build/streams/deaths_daily_national.tsv"}),
