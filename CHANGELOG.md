@@ -88,7 +88,11 @@ now 53 of 62 province-days equal, from 52).
 
 **A note for anyone modelling ρ (registry → report).** The same sentence
 states why laboratory positives run slightly *above* new confirmed cases:
-*"53 positifs … 39 nouveaux cas confirmés et 18 reprélèvements"* — re-swabs
+*"(14) reprélèvements positifs ont également été rendus, portant à 53 du
+jour"*, against 39 new confirmed cases — 39 + 14 = 53. (The same report's
+laboratory sentence says *18* reprélèvements, which does not close; sitrep 080
+contradicts itself, and its whole daily block is displaced by one row — see
+`notes/2026-08-22-pipeline-audit.md`.) Re-swabs
 of already-confirmed patients test positive again. Positives and new cases
 are different events, and the gap is re-testing, not unreported cases.
 

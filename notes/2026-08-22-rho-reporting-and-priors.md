@@ -268,12 +268,12 @@ named in §8.
 | **ρ** | fix 1, or `beta(60, 2)` | the reports' accounting identity, §3 | **strong** |
 | **ρ_lab** | remove; handle coverage structurally | §4 | **it was measuring an artefact** |
 | **γq/τ** | 0.41 – 0.54, or fit binomially | our escape fraction, `make escape-fraction` | **measured** |
-| **f_cfr** | Beta centred 0.46, sd ≈ 0.05 | Roddy 0.42, Kratz 0.50, our ledger 0.456 | **strong — three lineages** |
+| **f_cfr** | Beta centred 0.42, sd ≈ 0.10 | Roddy 0.42 (n=26), Kratz 0.50 (n=18), our ledger ≤0.456 (n=664) | **moderate — two outbreaks, one clinical group, n=44 published** — see §6.1, corrected 2026-08-22 |
 | **δ** | Gamma centred 0.115/day (8.7 d) | our care ledger 8.9 d, census fit 8.8 d | **strong — two routes** |
 | **q_comm** | Beta mean 0.45, sd ≈ 0.12 | BDBV species CFR 0.34–0.42 × swab ascertainment | moderate |
 | **p_h** | Beta mean 0.80, sd ≈ 0.07 | ~20 % never-retained, compartment balance | moderate |
 | **dwell in I** | Erlang shape 2–3 | serial-interval gamma CV 0.66 ⟹ shape ≈ 2.3 | moderate |
-| overall ascertainment | wide, centred well below 1 | Montserrado 26 %, Beni ~48 % | weak — prior-driven |
+| overall ascertainment | wide, centred well below 1 | Montserrado 26 % (Gignoux) — **Beni is not an ascertainment estimate, see §6.3, corrected 2026-08-22** | weak — one anchor, prior-driven |
 
 ### 6.1 f_cfr — fatality among those who reach care
 
@@ -283,11 +283,52 @@ named in §8.
 | Kratz et al., *PLOS ONE* 10(6):e0129333, 2015 | Isiro, DRC 2012, treatment centre | **9/18 = 0.50** |
 | our care ledger (`make care-ledger`) | DRC 2026, 664 exits from care | **≤ 0.456** |
 
-Roddy states it outright: *"Eleven of the 26 patients died (CFR = 42%)"*. The
-three bracket 0.42–0.50 with ours in the middle. The model's existing
-`beta(4, 5)` prior (mean 0.44) already covers this well — so the fitted 0.310
-is being driven by structure or data, not by the prior, and 5.1 is the more
-likely remedy than a tighter prior.
+Roddy states it outright: *"Eleven of the 26 patients died (CFR = 42%)"*, and
+the denominator is *"26 of the 30 hospitalised laboratory-confirmed EHF
+patients"* — so it is genuinely an in-care fatality. Kratz: *"CFR of ETC cases
+(all confirmed) was 50.0%"*, and *"The 18 patients who reached the ETC were all
+confirmed cases."* The model's existing `beta(4, 5)` prior (mean 0.44) covers
+both, so the fitted 0.310 is driven by structure or data, not by the prior.
+
+**Corrected 2026-08-22 — this evidence base is thinner and more tangled than
+the row above originally claimed.**
+
+- **These are not three independent lineages.** Kratz and the line-list
+  reanalysis are the **same outbreak** (Isiro, DRC 2012), so agreement between
+  them is evidence about one line list. And **Roddy P. is a co-author on
+  Kratz**. What exists is two outbreaks, one clinical group, and **44 published
+  in-care patients** — 26 in Uganda 2007–08 and 18 in Isiro 2012.
+- **A fourth "source" was cited here and in a dozen model docstrings that is
+  not a publication.** *"Funk & Abbott 2026, 0.59 [0.46, 0.72] (22/37)"* is
+  `sbfnk/bdbv-linelist-analysis` — a GitHub repository carried as an
+  uninitialised git submodule of `epiforecasts/BVDOutbreakSize`. No paper, no
+  preprint, no DOI. **And the number is wrong**: the figure the upstream
+  project itself quotes from that reanalysis is *"a baseline of 0.47 (95% CrI
+  0.31–0.65) for non-healthcare-worker (non-HCW) confirmed cases"*
+  (`docs/examples/analysis.jl:731`), not 0.59 [0.46, 0.72]. Cite it as software
+  with a commit SHA or not at all, and re-derive the number from the source
+  before using it — the submodule is uninitialised, so nobody here has read it.
+- **MacNeil's 17/43 = 40 % belongs to a different quantity** and should not be
+  listed beside these. It is a fatality over everyone acutely confirmed,
+  treated or not — a confirmed-case CFR, not an in-care one.
+- **The anchors disagree with each other, in a direction that favours our
+  fit.** Van Kerkhove Table 5 puts the BDBV *population* CFR at 0.34–0.42
+  (§6.2), while these two in-care series sit at 0.42 and 0.50 — in-care
+  fatality at or above population fatality, which cannot hold if care does
+  anything. The upstream project states the expected ordering explicitly:
+  in-care fatality is *"a fatality conditional on admission rather than a
+  causal treatment effect, **sitting below the infection case-fatality
+  ratio** where care lowers mortality"*, and their own population prior is
+  `Beta(6.6, 13.4)`, mean 0.33. Read that way the model's 0.310 is not an
+  outlier.
+- Our own ledger is the only estimate here with power behind it (664 exits
+  against 44), and it is biased **upward** by the recovery under-recording
+  documented elsewhere in this note — which moves it toward the fitted value,
+  not away.
+
+The recommendation is therefore weakened from *"Beta centred 0.46, sd ≈ 0.05,
+strong"* to **Beta centred 0.42, sd ≈ 0.10, moderate**. A tight prior here
+would be asserting more than 44 patients can support.
 
 ### 6.2 BDBV lethality — the first factor in q_comm
 
@@ -305,21 +346,41 @@ plausibly 0.5–0.7. Times swab ascertainment below 1, that gives **q ≈ 0.45**
 and makes the fitted 0.81–0.915 infeasible: at 0.915 the decomposition needs
 swab ascertainment above 1 even at 0.9 unisolated fatality.
 
-### 6.3 Overall ascertainment — external anchors, both well below 1
+### 6.3 Overall ascertainment — one external anchor, not two
 
-Gignoux E, Idowu R, Bawo L, Hurum L, Sprecher A, Bastard M, Porten K, *EID*
-21(12):2265–2267, 2015 — capture–recapture in Montserrado County, Liberia,
-June–August 2014: 227 reported against an estimated **876 (95 % CI
-608–1,143)**, about **26 % ascertainment**, *"at least 3-fold higher than that
-reported"*.
+**Corrected 2026-08-22: the Beni paper is not an ascertainment estimate and
+was being used as one.**
 
-*EID* 27(12), 2021, Beni Health Zone, DRC 2018–20, 923 confirmed and probable
-cases: contact tracing found ~99 % of case-patients with *any* contacts but
-only **~48 % (95 % CI 43–55 %)** of those with *infected* contacts — 24 % in
-the first wave, 48 % in the second.
+Gignoux E, Idowu R, Bawo L, Hurum L, Sprecher A, Bastard M, Porten K. Use of
+capture–recapture to estimate underreporting of Ebola virus disease. *EID*
+2015;21(12):2265–2267, doi:10.3201/eid2112.150756 — Montserrado County,
+Liberia, 1 June – 14 August 2014: 227 reported against an estimated **876
+(95 % CI 608–1,143)**, about **26 % ascertainment**, with the paper stating
+*"the number of cases in Montserrado Country was at least 3-fold higher than
+that reported during the study period."* Applies to all suspected, probable or
+confirmed cases. Zaire ebolavirus. **This is a genuine ascertainment
+measurement and it is the only one we have.**
 
-Neither transfers directly. Both say a fit implying 3 % unascertained is not in
-contact with the evidence.
+Polonsky JA, Böhning D, Keita M, Ahuka-Mundeke S, Nsio-Mbeta J, Abedi AA, et
+al. Novel Use of Capture-Recapture Methods to Estimate Completeness of Contact
+Tracing during an Ebola Outbreak, Democratic Republic of the Congo, 2018–2020.
+*EID* 2021;27(12):3063–3072, doi:10.3201/eid2712.204958 — Beni Health Zone,
+31 July 2018 – 26 April 2020, 913 confirmed and 10 probable cases. 99 % of
+case-patients with *any* contacts were identified; **49 % (95 % CI 43–55 %)**
+of those with *infected* contacts — 24 % (11–38 %) in the first wave, 48 %
+(40–56 %) in the second.
+
+**What that 49 % measures is contact-tracing completeness among already-
+identified case-patients** — the sensitivity of detecting onward infections
+from a case the response already had. It bounds how many transmission *links*
+were seen, not how many cases existed, and it cannot be read as an
+ascertainment fraction. It belongs in a discussion of R_eff and of the
+unaccounted-for confirmed cases, not in this row.
+
+So: one anchor, on a different species in a different response, at 26 %. That
+still says a fit implying 3 % unascertained is not in contact with the
+evidence — but it says it alone, and we should stop presenting it as though two
+independent studies bracketed the answer.
 
 ### 6.4 Delays and the dwell
 
@@ -363,10 +424,43 @@ proportional to the confirmed compartment.
 
 ## 8. Not verified
 
-- **Funk & Abbott ≈ 0.59 [0.46, 0.72] (22/37)**, cited in the model's f_cfr
-  docstring. Searched; no paper by those authors with that estimate surfaced.
-  The other two anchors in that docstring (Roddy, Kratz) are confirmed. Treat
-  this one as unsourced until someone produces the reference.
+- ~~**Funk & Abbott ≈ 0.59 [0.46, 0.72] (22/37)** — unsourced.~~ **RESOLVED
+  2026-08-22, and it is not a paper.** It is `sbfnk/bdbv-linelist-analysis`,
+  a GitHub repository (`sbfnk` = Sebastian Funk), registered as a git submodule
+  of `epiforecasts/BVDOutbreakSize` at `external/bdbv-linelist-analysis`. The
+  upstream repo's own bibliography records it as
+  `@misc{bdbv_linelist_analysis_2026}`, *"Bundibugyo Ebola virus — Bayesian
+  delay-distribution and stratified CFR estimation from the 2012 Isiro
+  outbreak"*, authored Funk & Abbott in `refs.bib` but credited to Funk alone
+  in the README. **The number 0.59 [0.46, 0.72] does not appear anywhere**; the
+  figure upstream quotes is 0.47 (95 % CrI 0.31–0.65) for non-HCW confirmed
+  cases. Cite as software — URL plus commit SHA plus access date — never in an
+  author-year form. Our local pin is
+  `epiforecasts/BVDOutbreakSize@90df658df2515314eceb4ac5e82dd4fe9fb894cd`,
+  fetched 2026-08-17; **the submodule itself is uninitialised, so the analysis
+  is unread.** `git submodule update --init` settles it.
+- **A second epiforecasts citation in our models checks out.**
+  `bvd_national_labdelay.camdl` cites *"Abbott, Brand & Funk 2026,
+  epiforecasts/BVDOutbreakSize, `lab_delay_model` — mean 4.5 d, SD 4.0 d"*,
+  which matches `analysis.jl` eq. (18): `μ_rec ~ Normal⁺(4.5, 1.0)`,
+  `σ_rec ~ Normal⁺(4.0, 0.75)`. One caveat worth carrying: upstream says of
+  that delay *"No per-sample outbreak data grounds this, so the prior is our
+  own choice"* — it is a declared belief, not an estimate.
+- **The onset-to-death prior our `gamma` uses is taken from the wrong pathway.**
+  Upstream fits onset-to-death as a convolution of onset-to-admission and
+  admission-to-death (`α_oa ~ Normal⁺(1.18, 0.28)`, `θ_oa ~ Normal⁺(3.69,
+  1.20)`; `α_ad ~ Normal⁺(2.15, 0.60)`, `θ_ad ~ Normal⁺(3.91, 1.38)`), giving
+  an *"implied mean about 13 d"* — a route **through admission**. It carries a
+  **separate community-pathway** onset-to-death delay, `α ~ Normal(5.48, 2.0)`,
+  `θ ~ Normal(1.49, 0.5)`, mean **8.17 d** (`docs/fits/registry.jl:263`). Our
+  `gamma` governs the never-confirmed-alive route, so the community pathway is
+  the one it should be anchored to. See the modelling repo's
+  `notes/2026-08-22-where-the-estimates-are-in-tension.md` §5.
+- **The 95 % CI on the incubation period is misattributed in our models.**
+  MacNeil prints only *"an average incubation period of 6.3 days among
+  laboratory-confirmed EHF case-patients (n = 24)"* — **no interval**. The
+  *"(5.2, 7.3)"* is Van Kerkhove Table 5, which cites MacNeil for the point
+  estimate. Split the citation.
 - **Any *fitted* onset-to-death distribution with a published shape parameter
   for an ebolavirus.** Medians, means and ranges are abundant; a fitted gamma
   or Weibull for onset-to-outcome was not located. The Erlang 2–3

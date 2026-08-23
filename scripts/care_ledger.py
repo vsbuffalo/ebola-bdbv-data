@@ -28,12 +28,19 @@ alone, which is an independent route to the same number. For f_cfr, Kratz et
 al. (PLOS ONE 2015) report 50.0% (9/18) in the Isiro treatment centre, the
 only other Bundibugyo outbreak.
 
-A KNOWN BIAS, STATED RATHER THAN CORRECTED. Patients who abscond leave care
-without recovering or dying, and no published series counts them. They are
-therefore missing from `exits`, so this delta is a LOWER bound on the true
-exit rate (the stay an UPPER bound), and this f_cfr is an UPPER bound on the
-true fatality among those who reach care. The prose mentions absconders
-without a countable series; until one exists the bound is the honest form.
+A KNOWN BIAS, AND THE SOURCE DOES COUNT WHAT WOULD FIX IT. Patients who
+abscond leave care without recovering or dying, so they are missing from
+`exits`: this delta is a LOWER bound on the true exit rate (the stay an UPPER
+bound), and this f_cfr is an UPPER bound on the fatality among those who reach
+care.
+
+These bounds are not permanent. The care/occupancy table (TABLEAU 6) prints
+`Sorties — évadés` as a daily per-province count on 54 of the 87 reports --
+355 absconders in total, median 5 per report, max 41 -- alongside
+`Total sorties (24 h)`, which measures the exit rate directly rather than by
+differencing stocks. We do not yet extract that table, which is why this
+script differences stocks at all. Once `extract_care_table.py` exists, both
+quantities become point estimates and this docstring should shrink.
 """
 
 from __future__ import annotations
