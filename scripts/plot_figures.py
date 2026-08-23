@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import math
 import sys
 from pathlib import Path
 
@@ -520,7 +521,13 @@ def draw_epi_curve(inputs: dict[str, Path], out: Path) -> None:
         edge = [mdates.date2num(x) + 0.5 for x in df["time"].to_list()]
         xs = [e - w / 2 for e, w in zip(edge, span)]
         ys = [c / w for c, w in zip(df[col].to_list(), span)]
-        cut = 1.22 * max(sorted(ys)[:-1])       # ignore the single outlier
+        # The axis top sits half a gridline step above the last tick: it
+        # keeps the headroom tight AND guarantees the break mark never lands
+        # on a tick label, which is what happened when the top was a bare
+        # multiple of the data range.
+        bulk = max(sorted(ys)[:-1])             # ignore the single outlier
+        step = _nice_step(bulk * 1.12)
+        cut = (math.ceil(bulk / step) + 0.5) * step
         peak = max(ys)
 
         for ax in (hi, lo):
@@ -541,7 +548,6 @@ def draw_epi_curve(inputs: dict[str, Path], out: Path) -> None:
         # The upper segment is 1/BREAK_RATIO of the lower's height, so it
         # gets 1/BREAK_RATIO of its data range, and one tick interval is then
         # the same distance in both.
-        step = _nice_step(cut)
         hi_range = cut / BREAK_RATIO
         lo.set_ylim(0, cut)
         hi.set_ylim(peak - hi_range * 0.62, peak + hi_range * 0.38)
@@ -597,26 +603,20 @@ def draw_epi_curve(inputs: dict[str, Path], out: Path) -> None:
     handles = [plt.Rectangle((0, 0), 1, 1, facecolor=FLAG_COLOR[f],
                              label=FLAG_LABEL[f])
                for f in FLAG_COLOR if f in seen]
-    leg = c_hi.legend(handles=handles, loc="center right",
-                      bbox_to_anchor=(1.004, 1.35), fontsize=9.5, frameon=True,
-                      framealpha=0.95, facecolor="white", edgecolor="#8a8a8a",
-                      borderpad=0.6, ncol=1, labelspacing=0.5,
-                      handlelength=1.3)
-    leg.get_frame().set_linewidth(0.7)
 
     tot_c = int(cases["cases_national"].sum())
     tot_d = int(deaths["deaths_national"].sum())
-    # Headline and its subtitle are one block, set together at the top left;
-    # hung off the first axes the subtitle reads as that panel's label.
-    fig.get_layout_engine().set(rect=(0, 0, 1, 0.905))
+    # Same header block as the ascertainment figure: headline, subtitle just
+    # beneath it, and the legend floating across the top axes boundary so it
+    # occupies space that is otherwise empty in both the header and the panel.
+    fig.get_layout_engine().set(rect=(0, 0, 1, 0.945))
     fig.suptitle("The 2026 Bundibugyo outbreak, as the situation reports "
-                 "record it", x=0.006, y=0.985, ha="left", va="top",
-                 fontsize=15, fontweight="bold")
-    fig.text(0.006, 0.938,
-             f"{tot_c:,} confirmed cases and {tot_d:,} confirmed deaths · "
-             f"$\\bf{{{cases['time'].min():%d\\ %b}\\ to\\ "
-             f"{cases['time'].max():%d\\ %b\\ %Y}}}$",
-             ha="left", va="top", fontsize=11, color="#333333")
+                 "record it", x=0.006, ha="left", fontsize=15,
+                 fontweight="bold")
+    c_hi.set_title(f"{tot_c:,} confirmed cases and {tot_d:,} confirmed deaths"
+                   f" · $\\bf{{{cases['time'].min():%d\\ %b}\\ to\\ "
+                   f"{cases['time'].max():%d\\ %b\\ %Y}}}$",
+                   loc="left", fontsize=11, color="#333333", pad=8)
     # constrained_layout owns inter-axes spacing and overrides a subgridspec
     # hspace, so the two halves of each break are pinned by hand once it has
     # run: freeze the engine, then drop each upper segment to sit a hair above
@@ -627,7 +627,18 @@ def draw_epi_curve(inputs: dict[str, Path], out: Path) -> None:
     GAP = 0.006                      # figure fraction
     for hi, lo in ((c_hi, c_lo), (d_hi, d_lo)):
         lp, hp = lo.get_position(), hi.get_position()
-        hi.set_position([lp.x0, lp.y1 + GAP, lp.width, hp.height])
+        lo.set_position([lp.x0, lp.y0, lp.width, hp.y0 - GAP - lp.y0])
+
+    # The legend straddles the real top edge of the plot area -- computed
+    # after the pinning above, not guessed -- so it fills space that is empty
+    # in both the header and the panel, as in the ascertainment figure.
+    leg = fig.legend(handles=handles, loc="center right",
+                     bbox_to_anchor=(0.995, c_hi.get_position().y1),
+                     bbox_transform=fig.transFigure, fontsize=9.5,
+                     frameon=True, framealpha=0.95, facecolor="white",
+                     edgecolor="#8a8a8a", borderpad=0.6, ncol=1,
+                     labelspacing=0.5, handlelength=1.3)
+    leg.get_frame().set_linewidth(0.7)
 
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, dpi=200)
