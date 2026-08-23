@@ -308,9 +308,11 @@ P = re.compile
 #: The per-zone cumulative table. From 13 July it gains a daily block splitting
 #: the day's confirmed deaths by how the case was ascertained. `LETALITY` is
 #: read but never used as data -- it is a column the source derives, which makes
-#: it a free per-row check on the two columns that ARE used. On sitrep 080 it
-#: disagrees with its own row throughout, which is how that report's stale
-#: letality column was found.
+#: it a free per-row check on the two columns that ARE used. That check is
+#: `extract_zone_table.letality_check`, and it closes on 3,113 of the 3,182
+#: rows in the corpus that print one; the report where it does not is sitrep
+#: 080, which disagrees on 47 of 56 rows because its letality column is
+#: displaced by one printed row and stale.
 ZONE_TABLE = TableSpec(
     name="zone_cumulative",
     requires=(

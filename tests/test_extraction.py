@@ -807,3 +807,285 @@ def test_lab_prose_flow_not_stock():
     got, _ = L.extract(pdf(20))
     itu = [r for r in got if r["province"] == "Ituri"]
     assert itu and itu[0]["positives"] == 18 and itu[0]["samples"] == 82
+
+
+# --------------------------------------------------------------------------
+# The letality check, and the register entry it produced
+# --------------------------------------------------------------------------
+
+REJECTED = ROOT / "registers" / "rejected_routes.tsv"
+
+
+@pytest.mark.parametrize("cell, want", [
+    ("41,3%", (41.3, "3")),
+    ("41,6 %", (41.6, "6")),
+    ("100,0%", (100.0, "0")),
+    ("9,10%", (9.10, "10")),        # sitrep 074: one decimal padded to two
+    ("26,9", (26.9, "9")),          # sitrep 052 prints no per-cell sign
+    ("44", (44.0, "")),
+    ("41.3%", (41.3, "3")),
+    ("ND", None), ("—", None), ("", None), ("-", None),
+    ("Bunia", None),
+])
+def test_to_pct(cell, want):
+    assert E.to_pct(cell) == want
+
+
+def _let_row(letality, cases, deaths, name="Bunia", level="zone"):
+    return {"zone_reported": name, "level": level, "cum_cases": cases,
+            "cum_deaths": deaths, "letality_printed": letality}
+
+
+def test_letality_precision_is_the_column_not_the_cell():
+    """Sitrep 074 prints two decimal digits and rounds to one.
+
+    Every one of its 54 rows ends in a zero -- `9,10 %`, `41,40 %`, `35,30 %`
+    -- because the column is rounded to a single decimal and then formatted to
+    two. Held to the digits it prints, 29 of those 54 rows "fail" and a clean
+    report is condemned as a displaced column, which is the most expensive
+    mistake this check could make.
+    """
+    rows = [_let_row("9,10%", 11, 1), _let_row("41,40%", 2988, 1238),
+            _let_row("35,30%", 17, 6), _let_row("100,00%", 5, 5)]
+    assert E.letality_precision(rows) == 1
+    assert all(E.letality_check(r, 1)["verdict"] == "ok" for r in rows)
+
+
+def test_letality_precision_reads_a_column_that_does_resolve_hundredths():
+    """Sitrep 064 really does print `36,83 %`, so its column resolves two."""
+    assert E.letality_precision([_let_row("36,83%", 2267, 835),
+                                 _let_row("33,30%", 3, 1)]) == 2
+
+
+def test_a_cell_written_coarser_than_its_column_still_closes():
+    """Sitrep 064 resolves the hundredths and still prints Sud-Kivu's 1/3 as
+    `33,30 %`. That is one third written at one decimal, not a wrong number."""
+    assert E.letality_check(_let_row("33,30%", 3, 1), 2)["verdict"] == "ok"
+
+
+@pytest.mark.parametrize("cell, cases, deaths, want", [
+    ("29,2%", 880, 257, "ok"),          # sitrep 077 Bunia, 29.2045 rounded
+    ("27,2%", 114, 31, "ok"),           # 27.1930 rounded up
+    ("0,0%", 1, 0, "ok"),
+    ("100,0%", 5, 5, "ok"),
+    ("30,9%", 1460, 452, "source_rounding"),   # sitrep 048: 30.9589 truncated
+    ("44,2%", 3802, 1707, "inconsistent"),     # sitrep 080's Total: 44.90
+    ("100,0%", 1, 0, "inconsistent"),          # sitrep 018's Logo
+])
+def test_letality_verdicts(cell, cases, deaths, want):
+    assert E.letality_check(_let_row(cell, cases, deaths), 1)["verdict"] == want
+
+
+def test_letality_is_not_checkable_without_both_counts():
+    """A zone with no cases has no case fatality, and a missing count states
+    nothing -- neither is a failure, and neither may be counted as a pass."""
+    assert E.letality_check(_let_row("0,0%", 0, 0), 1) is None
+    assert E.letality_check(_let_row("50,0%", None, 1), 1) is None
+    assert E.letality_check(_let_row("50,0%", 4, None), 1) is None
+    assert E.letality_check(_let_row("ND", 4, 2), 1) is None
+
+
+def test_carried_forward_names_the_previous_report_not_a_failure():
+    """Sitrep 073's Beni prints 69,8 %, which is 30/43 -- its own figure in the
+    previous report -- against its current 34/44 = 77,3 %.
+
+    The source assembles each report by editing the previous day's table, and a
+    row whose counts were updated without its derived percentage keeps
+    yesterday's. That is the source's behaviour, not our reading, and it has to
+    be told apart from a displaced column or a dozen isolated rows across the
+    corpus would look like the same defect as sitrep 080.
+    """
+    checks = [{**E.letality_check(_let_row("69,8%", 43, 30, "Beni"), 1), "sitrep": 72},
+              {**E.letality_check(_let_row("69,8%", 44, 34, "Beni"), 1), "sitrep": 73}]
+    assert checks[1]["verdict"] == "inconsistent"
+    got = E.letality_carried_forward(checks)
+    assert [c["verdict"] for c in got] == ["ok", "carried_forward"]
+    assert got[1]["carried_from"] == "30/43"
+
+
+def test_carried_forward_only_reaches_back_one_report():
+    """Reaching further back explains almost any percentage by coincidence."""
+    checks = [{**E.letality_check(_let_row("50,0%", 2, 1), 1), "sitrep": 70},
+              {**E.letality_check(_let_row("60,0%", 5, 3), 1), "sitrep": 71},
+              {**E.letality_check(_let_row("50,0%", 9, 2), 1), "sitrep": 72}]
+    got = E.letality_carried_forward(checks)
+    assert got[2]["verdict"] == "inconsistent"    # 50 % is report 70's, not 71's
+
+
+@pytest.mark.parametrize("counts, want", [
+    ({}, "not_printed"),
+    ({"ok": 56}, "ok"),
+    ({"ok": 36, "carried_forward": 1, "inconsistent": 3}, "rows_disagree"),
+    ({"ok": 4, "carried_forward": 5, "inconsistent": 47}, "column_displaced"),
+])
+def test_letality_report_verdict(counts, want):
+    """The boundary is a majority, and the two cases do not come close to
+    touching: sitrep 080 fails 47 of 56 rows and the next worst 3 of 40."""
+    assert E.letality_verdict(counts) == want
+
+
+@needs_pdfs
+def test_sitrep_080_daily_block_is_displaced_by_one_let_row():
+    """The values on row i's line belong to row i-1, proved by the zone sums.
+
+    This is the finding the letality check exists to catch, and the arithmetic
+    is what establishes it -- `pdftotext -layout` misaligns wrapped labels, so
+    visual adjacency proves nothing. The four daily figures printed on the
+    `Adja` line are exactly the sum of the 27 Ituri zone lines BELOW it, on all
+    four columns at once, so they are Ituri's own province totals printed one
+    line low. `Adja` itself carries 11 cumulative cases and 1 cumulative death,
+    which forbids the 49 new cases and 23 deaths on its line outright.
+    """
+    rows, _ = E.extract(pdf(80), specs=(ZONE_TABLE,))
+    names = [r["zone_reported"] for r in rows]
+    i = names.index("Adja")
+    assert rows[i - 1]["zone_reported"] == "Ituri"
+    assert (rows[i]["cum_cases"], rows[i]["cum_deaths"]) == (11, 1)
+    below = rows[i + 1:i + 1 + 27]
+    assert all(r["level"] == "zone" for r in below)
+    for col, want in (("new_cases", 49), ("deaths_community", 13),
+                      ("deaths_treatment_centre", 10), ("deaths_total", 23)):
+        assert rows[i][col] == want, col
+        assert sum(r[col] or 0 for r in below) == want, col
+
+
+def _raw_letality(*ns):
+    """The check as it runs before any register is consulted, over the reports
+    given -- the carried-forward pass needs more than one to have anything to
+    look back at."""
+    out = []
+    for n in ns:
+        rows, _ = E.extract(pdf(n))
+        d = E.letality_precision(rows)
+        out += [{**c, "sitrep": n}
+                for c in (E.letality_check(r, d) for r in rows) if c]
+    return E.letality_carried_forward(out)
+
+
+@needs_pdfs
+def test_sitrep_080_letality_column_fails_far_harder_than_any_other():
+    """52 of its 56 rows disagree with their own cases and deaths.
+
+    Five of those 52 turn out to be the previous report's figure once the panel
+    supplies one, leaving 47 unexplained -- but even taken alone the report is
+    a majority failure and would gate the build, which is the property that
+    matters. The next-worst report in the corpus has three.
+
+    Measured on the RAW extraction: this is the evidence FOR the register
+    entry, so it must not be produced BY it.
+    """
+    alone = _raw_letality(80)
+    assert sum(1 for c in alone if c["verdict"] == "inconsistent") == 52
+    assert sum(1 for c in alone if c["verdict"] == "ok") == 4
+
+    with_history = [c for c in _raw_letality(79, 80) if c["sitrep"] == 80]
+    assert sum(1 for c in with_history if c["verdict"] == "inconsistent") == 47
+    assert sum(1 for c in with_history if c["verdict"] == "carried_forward") == 5
+
+
+@needs_pdfs
+#: (report, the report before it IN THE ARCHIVE, expected verdict). The
+#: predecessor is named rather than computed: the archive has no sitreps 075 or
+#: 076, so 077's previous appearance of a row is 074's, and `n - 1` would
+#: silently skip the case instead of testing it.
+@pytest.mark.parametrize("prev, n, want", [
+    (79, 80, "column_displaced"),   # 47 of 56 -- the only report that gates
+    (48, 49, "rows_disagree"),      # three isolated rows: recorded, not gating
+    (64, 65, "rows_disagree"),      # one row: Haut-Uélé prints 62,2 % for 10/16
+    (74, 77, "ok"),
+    (82, 83, "ok"),                 # its Total is `source_rounding`, not a fail
+])
+def test_only_sitrep_080_reaches_the_gate(prev, n, want):
+    """The gate is a majority, and nothing else in the corpus comes near it."""
+    counts: dict[str, int] = {}
+    for c in _raw_letality(prev, n):
+        if c["sitrep"] == n:
+            counts[c["verdict"]] = counts.get(c["verdict"], 0) + 1
+    assert E.letality_verdict(counts) == want
+
+
+@needs_pdfs
+def test_sitrep_080_summary_table_on_the_same_page_reads_clean():
+    """The page adjudicates itself, which is what rules out our reader.
+
+    The provincial summary is a second table over the same five provinces on
+    the same document. Every one of its letality figures closes -- including a
+    national 44,9 % against the zone table's 44,2 %, on one identical pair of
+    3,802 cases and 1,707 deaths. The zone table's 44,2 % is 1657/3748, the
+    PREVIOUS report's national pair.
+    """
+    rows, _ = E.extract(pdf(80), specs=(PROVINCIAL_SUMMARY,))
+    d = E.letality_precision(rows)
+    got = [c for c in (E.letality_check(r, d) for r in rows) if c]
+    assert len(got) == 6 and all(c["verdict"] == "ok" for c in got)
+    nat = next(c for c in got if c["level"] == "national")
+    assert (nat["cum_cases"], nat["cum_deaths"]) == (3802, 1707)
+    assert nat["letality_printed"] == 44.9
+
+
+@needs_pdfs
+def test_the_register_rejects_the_daily_block_and_keeps_the_cumulative():
+    """Throwing sitrep 080 away to be rid of its daily block would take a
+    cumulative series with it that closes exactly against the printed national
+    total, at both levels and on both columns."""
+    rej = E.load_rejected_routes(REJECTED, PDFS)[80]
+    assert rej.route == "zone_cumulative"
+    assert not rej.whole_route
+    assert rej.columns == frozenset({
+        "letality", "new_cases", "deaths_community",
+        "deaths_treatment_centre", "deaths_total"})
+
+
+@needs_pdfs
+def test_the_rejected_columns_are_null_and_the_others_survive():
+    panel = ROOT / "data" / "build" / "series" / "zone_table.csv"
+    if not panel.exists():
+        pytest.skip("run `make build` first")
+    d = (pl.read_csv(panel, infer_schema_length=None)
+         .filter(pl.col("sitrep") == 80))
+    assert d.height > 0
+    for col in ("new_cases", "deaths_community", "deaths_treatment_centre",
+                "deaths_total"):
+        assert d[col].null_count() == d.height, f"{col} must be null throughout"
+    nat = d.filter(pl.col("level") == "national")
+    assert (nat["cum_cases"][0], nat["cum_deaths"][0]) == (3802, 1707)
+    prov = d.filter(pl.col("level") == "province")
+    assert prov["cum_cases"].sum() == 3802
+    assert prov["cum_deaths"].sum() == 1707
+
+
+@needs_pdfs
+def test_a_stale_rejected_route_hash_stops_the_build(tmp_path):
+    """A revised document must return for a fresh judgement, not inherit one."""
+    bad = tmp_path / "stale.tsv"
+    bad.write_text(REJECTED.read_text().replace("fae9db4cc474db76", "0" * 16))
+    with pytest.raises(SystemExit, match="STALE"):
+        E.load_rejected_routes(bad, PDFS)
+
+
+@needs_pdfs
+def test_a_misspelled_rejected_column_stops_the_build(tmp_path):
+    """The one failure a register must not have: an entry that reads as a
+    judgement applied while the wrong values go on being published."""
+    bad = tmp_path / "typo.tsv"
+    bad.write_text(REJECTED.read_text().replace("deaths_total", "deaths_totl"))
+    with pytest.raises(SystemExit, match="does not read"):
+        E.load_rejected_routes(bad, PDFS)
+
+
+@needs_pdfs
+def test_a_blank_column_scope_stops_the_build(tmp_path):
+    """Blank cannot mean `*`: the scope of a judgement is never a guess."""
+    bad = tmp_path / "blank.tsv"
+    bad.write_text(REJECTED.read_text().replace(
+        "zone_cumulative\t*\tprovincial_summary",
+        "zone_cumulative\t\tprovincial_summary"))
+    with pytest.raises(SystemExit, match="`columns` blank"):
+        E.load_rejected_routes(bad, PDFS)
+
+
+@needs_pdfs
+def test_the_committed_rejected_route_register_is_not_stale():
+    got = E.load_rejected_routes(REJECTED, PDFS)
+    assert set(got) == {33, 80}
+    assert got[33].whole_route
