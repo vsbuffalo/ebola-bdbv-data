@@ -225,6 +225,9 @@ ROUTE_LABEL = {
     "zone_cumulative": "zone table (cumulative)",
     "zone_mixed": "mixed daily/cumulative",
     "zone_daily": "daily flows only",
+    "summary_only": "province table only, no zone table",
+    "prose": "prose only",
+    "none": "no route",
 }
 
 
@@ -271,21 +274,6 @@ def draw_release_grid(inputs: dict[str, Path], out: Path) -> None:
         2, 1, figsize=(13.333, 7.5), height_ratios=[ny, 2.4],
         constrained_layout=True)
 
-    # Which report-days each stream REFUSED, as opposed to never saw. Only
-    # the routes that keep a refusal channel can answer this; the rest map to
-    # an empty set and their holes stay plain.
-    lab_status = pl.read_csv(inputs["lab_status"], infer_schema_length=None)
-    refusals: dict[str, set[str]] = {}
-    for slug, prov in (("ituri", "Ituri"), ("nord_kivu", "Nord-Kivu"),
-                       ("haut_uele", "Haut-Uélé")):
-        refusals[f"lab_daily_{slug}"] = {
-            r["date"] for r in lab_status.iter_rows(named=True)
-            if prov in str(r["refused"] or "")}
-    refusals["lab_daily_national"] = {
-        r["date"] for r in lab_status.iter_rows(named=True)
-        if str(r["refused"] or "").strip()}
-    drew_refusal = [False]
-
     # --- the grid itself -------------------------------------------------
     ax.set_facecolor("#f7f7f7")            # the ground IS "no observation"
     seen_flags: set[str] = set()
@@ -301,19 +289,6 @@ def draw_release_grid(inputs: dict[str, Path], out: Path) -> None:
             ax.add_patch(plt.Rectangle(
                 (xi + 0.12, yi + 0.12), 0.76, 0.76,
                 facecolor=FLAG_COLOR[flag], edgecolor="none"))
-        # A HOLE IS NOT ALWAYS THE SOURCE'S. Where the page prints a figure we
-        # declined to license, the cell is hatched rather than blank: for
-        # Ituri's laboratory row that is 16 of 31 empty days, so leaving them
-        # the same grey as genuine silence would blame the source for half of
-        # our own gaps.
-        for d in refusals.get(key, set()):
-            xi = x.get(d)
-            if xi is None or d in {r["time"] for r in df.iter_rows(named=True)}:
-                continue
-            ax.add_patch(plt.Rectangle(
-                (xi + 0.12, yi + 0.12), 0.76, 0.76, facecolor="#ffffff",
-                edgecolor="#b0b0b0", linewidth=0.4, hatch="////"))
-            drew_refusal[0] = True
         ax.text(-0.006, yi + 0.5, label, transform=ax.get_yaxis_transform(),
                 ha="right", va="center", fontsize=8.5)
 
@@ -354,26 +329,49 @@ def draw_release_grid(inputs: dict[str, Path], out: Path) -> None:
     # The marker says a day's arithmetic does not close; the number says by
     # how much, because "does not close" covers both a single miscounted case
     # and the 66 Ituri cases of 12 July. Where a date carries several
-    # residuals the largest is shown, so it bounds the rest. Heights
-    # alternate so dates two report-days apart do not collide.
+    # residuals the largest is shown, so it bounds the rest. All markers sit
+    # on ONE row; where two dates are close enough that their labels would
+    # touch, the label is nudged sideways rather than the marker moved, so
+    # the row of triangles stays a clean reference line.
     worst: dict[str, int] = {}
     for r in exc.iter_rows(named=True):
         d, g = r["date"], int(r["expected_gap"])
         if abs(g) > abs(worst.get(d, 0)):
             worst[d] = g
-    for i, d in enumerate(sorted(k for k in worst if k in x)):
-        hi = ny + (0.42 if i % 2 == 0 else 1.30)
-        ax.plot([x[d] + 0.5], [hi], marker="v", markersize=5,
+    hi = ny + 0.42
+    ordered = sorted(k for k in worst if k in x)
+    MIN_SEP = 3.2          # columns needed before two labels touch
+    prev_label_x = -1e9
+    for d in ordered:
+        cx = x[d] + 0.5
+        ax.plot([cx], [hi], marker="v", markersize=5,
                 color="#D55E00", clip_on=False)
-        ax.text(x[d] + 0.5, hi + 0.22, f"{worst[d]:+d}", ha="center",
-                va="bottom", fontsize=7.5, color="#D55E00", clip_on=False)
+        lx = cx if cx - prev_label_x >= MIN_SEP else prev_label_x + MIN_SEP
+        prev_label_x = lx
+        ax.text(lx, hi + 0.30, f"{worst[d]:+d}", ha="center", va="bottom",
+                fontsize=7.5, color="#D55E00", clip_on=False)
 
     # --- format eras, from the route each report was read through --------
     # A report with no zone table is not a gap in the format record: it IS a
     # format, and one worth seeing, so it gets its own band rather than
     # breaking the span either side of it into two.
-    route = {d: (r or "none") for d, r in
-             zone.select("date", "table").unique().iter_rows()}
+    # A report with no health-zone table still HAS a format and still yields
+    # observations -- sitreps 084-086 (6-8 Aug) dropped the zone table but
+    # kept the provincial summary, and the late-May reports carried only
+    # prose. Showing those as an unlabelled grey made the band look like a
+    # gap in the record when it is a change of route, which is exactly the
+    # thing this band exists to show. Every day therefore resolves to a named
+    # route, in the order the extractor tries them.
+    summary = pl.read_csv(inputs["summary"], infer_schema_length=None)
+    prose = pl.read_csv(inputs["prose"], infer_schema_length=None)
+    summary_dates = set(summary["date"].to_list())
+    prose_dates = set(prose["date"].to_list())
+    route = {d: r for d, r in zone.select("date", "table").unique().iter_rows()}
+    for d in all_dates:
+        if route.get(d):
+            continue
+        route[d] = ("summary_only" if d in summary_dates
+                    else "prose" if d in prose_dates else "none")
     era.set_xlim(0, nx)
     era.set_ylim(0, 1)
     spans, start, cur = [], 0, route.get(all_dates[0], "none")
@@ -386,6 +384,7 @@ def draw_release_grid(inputs: dict[str, Path], out: Path) -> None:
 
     era_fill = {"zone_early": "#c9dcea", "zone_cumulative": "#7fb2d4",
                 "zone_mixed": "#4d94c4", "zone_daily": "#2c6e9e",
+                "summary_only": "#E8B96A", "prose": "#C98A4B",
                 "none": "#e4e4e4"}
     widest: dict[str, tuple[int, int]] = {}
     for a, b, r in spans:
@@ -398,11 +397,6 @@ def draw_release_grid(inputs: dict[str, Path], out: Path) -> None:
         lab = ROUTE_LABEL.get(r, "no zone table")
         # only the widest run of each route is labelled: a format that resumes
         # after an interruption is the same format, not a new one
-        if (a, b) == widest.get(r) and b - a >= max(6, len(lab) * 0.40):
-            era.text((a + b) / 2, 0.79, lab, ha="center", va="center",
-                     fontsize=7.5,
-                     color="white" if r in ("zone_mixed", "zone_daily",
-                                            "zone_cumulative") else "#20415c")
     era.text(-0.006, 0.79, "report format", transform=era.get_yaxis_transform(),
              ha="right", va="center", fontsize=8.5)
 
@@ -425,11 +419,7 @@ def draw_release_grid(inputs: dict[str, Path], out: Path) -> None:
                              label=FLAG_LABEL[f])
                for f in FLAG_COLOR if f in seen_flags]
     handles.append(plt.Rectangle((0, 0), 1, 1, facecolor="#f7f7f7",
-                                 edgecolor="#cccccc", label="source silent"))
-    if drew_refusal[0]:
-        handles.append(plt.Rectangle((0, 0), 1, 1, facecolor="#ffffff",
-                                     edgecolor="#b0b0b0", hatch="////",
-                                     label="printed, but we could not license it"))
+                                 edgecolor="#cccccc", label="no observation"))
     handles.append(plt.Line2D([], [], linestyle="none", marker="v",
                               color="#D55E00", markersize=6,
                               label="the page's own arithmetic does not close"))
@@ -437,17 +427,39 @@ def draw_release_grid(inputs: dict[str, Path], out: Path) -> None:
     # constrained_layout does not reserve space for a figure legend, so the
     # band is carved out of the layout rect explicitly or the second row
     # falls off the page.
-    fig.get_layout_engine().set(rect=(0, 0.085, 1, 0.915))
-    fig.legend(handles=handles, loc="lower center", ncol=4,
-               frameon=False, fontsize=8.5, handlelength=1.1,
-               handleheight=1.1, columnspacing=1.8, labelspacing=0.7,
-               bbox_to_anchor=(0.5, 0.004))
+    fig.get_layout_engine().set(rect=(0, 0.115, 1, 0.895))
+    leg1 = fig.legend(handles=handles, loc="lower left", ncol=2,
+                      frameon=False, fontsize=8.5, handlelength=1.1,
+                      handleheight=1.1, columnspacing=1.6, labelspacing=0.6,
+                      bbox_to_anchor=(0.055, 0.004),
+                      title="what the cell says")
+    leg1.get_title().set_fontsize(8.5)
+    leg1.get_title().set_ha("left")
+
+    # The format band is a SECOND encoding -- which table the report printed,
+    # not what the observation is like -- so it gets its own key. Every route
+    # that occurs is listed, which is why no stretch of the band is an
+    # unexplained grey: a report with no zone table still has a format.
+    order = ["zone_early", "zone_cumulative", "zone_mixed", "zone_daily",
+             "summary_only", "prose", "none"]
+    seen_routes = {r for _, _, r in spans}
+    rhandles = [plt.Rectangle((0, 0), 1, 1, facecolor=era_fill[r],
+                              edgecolor="#ffffff",
+                              label=ROUTE_LABEL.get(r, r))
+                for r in order if r in seen_routes]
+    leg2 = fig.legend(handles=rhandles, loc="lower right", ncol=2,
+                      frameon=False, fontsize=8.5, handlelength=1.1,
+                      handleheight=1.1, columnspacing=1.6, labelspacing=0.6,
+                      bbox_to_anchor=(0.985, 0.004),
+                      title="which table the report printed")
+    leg2.get_title().set_fontsize(8.5)
+    fig.add_artist(leg1)
 
     fig.suptitle("What the release contains, report by report",
                  x=0.008, ha="left", fontsize=14, fontweight="bold")
     ax.set_title(f"{nx} report-days carrying at least one observation · "
                  f"{ny} published streams · {all_dates[0]} to {all_dates[-1]}",
-                 loc="left", fontsize=9.5, color="#555555", pad=42)
+                 loc="left", fontsize=9.5, color="#555555", pad=30)
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, dpi=200)
     plt.close(fig)
@@ -887,7 +899,8 @@ FIGURES = {
                          for n, _ in RELEASE_ROWS},
                       "zone_table": "data/build/series/zone_table.csv",
                       "exceptions": "registers/reconciliation_exceptions.tsv",
-                      "lab_status": "data/build/series/lab_prose_status.csv"}),
+                      "summary": "data/build/series/province_summary.csv",
+                      "prose": "data/build/series/prose_provinces.csv"}),
     "residuals": (draw_residuals,
                   {"province_series": "data/build/series/province_series.csv"}),
     "streams_detail": (draw_streams_detail,
