@@ -14,10 +14,33 @@ attributes its cases to the day the report landed -- a small distortion at
 province level, where many zones report on any given day. The daily increments
 are then binned into 7-day totals anchored at day 0.
 
-CUMULATIVE DECREASES ARE KEPT, AS NEGATIVE INCIDENCE. A fall in a cumulative
-column is the source's own downward revision -- sitrep 073 prints Katwa's
-daily deaths as `-2` under a note declaring two deaths removed -- and clipping
-it would keep cases the source deleted, erring upward only.
+CUMULATIVE DECREASES ARE CARRIED FORWARD, NEITHER CLIPPED NOR PUBLISHED AS
+NEGATIVE INCIDENCE. A fall in a cumulative column is the source's own downward
+revision -- Nord-Kivu's printed cumulative goes 44 cases / 26 deaths on 10 June
+to 40 / 24 on 11 June, and sitrep 073 prints Katwa's daily deaths as `-2` under
+a note declaring two deaths removed. Differencing turns each into a negative
+increment, and a negative increment is not an observation any count likelihood
+can evaluate: Poisson and negative binomial are both defined on the
+non-negative integers, so a stream carrying one is unusable for the single
+thing these files exist for. Clipping it to zero is worse than useless -- it
+keeps the cases the source deleted, and it breaks the identity below, because
+the emitted total would then exceed the cumulative's movement by exactly the
+size of the revision. So the deficit is CARRIED instead: the row emits 0 and
+the remainder is subtracted from subsequent rows until it discharges. Every
+emitted value is a non-negative integer, every stream's total still equals the
+source's own movement exactly, and the correction is not silent -- every row it
+touched is written to `revisions.tsv` beside the streams, with the raw
+increment, the value emitted, the carry still outstanding and the source's flag
+for that report day, so a consumer can see the revision rather than infer it
+from a hole. The carry is applied to the rows a consumer actually fits, which
+means a week whose net movement is already non-negative is left alone even when
+one of its days was a revision: `cases_haut_uele`'s week to 21 July nets +7 and
+is untouched, while `cases_daily_haut_uele` shows the -6 of 18 July carried
+across the days that follow. The two resolutions therefore attribute a revision
+to different rows, and both still total the source's movement. A carry that has
+NOT discharged by the end of a series would mean part of a revision was
+silently dropped and the emitted total no longer equals that movement; like a
+broken identity, it stops the build rather than being rounded away.
 
 THE TRAILING PARTIAL BIN IS KEPT, AND EVERY BIN'S OBSERVATION TIME IS ITS
 LAST REPORT DAY. An engine that accumulates between consecutive observation
@@ -260,6 +283,59 @@ def daily_increments(cum: pl.DataFrame, report_dates: pl.Series) -> pl.DataFrame
     return d.select("date", "count", "days_covered")
 
 
+def carry_forward(counts: list[int]) -> tuple[list[int], list[int]]:
+    """The same series with the same total, but no negative value in it.
+
+    Walks the series once holding an outstanding DEFICIT. A row whose value
+    would be negative emits 0 and opens a deficit of that size; every later row
+    pays the deficit down before emitting what is left. Returns the emitted
+    values beside the deficit still outstanding AFTER each row, which is what
+    makes the correction auditable: the row where a deficit opens and the rows
+    where it is paid off are exactly the rows on which `emitted` differs from
+    `counts`, and the last element of the second list is the part of a revision
+    that never found later cases to take it out of.
+
+    WHY THIS AND NOT CLIPPING. Both remove the negative; only this one leaves
+    the total alone. Clipping `[-4, 9]` gives `[0, 9]`, total 9 against a
+    cumulative that moved 5, so the stream would permanently carry the four
+    cases the source withdrew. Carrying gives `[0, 5]`, total 5. A deficit
+    larger than the next row simply keeps going: `[-9, 4, 6]` -> `[0, 0, 1]`.
+
+    Pure, and the only place the rule is written down; every emitted count
+    column in this build goes through it, weekly and daily alike.
+    """
+    emitted: list[int] = []
+    outstanding: list[int] = []
+    deficit = 0
+    for x in counts:
+        v = int(x) - deficit
+        deficit = -v if v < 0 else 0
+        emitted.append(v if v > 0 else 0)
+        outstanding.append(deficit)
+    return emitted, outstanding
+
+
+def negative_values(paths: list[Path]) -> list[str]:
+    """Every negative number in the files this build published, as findings.
+
+    Fail-closed, and deliberately read back off DISK rather than from the
+    frames in memory: what a consumer fits is the file, and a column that never
+    passed through `carry_forward` -- a stock reading, a column added later --
+    is still covered by this. Nothing here is expected to fire; a hit means a
+    count that no likelihood can evaluate reached an output file, which stops
+    the build.
+    """
+    out: list[str] = []
+    for path in sorted(paths):
+        t = pl.read_csv(path, separator="\t", infer_schema_length=None)
+        for col in t.columns:
+            if not t[col].dtype.is_numeric():
+                continue
+            for r in t.filter(pl.col(col) < 0).iter_rows(named=True):
+                out.append(f"{path.name}: {col} = {r[col]} at {r['time']}")
+    return out
+
+
 def daily_flags(dates: pl.Series, caveat: pl.DataFrame | None,
                 exceptions: pl.DataFrame | None, province: str) -> pl.Series:
     """What the SOURCE says about each report day, for a consumer that wants
@@ -278,9 +354,10 @@ def daily_flags(dates: pl.Series, caveat: pl.DataFrame | None,
                          registered, so the flag follows the register rather
                          than a guess.
 
-    Empty means the page said nothing of the kind. A negative count is the
-    source's own downward revision and is visible as its own sign; it is not
-    flagged here.
+    Empty means the page said nothing of the kind. A downward revision is NOT
+    flagged here: it is not something the page said about the day, and it is
+    already recorded row by row in `revisions.tsv`, which carries this column's
+    value for the same day beside it.
     """
     cav: dict[str, list[str]] = {}
     if caveat is not None:
@@ -549,6 +626,16 @@ def main() -> None:
     banner = (pl.read_csv(args.banner, infer_schema_length=None)
               if args.banner and args.banner.exists() else None)
 
+    # The source's own words about each report day, read here rather than at
+    # the daily block below because the carry-forward record wants them too:
+    # a revision that lands on a day the page already called provisional is a
+    # different thing from one that lands on a day it did not.
+    caveat = (pl.read_csv(args.caveat, infer_schema_length=None)
+              if args.caveat and args.caveat.exists() else None)
+    exceptions = (pl.read_csv(args.exceptions, separator="\t",
+                              comment_prefix="#", infer_schema_length=None)
+                  if args.exceptions and args.exceptions.exists() else None)
+
     recon: dict[str, dict] = {}
     #: Not a stream reconciliation but a SOURCE-AGREEMENT check, so it lives
     #: beside `reconciliation` rather than inside it: every entry there is
@@ -556,6 +643,61 @@ def main() -> None:
     banner_vs_table: dict[str, dict] = {}
     failures: list[str] = []
     weekly_by_name: dict[str, pl.DataFrame] = {}
+    revisions: list[dict] = []
+    carry_failures: list[str] = []
+    written: list[Path] = []
+
+    def write_stream(d: pl.DataFrame, path: Path) -> None:
+        """Write a published stream, and remember that we published it.
+
+        The non-negativity gate reads back exactly the files THIS run wrote --
+        not everything in the output directory, which can still hold a file
+        from an older vintage of this script that no rule produces any more.
+        """
+        d.write_csv(path, separator="\t")
+        written.append(path)
+
+    def carried(d: pl.DataFrame, stream: str, column: str, *,
+                count_col: str = "count", time_col: str = "time",
+                flags: list[str] | None = None,
+                province: str = "national") -> pl.DataFrame:
+        """Replace `count_col` with its carried-forward values, recording every
+        row the correction touched and any deficit left outstanding at the end.
+
+        `stream` names the FILE and `column` the observation inside it, because
+        two files here publish two count columns each (community deaths beside
+        total split deaths; positives beside tests) and a record keyed on the
+        filename alone could not say which of them was corrected.
+        """
+        raw = [int(x) for x in d[count_col].to_list()]
+        if flags is None:
+            flags = daily_flags(d[time_col], caveat, exceptions,
+                                province).to_list()
+        emitted, outstanding = carry_forward(raw)
+        # A ROW GOES IN THE RECORD IF THE DEFICIT WAS OPEN AT IT -- not only if
+        # its value changed. A row that would have emitted 0 anyway while a
+        # deficit is outstanding is still a row whose future was mortgaged, and
+        # leaving it out would print `carry_after` as a column with holes in
+        # it, which no longer reads as a running balance.
+        for t, r, e, o, f in zip(d[time_col].to_list(), raw, emitted,
+                                 outstanding, flags):
+            if e != r or o:
+                revisions.append({"stream": stream, "column": column,
+                                  "time": str(t), "raw": r, "emitted": e,
+                                  "carry_after": o, "flags": f})
+        if outstanding and outstanding[-1]:
+            carry_failures.append(f"{stream}:{column} "
+                                  f"({outstanding[-1]} outstanding)")
+        return d.with_columns(pl.Series(count_col, emitted, dtype=pl.Int64))
+
+    def carry_note(stream: str, column: str) -> dict:
+        """What the carry did to one column, for the meta file: how many rows
+        it touched, and what (if anything) it failed to discharge."""
+        rows = [r for r in revisions
+                if r["stream"] == stream and r["column"] == column]
+        return {"n_carried": len(rows),
+                "carry_residual": rows[-1]["carry_after"] if rows else 0}
+
     for prov, slug in STREAM_PROVINCES.items():
         for col, stem in (("cum_cases", "cases"), ("cum_deaths", "deaths")):
             cum = daily_cumulative(panel, prov, col)
@@ -568,8 +710,16 @@ def main() -> None:
                 .select(pl.col("date").str.to_date()).unique()["date"])
             weekly = weekly_increments(cum, rep)
             name = f"{stem}_{slug}"
+            # THE RAW BINS, KEPT DELIBERATELY. The per-bin national identity
+            # below -- national = provinces + dropped + orphan pool -- is a
+            # statement about the source's own arithmetic, so it is checked on
+            # what the cumulatives moved. Feeding it carried values instead
+            # would make a deficit crossing a bin boundary in one province
+            # surface as unattributed movement, which is what that check
+            # reports as a defect.
             weekly_by_name[name] = weekly
-            emitted = int(weekly["count"].sum())
+            pub = carried(weekly, name, name, province=prov)
+            emitted = int(pub["count"].sum())
             source_delta = int(cum["cum"][-1] - cum["cum"][0])
             recon[name] = {
                 "emitted": emitted, "source_delta": source_delta,
@@ -577,6 +727,7 @@ def main() -> None:
                 "first_date": str(cum["date"][0]),
                 "last_date": str(cum["date"][-1]),
                 "n_obs": weekly.height,
+                **carry_note(name, name),
             }
             if emitted != source_delta:
                 failures.append(name)
@@ -612,32 +763,38 @@ def main() -> None:
                     "worst_gap_date": str(worst[0]),
                     "final_gap": int(chk["gap"][-1]),
                 }
-            (weekly.with_columns(
-                pl.Series("days_covered",
-                          spans(weekly["time"].to_list(), cum["date"][0])))
-             .select(pl.col("time").dt.to_string("%Y-%m-%d"),
-                     pl.col("count").alias(name),
-                     "days_covered", "n_report_days")
-             .write_csv(args.out_dir / f"{name}.tsv", separator="\t"))
+            write_stream(
+                pub.with_columns(
+                    pl.Series("days_covered",
+                              spans(pub["time"].to_list(), cum["date"][0])))
+                .select(pl.col("time").dt.to_string("%Y-%m-%d"),
+                        pl.col("count").alias(name),
+                        "days_covered", "n_report_days"),
+                args.out_dir / f"{name}.tsv")
 
         asc, asc_vs = ascertainment(panel, prov)
         if not asc.is_empty():
-            (asc.with_columns(
-                pl.Series("days_covered",
-                          spans(asc["time"].to_list(),
-                                asc["first_day"][0] - dt.timedelta(days=1))))
-             .select(pl.col("time").dt.to_string("%Y-%m-%d"),
-                     pl.col("deaths_community")
-                     .alias(f"community_deaths_{slug}"),
-                     pl.col("deaths_total").alias(f"deaths_split_{slug}"),
-                     "days_covered", "n_report_days")
-             .write_csv(args.out_dir / f"community_deaths_{slug}.tsv",
-                        separator="\t"))
-            recon[f"community_deaths_{slug}"] = {
+            cname, tname = f"community_deaths_{slug}", f"deaths_split_{slug}"
+            asc = carried(asc, cname, cname, count_col="deaths_community",
+                          province=prov)
+            asc = carried(asc, cname, tname, count_col="deaths_total",
+                          province=prov)
+            write_stream(
+                asc.with_columns(
+                    pl.Series("days_covered",
+                              spans(asc["time"].to_list(),
+                                    asc["first_day"][0] - dt.timedelta(days=1))))
+                .select(pl.col("time").dt.to_string("%Y-%m-%d"),
+                        pl.col("deaths_community").alias(cname),
+                        pl.col("deaths_total").alias(tname),
+                        "days_covered", "n_report_days"),
+                args.out_dir / f"{cname}.tsv")
+            recon[cname] = {
                 "n_obs": asc.height,
                 "emitted": int(asc["deaths_community"].sum()),
                 "emitted_total": int(asc["deaths_total"].sum()),
                 "vs_printed_daily": asc_vs,
+                **carry_note(cname, cname),
             }
             if asc_vs.get("dates_disagree"):
                 print(f"  community_deaths_{slug}: zone-summed daily split "
@@ -707,8 +864,9 @@ def main() -> None:
             continue
         weekly = weekly_increments(cum, printed["date"])
         name = f"{stem}_national"
-        weekly_by_name[name] = weekly
-        emitted = int(weekly["count"].sum())
+        weekly_by_name[name] = weekly          # raw, for the per-bin identity
+        pub = carried(weekly, name, name, province="national")
+        emitted = int(pub["count"].sum())
         source_delta = int(cum["cum"][-1] - cum["cum"][0])
         recon[name] = {
             "emitted": emitted, "source_delta": source_delta,
@@ -716,11 +874,13 @@ def main() -> None:
             "first_date": str(cum["date"][0]),
             "last_date": str(cum["date"][-1]),
             "n_obs": weekly.height,
+            **carry_note(name, name),
         }
         if emitted != source_delta:
             failures.append(name)
 
-        # The per-bin identity against the emitted province streams.
+        # The per-bin identity against the province streams, on the raw bins
+        # of both sides -- see the note where the province bins are stored.
         prov_names = [f"{stem}_{s}" for s in STREAM_PROVINCES.values()]
         psum = None
         for pn in prov_names:
@@ -776,13 +936,14 @@ def main() -> None:
                 print(f"    bin {r['bin']} ({r['time']}): "
                       f"unattributed {r['unattributed']:+d}", file=sys.stderr)
 
-        (weekly.with_columns(
-            pl.Series("days_covered",
-                      spans(weekly["time"].to_list(), cum["date"][0])))
-         .select(pl.col("time").dt.to_string("%Y-%m-%d"),
-                 pl.col("count").alias(name),
-                 "days_covered", "n_report_days")
-         .write_csv(args.out_dir / f"{name}.tsv", separator="\t"))
+        write_stream(
+            pub.with_columns(
+                pl.Series("days_covered",
+                          spans(pub["time"].to_list(), cum["date"][0])))
+            .select(pl.col("time").dt.to_string("%Y-%m-%d"),
+                    pl.col("count").alias(name),
+                    "days_covered", "n_report_days"),
+            args.out_dir / f"{name}.tsv")
 
     # National ascertainment, from the printed national row's daily split --
     # checked per date against the sum of the printed PROVINCE rows, the
@@ -815,20 +976,27 @@ def main() -> None:
                        pl.len().alias("n_report_days"),
                        pl.col("date").min().alias("first_day"))
                   .sort("bin"))
-        (weekly.with_columns(
-            pl.Series("days_covered",
-                      spans(weekly["time"].to_list(),
-                            weekly["first_day"][0] - dt.timedelta(days=1))))
-         .select(pl.col("time").dt.to_string("%Y-%m-%d"),
-                 pl.col("deaths_community").alias("community_deaths_national"),
-                 pl.col("deaths_total").alias("deaths_split_national"),
-                 "days_covered", "n_report_days")
-         .write_csv(args.out_dir / "community_deaths_national.tsv",
-                    separator="\t"))
+        weekly = carried(weekly, "community_deaths_national",
+                         "community_deaths_national",
+                         count_col="deaths_community")
+        weekly = carried(weekly, "community_deaths_national",
+                         "deaths_split_national", count_col="deaths_total")
+        write_stream(
+            weekly.with_columns(
+                pl.Series("days_covered",
+                          spans(weekly["time"].to_list(),
+                                weekly["first_day"][0] - dt.timedelta(days=1))))
+            .select(pl.col("time").dt.to_string("%Y-%m-%d"),
+                    pl.col("deaths_community").alias("community_deaths_national"),
+                    pl.col("deaths_total").alias("deaths_split_national"),
+                    "days_covered", "n_report_days"),
+            args.out_dir / "community_deaths_national.tsv")
         recon["community_deaths_national"] = {
             "n_obs": weekly.height,
             "emitted": int(weekly["deaths_community"].sum()),
             "emitted_total": int(weekly["deaths_total"].sum()),
+            **carry_note("community_deaths_national",
+                         "community_deaths_national"),
             "vs_printed_daily": {
                 "n_compared": chk.height,
                 "n_equal": chk.height - bad.height,
@@ -847,19 +1015,17 @@ def main() -> None:
     # the source's own consolidation flags. Same construction as the weekly
     # streams -- same panel, same forward-filled grid, same registers -- so
     # the two resolutions cannot disagree about what a report said; a daily
-    # stream's total is gated against the same cumulative movement.
-    caveat = (pl.read_csv(args.caveat, infer_schema_length=None)
-              if args.caveat and args.caveat.exists() else None)
-    exceptions = (pl.read_csv(args.exceptions, separator="\t",
-                              comment_prefix="#", infer_schema_length=None)
-                  if args.exceptions and args.exceptions.exists() else None)
-
+    # stream's total is gated against the same cumulative movement. The
+    # carry-forward runs on THESE rows, which is why a revision can appear
+    # here and not in the weekly file: a week whose net is already
+    # non-negative needs no correction.
     def emit_daily(name: str, obs: str, cum: pl.DataFrame, reps: pl.Series,
                    province: str) -> None:
         d = daily_increments(cum, reps)
         if d.is_empty():
             return
         d = d.with_columns(daily_flags(d["date"], caveat, exceptions, province))
+        d = carried(d, name, obs, time_col="date", flags=d["flags"].to_list())
         emitted = int(d["count"].sum())
         delta = int(cum.filter(pl.col("date").is_in(reps.to_list()))["cum"][-1]
                     - cum.filter(pl.col("date").is_in(reps.to_list()))["cum"][0])
@@ -871,7 +1037,7 @@ def main() -> None:
                              "max": int(d["days_covered"].max()),
                              "n_gt_1": int(d.filter(pl.col("days_covered") > 1).height)},
             "n_flagged": int(d.filter(pl.col("flags") != "-").height),
-            "n_negative": int(d.filter(pl.col("count") < 0).height),
+            **carry_note(name, obs),
         }
         if emitted != delta:
             failures.append(name)
@@ -882,11 +1048,12 @@ def main() -> None:
         # needs one code path and a model can swap resolutions by changing a
         # path. It is also the honest name -- a "daily" row covers 2 or 3
         # days on 5 of 82, and a "weekly" row 4 to 8.
-        (d.with_columns(pl.lit(1, pl.Int64).alias("n_report_days"))
-         .select(pl.col("date").dt.to_string("%Y-%m-%d").alias("time"),
-                 pl.col("count").alias(obs), "days_covered", "n_report_days",
-                 "flags")
-         .write_csv(args.out_dir / f"{name}.tsv", separator="\t"))
+        write_stream(
+            d.with_columns(pl.lit(1, pl.Int64).alias("n_report_days"))
+            .select(pl.col("date").dt.to_string("%Y-%m-%d").alias("time"),
+                    pl.col("count").alias(obs), "days_covered",
+                    "n_report_days", "flags"),
+            args.out_dir / f"{name}.tsv")
 
     for prov, slug in STREAM_PROVINCES.items():
         for col, stem in (("cum_cases", "cases"), ("cum_deaths", "deaths")):
@@ -928,16 +1095,24 @@ def main() -> None:
         d = d.with_columns(daily_flags(d["date"], caveat, exceptions,
                                        prov or "national"))
         name = f"community_deaths_daily_{slug}"
-        (d.with_columns(pl.lit(1, pl.Int64).alias("n_report_days"))
-         .select(pl.col("date").dt.to_string("%Y-%m-%d").alias("time"),
-                 pl.col("deaths_community").alias(f"community_deaths_{slug}"),
-                 pl.col("deaths_total").alias(f"deaths_split_{slug}"),
-                 "days_covered", "n_report_days", "flags")
-         .write_csv(args.out_dir / f"{name}.tsv", separator="\t"))
+        cname, tname = f"community_deaths_{slug}", f"deaths_split_{slug}"
+        fl = d["flags"].to_list()
+        d = carried(d, name, cname, count_col="deaths_community",
+                    time_col="date", flags=fl)
+        d = carried(d, name, tname, count_col="deaths_total",
+                    time_col="date", flags=fl)
+        write_stream(
+            d.with_columns(pl.lit(1, pl.Int64).alias("n_report_days"))
+            .select(pl.col("date").dt.to_string("%Y-%m-%d").alias("time"),
+                    pl.col("deaths_community").alias(cname),
+                    pl.col("deaths_total").alias(tname),
+                    "days_covered", "n_report_days", "flags"),
+            args.out_dir / f"{name}.tsv")
         recon[name] = {"n_obs": d.height,
                        "emitted": int(d["deaths_community"].sum()),
                        "emitted_total": int(d["deaths_total"].sum()),
-                       "n_flagged": int(d.filter(pl.col("flags") != "-").height)}
+                       "n_flagged": int(d.filter(pl.col("flags") != "-").height),
+                       **carry_note(name, cname)}
 
     # THE TESTING STREAM, from the laboratory prose (extract_lab_prose.py:
     # every row is licensed by the sentence's own printed positivity). This
@@ -964,15 +1139,20 @@ def main() -> None:
                            pl.len().alias("n_report_days"),
                            pl.col("n_prov").sum().alias("n_province_days"))
                       .sort("bin"))
-            (weekly.with_columns(
-                pl.Series("days_covered",
-                          spans(weekly["time"].to_list(),
-                                daily["date"].min() - dt.timedelta(days=1))))
-             .select(pl.col("time").dt.to_string("%Y-%m-%d"),
-                     pl.col("positives").alias("positives_national"),
-                     pl.col("samples").alias("tests_national"),
-                     "days_covered", "n_report_days")
-             .write_csv(args.out_dir / "lab_national.tsv", separator="\t"))
+            weekly = carried(weekly, "lab_national", "positives_national",
+                             count_col="positives")
+            weekly = carried(weekly, "lab_national", "tests_national",
+                             count_col="samples")
+            write_stream(
+                weekly.with_columns(
+                    pl.Series("days_covered",
+                              spans(weekly["time"].to_list(),
+                                    daily["date"].min() - dt.timedelta(days=1))))
+                .select(pl.col("time").dt.to_string("%Y-%m-%d"),
+                        pl.col("positives").alias("positives_national"),
+                        pl.col("samples").alias("tests_national"),
+                        "days_covered", "n_report_days"),
+                args.out_dir / "lab_national.tsv")
             # THE DAILY FORM IS THE COVERAGE-HONEST ONE, and this stream needs
             # it most: a weekly total is the sum over however many report-days
             # and however many PROVINCES licensed a sentence that week, and
@@ -986,13 +1166,19 @@ def main() -> None:
                 .fill_null(1).alias("days_covered"))
             dl = dl.with_columns(daily_flags(dl["date"], caveat, exceptions,
                                              "national"))
-            (dl.with_columns(pl.lit(1, pl.Int64).alias("n_report_days"))
-             .select(pl.col("date").dt.to_string("%Y-%m-%d").alias("time"),
-                     pl.col("positives").alias("positives_national"),
-                     pl.col("samples").alias("tests_national"),
-                     "days_covered", "n_report_days",
-                     pl.col("n_prov").alias("n_provinces"), "flags")
-             .write_csv(args.out_dir / "lab_daily_national.tsv", separator="\t"))
+            fl = dl["flags"].to_list()
+            dl = carried(dl, "lab_daily_national", "positives_national",
+                         count_col="positives", time_col="date", flags=fl)
+            dl = carried(dl, "lab_daily_national", "tests_national",
+                         count_col="samples", time_col="date", flags=fl)
+            write_stream(
+                dl.with_columns(pl.lit(1, pl.Int64).alias("n_report_days"))
+                .select(pl.col("date").dt.to_string("%Y-%m-%d").alias("time"),
+                        pl.col("positives").alias("positives_national"),
+                        pl.col("samples").alias("tests_national"),
+                        "days_covered", "n_report_days",
+                        pl.col("n_prov").alias("n_provinces"), "flags"),
+                args.out_dir / "lab_daily_national.tsv")
             recon["lab_daily_national"] = {
                 "n_obs": dl.height,
                 "tests": int(dl["samples"].sum()),
@@ -1000,6 +1186,7 @@ def main() -> None:
                 "n_provinces": {"median": float(dl["n_prov"].median()),
                                 "min": int(dl["n_prov"].min()),
                                 "max": int(dl["n_prov"].max())},
+                **carry_note("lab_daily_national", "positives_national"),
             }
             # PER-PROVINCE DAILY LABORATORY STREAMS, so a consumer never has
             # to model coverage at all. The national stream's coverage varies
@@ -1078,6 +1265,13 @@ def main() -> None:
     # confirmed and 488 suspects -- so a model observing a confirmed-case
     # compartment wants `patients_isolated_confirmed`, whose share of the
     # total runs 0.23 to 0.53.
+    #
+    # NO CARRY-FORWARD HERE, and none is possible: a stock is a reading, not a
+    # sum over a window, so there is no later row for a deficit to come out of
+    # and nothing to preserve a total of. A downward move in one of these is
+    # the census falling, which is the observation. The non-negativity gate
+    # still covers them, because a reading below zero would be an extraction
+    # defect rather than a revision.
     if args.banner and args.banner.exists():
         bn = pl.read_csv(args.banner, infer_schema_length=None)
         for col in ("patients_isolated", "patients_isolated_confirmed",
@@ -1085,13 +1279,32 @@ def main() -> None:
             d = bn.filter(pl.col(col).is_not_null()).sort("date")
             if d.is_empty():
                 continue
-            (d.select(pl.col("date").alias("time"), pl.col(col))
-             .write_csv(args.out_dir / f"{col}.tsv", separator="\t"))
+            write_stream(d.select(pl.col("date").alias("time"), pl.col(col)),
+                         args.out_dir / f"{col}.tsv")
             recon[col] = {"n_obs": d.height, "kind": "stock",
                           "first_date": d["date"][0],
                           "last_date": d["date"][-1],
                           "first_value": int(d[col][0]),
                           "last_value": int(d[col][-1])}
+
+    # ---- THE RECORD OF WHAT THE CARRY-FORWARD DID --------------------
+    # GENERATED, never hand-maintained. A curated list would go stale the first
+    # time INSP prints a revision nobody had seen, and it would imply a
+    # per-case human judgement that does not exist: there is one rule, applied
+    # to every count column, and this file is its transcript. One row for every
+    # published row a deficit was open at, keyed on (stream, column, time) --
+    # the same key the stream file itself carries, so a consumer can join it
+    # straight on and see which of its observations were corrected, by how
+    # much, and whether the deficit was still outstanding when that row was
+    # emitted. An empty file with its header is the normal, healthy state and
+    # is written anyway, because a missing artefact and a clean build must not
+    # look the same.
+    REV_SCHEMA = {"stream": pl.Utf8, "column": pl.Utf8, "time": pl.Utf8,
+                  "raw": pl.Int64, "emitted": pl.Int64,
+                  "carry_after": pl.Int64, "flags": pl.Utf8}
+    (pl.DataFrame(revisions, schema=REV_SCHEMA)
+     .sort("stream", "column", "time")
+     .write_csv(args.out_dir / "revisions.tsv", separator="\t"))
 
     last = panel.filter(pl.col("date") == panel["date"].max())
     meta = {
@@ -1147,9 +1360,42 @@ def main() -> None:
               f"final {vp['final_gap']:+d}" if vp else "")
         print(f"  {name:<22} {r['n_obs']:>3} obs   emitted {r['emitted']:>5}  "
               f"source delta {r['source_delta']:>5}{flag}{vs}")
-    if failures:
-        sys.exit(f"STREAMS DO NOT RECONCILE: {failures}. "
-                 "What is emitted must sum to what the cumulative moved.")
+
+    if revisions:
+        by = sorted({(r["stream"], r["column"]) for r in revisions})
+        print(f"  {len(revisions)} row(s) across {len(by)} stream column(s) "
+              f"carry a downward revision forward; "
+              f"see {(args.out_dir / 'revisions.tsv').name}")
+        for r in sorted(revisions, key=lambda r: (r["stream"], r["column"],
+                                                  r["time"])):
+            print(f"    {r['stream']}:{r['column']} {r['time']}  "
+                  f"raw {r['raw']:+d} -> emitted {r['emitted']}"
+                  f"   carry {r['carry_after']}")
+
+    # ---- THE GATES ---------------------------------------------------
+    # Three of them, all fatal, reported together so one run names every
+    # problem rather than the first one:
+    #   1. what a stream emits sums to what the source's cumulative moved;
+    #   2. nothing published is negative -- read back off the files, so a
+    #      column that never passed through the carry is covered too;
+    #   3. every deficit the carry opened was discharged before the series
+    #      ended. A residual means part of a revision was dropped on the
+    #      floor, which also breaks (1) -- this names the cause.
+    negatives = negative_values(written)
+    if failures or negatives or carry_failures:
+        msg = []
+        if failures:
+            msg.append(f"STREAMS DO NOT RECONCILE: {failures}. "
+                       "What is emitted must sum to what the cumulative moved.")
+        if negatives:
+            msg.append("A PUBLISHED COUNT IS NEGATIVE, which no count "
+                       "likelihood can evaluate:\n  " + "\n  ".join(negatives))
+        if carry_failures:
+            msg.append("A DOWNWARD REVISION NEVER DISCHARGED by the end of "
+                       "its series, so the emitted total is short of the "
+                       "source's movement by that much:\n  "
+                       + "\n  ".join(carry_failures))
+        sys.exit("\n".join(msg))
 
 
 if __name__ == "__main__":

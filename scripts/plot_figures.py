@@ -881,7 +881,7 @@ def draw_ascertainment(inputs: dict[str, Path], out: Path) -> None:
     # three reports that were published but printed no health-zone table, and
     # the community/treatment-centre split is only ever printed there.
     status = pl.read_csv(inputs["zone_status"], infer_schema_length=None)
-    published = {r["date"]: r["status"] for r in status.iter_rows(named=True)}
+    published = {r["date"]: str(r["status"]) for r in status.iter_rows(named=True)}
     have = {str(v) for v in d["time"].to_list()}
     day = dt.timedelta(days=1)
     cur, runs = None, []
@@ -890,7 +890,16 @@ def draw_ascertainment(inputs: dict[str, Path], out: Path) -> None:
     while probe <= span_hi:
         key = str(probe)
         missing = key not in have
-        why = ("no report published" if key not in published
+        # THREE CAUSES, NOT TWO, and they are not interchangeable. A report
+        # that was never published, a report that printed no health-zone
+        # table, and a report whose daily block WE withdrew are different
+        # claims about who is missing what. The third appeared the moment
+        # sitrep 080 was quarantined, and until this read the status the
+        # figure called it "no health-zone table" -- blaming the source for
+        # our own deliberate rejection of a page that does print one.
+        st = published.get(key)
+        why = ("no report published" if st is None
+               else "daily block withdrawn" if "reject" in st
                else "no health-zone table")
         if missing:
             if cur and cur[2] == why and cur[1] + day == probe:

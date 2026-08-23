@@ -170,6 +170,27 @@ carries the source's own words about that day (`consolidating`,
 none), so a consumer can down-weight batch consolidation rather than absorb
 it in dispersion.
 
+**No published count is negative, and no case is lost making it so.** INSP
+revises its own cumulative downward — Nord-Kivu goes 44 cases / 26 deaths on
+10 June to 40 / 24 on 11 June — and differencing turns that into a negative
+increment, which Poisson and negative binomial are both undefined on. The
+deficit is therefore **carried forward**: the row emits 0 and the remainder
+comes out of subsequent rows until it discharges, so every emitted value is a
+non-negative integer and every stream still totals exactly what the source's
+cumulative moved. Clipping to zero would do neither — it would keep the cases
+the source withdrew and break that identity by the size of the revision. The
+correction is applied to the rows a consumer fits, so a week whose net is
+already non-negative is untouched even when one of its days was a revision;
+the daily and weekly files can therefore attribute one revision to different
+rows, and both still total the source's movement.
+`data/build/streams/revisions.tsv` is the generated record — one row per
+published row a deficit was open at, keyed on `(stream, column, time)` so it
+joins straight onto the stream file, with the raw increment, the value
+emitted, the carry outstanding after that row and the source's flag for that
+day. Eight revisions exist so far, the largest being Ituri's -39 cases and -23
+deaths on 12 July. A carry still outstanding at the end of a series stops the
+build, because it would mean part of a revision was dropped.
+
 Contract changes ship through the release tags described at the top, with the change
 named in the tag message.
 
