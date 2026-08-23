@@ -37,7 +37,12 @@ pro = load("data/build/series/prose_provinces.csv")
 meta = load_json("data/build/streams/meta.json")
 
 n_reports = st.height
-n_zone = st.filter(pl.col("status") == "ok")["sitrep"].n_unique()
+# COUNTED BY WHAT THE REPORT PRODUCED, not by the exact status string. A
+# report whose register entry rejects SOME of its columns still yields its
+# zone rows -- sitrep 080 keeps a cumulative series that closes exactly --
+# and testing `status == "ok"` would drop it from a sentence that claims to
+# count every report printing a per-zone table.
+n_zone = st.filter(pl.col("rows") > 0)["sitrep"].n_unique()
 n_summ = summ["sitrep"].n_unique()
 n_any = len(set(st["sitrep"]) & (set(zt["sitrep"]) | set(summ["sitrep"]) | set(pro["sitrep"])))
 zrows = zt.filter(pl.col("level") == "zone").height
@@ -287,7 +292,7 @@ Markdown(f"""
 | register | rows | each row asserts |
 |---|---|---|
 | `reconciliation_exceptions.tsv` | {ex.height} | this page's printed rows do not sum to its printed total, by exactly this much |
-| `rejected_routes.tsv` | {rej.height} | this route, on this document, reads a table that is not what it believes |
+| `rejected_routes.tsv` | {rej.height} | this route, on this document, reads the wrong table -- or reads the right one with named columns displaced |
 | `zone_province_overrides.tsv` | {zpo.height} | the page states in words which province this row belongs to |
 | `zone_aliases_local.csv` | {zal.height} | this printed spelling is that canonical health zone |
 | `sitrep_number_overrides.tsv` | {sno.height} | this upload's filename misstates its report number or data date |

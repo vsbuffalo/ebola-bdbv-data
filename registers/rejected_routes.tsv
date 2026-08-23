@@ -1,22 +1,50 @@
 # Reports whose extraction ROUTE is rejected by hand, after reading the page.
 #
-# An entry says: this route, on this document, reads a table that is not what
-# the route believes it is, and its output is wrong in a way no identity can
-# catch from inside. It does not delete the report -- the named FALLBACK route
-# carries it -- and it is keyed on the file hash so a revised document returns
+# An entry says: this route, on this document, reads values that are not what
+# the route believes they are, and they are wrong in a way no identity can
+# catch from inside. It is keyed on the file hash so a revised document returns
 # for a fresh judgement rather than inheriting this one.
+#
+# AN ENTRY NAMES ITS SCOPE. A route can be wrong about a document in two
+# different ways and the register has to say which:
+#
+#   columns = *          the route reads the WRONG TABLE. Nothing it produces
+#                        is usable, every row is dropped, and the named
+#                        FALLBACK route carries the report.
+#   columns = a|b|c      the route reads the right table, and the labels and
+#                        the columns not named here are correct; the named
+#                        value columns are not. Those columns become null --
+#                        which is already this panel's word for "this table
+#                        does not report that quantity" -- and every other
+#                        column of the report is published as usual. There is
+#                        no fallback route for a column subset; `fallback` is
+#                        `-` and the quantity is simply not observed that day.
+#
+# Column names are the extraction's own value roles (cum_cases, cum_deaths,
+# letality, new_cases, deaths_community, deaths_treatment_centre,
+# deaths_total, ...). A name the route does not read stops the build rather
+# than rejecting nothing quietly.
+#
+# NAMING `letality` ALSO RELEASES THE BUILD GATE for that document. The
+# letality column is a check and never data, so nulling it changes no output;
+# what the entry licenses is the verdict. The check still runs and its counts
+# still appear in zone_table_status.csv -- and if the check later comes back
+# anything but `column_displaced`, the entry is STRANDED and the build stops,
+# because a licence nothing needs is a mute button.
 #
 # COLUMNS
 #   sitrep      report number
 #   date        data date, from the page's Date de rapportage
 #   sha256_16   first 16 hex characters of the PDF's SHA-256
 #   route       the extraction route being rejected
-#   fallback    the route that carries this report instead
+#   columns     `*` for the whole route, or `|`-separated value columns
+#   fallback    the route that carries this report instead, or `-`
 #   verified_by who read the page, and what they compared
 #   note        what the rejected route actually read
 #
-sitrep	date	sha256_16	route	fallback	verified_by	note
-33	2026-06-16	b70cd26f0bceba7e	zone_cumulative	provincial_summary	read against the page 2026-08-16, with the provincial summary and the narrative	Sitrep 033 prints NO per-zone table: its zone data is a narrative list. The zone route matches a fragment of the PROVINCIAL SUMMARY instead and emits its rows as health zones -- including a row literally named "Nord-Kivu1" carrying 73 cases, which then enters Ituri's zone series and persists there by forward-fill. The summary route reads the same page correctly (Ituri 799, Nord-Kivu 73, Sud-Kivu 3, Total 875, matching the narrative "Province de l'Ituri (799 cas)").
+sitrep	date	sha256_16	route	columns	fallback	verified_by	note
+33	2026-06-16	b70cd26f0bceba7e	zone_cumulative	*	provincial_summary	read against the page 2026-08-16, with the provincial summary and the narrative	Sitrep 033 prints NO per-zone table: its zone data is a narrative list. The zone route matches a fragment of the PROVINCIAL SUMMARY instead and emits its rows as health zones -- including a row literally named "Nord-Kivu1" carrying 73 cases, which then enters Ituri's zone series and persists there by forward-fill. The summary route reads the same page correctly (Ituri 799, Nord-Kivu 73, Sud-Kivu 3, Total 875, matching the narrative "Province de l'Ituri (799 cas)").
+80	2026-08-02	fae9db4cc474db76	zone_cumulative	letality|new_cases|deaths_community|deaths_treatment_centre|deaths_total	-	read against the page 2026-08-23, against the table's own arithmetic at three levels and against the national cumulative movement	Sitrep 080's 24-hour block is displaced by one printed row: the figures on row i's line belong to row i-1. Verified by arithmetic, not by looking at the page. The four daily figures on the "Adja" line (49 new, 13 community, 10 intra-CTE, 23 total) are EXACTLY the sum of the 27 Ituri zone lines below it, on all four columns at once; the figures on the "Beni" line (22, 7, 4, 11) are exactly the sum of the 11 Nord-Kivu zone lines below it, again on all four. So each province's own daily totals are printed on its first health zone's line. Independently: "Adja" carries 11 cumulative cases and 1 cumulative death and the same row reports 49 new cases and 23 deaths in 24 hours, which its own cumulative forbids. The zone rows sum to 148 new cases against a printed national 58, and the printed national 72 confirmed deaths in 24 hours stands against a national cumulative-death movement of 50 (1657 on sitrep 079 to 1707 here). The letality column is displaced the same way and is also stale: 47 of its 56 checkable rows disagree with their own cases and deaths, where the next-worst report in the corpus has 3. THE SAME PAGE ADJUDICATES ITSELF. Its provincial summary is a second table over the same five provinces, read by the same reader, and every one of its six letality figures closes -- including a national 44,9 % against the zone table's 44,2 %, on one identical pair of 3802 cases and 1707 deaths. The zone table's 44,2 % is 1657/3748, which is sitrep 079's national pair. So the defect is in this table on this page, not in the reading. THE CUMULATIVE COLUMNS ARE NOT AFFECTED and are kept: cum_cases and cum_deaths both close exactly against the printed national total (3802 and 1707, residual 0 on both), so the report's contribution to every cumulative-differenced series stands. FALLBACK is `-` because no route is wired to carry these four columns. The provincial summary does print the day's new cases per province (Ituri 39, Nord-Kivu 18, Haut-Uélé 1, national 58) and is a candidate should a daily-case stream ever need 2 August; it prints no death split at all, so the split for that date is simply not observed.
 #
 # NOTE 2026-08-17: the extraction now refuses structurally any zone-route
 # selection whose row names are majority provinces (`rows_are_provinces`),

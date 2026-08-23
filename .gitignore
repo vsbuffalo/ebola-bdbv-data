@@ -1,7 +1,12 @@
 # The PDF archive: ~141 MB, regenerable from the committed index and manifest.
 # Pinned instead by data/raw/insp_sitrep_index.tsv (what exists upstream),
 # data/raw/sitrep_pdfs.manifest.tsv (sha256 per file) and data/raw/PROVENANCE.tsv.
-data/raw/sitrep_pdfs/
+# NO TRAILING SLASH: a trailing slash matches a directory only, and the
+# supported way to build without re-fetching 141 MB -- the one `release-check`
+# itself uses -- is to SYMLINK the archive in. A symlink then showed as
+# untracked, one `git add -A` away from committing an absolute path to one
+# machine. Same for external/ below.
+data/raw/sitrep_pdfs
 
 # Everything under build/ has a rule. Delete it and `make build` returns it.
 data/build/
@@ -17,7 +22,7 @@ analysis/_site/
 data/trial/
 
 # Comparison sources, cloned by `make external`; pinned by the .commit file.
-external/
+external
 analysis/data.html
 analysis/*_files/
 analysis/explore.html

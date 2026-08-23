@@ -54,7 +54,10 @@ verify:
 
 ## build   -- OFFLINE. PDFs -> health-zone extraction -> province aggregation.
 ##            Stops with exit 2 if a province total disagrees with the sum of
-##            its parts; that is a finding, not a nuisance.
+##            its parts; that is a finding, not a nuisance. The extraction
+##            stops with exit 2 for the same reason if a report's printed
+##            case-fatality column disagrees with more than half of its own
+##            rows -- see registers/rejected_routes.tsv for what to do about it.
 build:
 	uv run python scripts/extract_zone_table.py \
 		--pdfs data/raw/sitrep_pdfs --out data/build/series/zone_table.csv
@@ -82,7 +85,9 @@ build:
 		--out data/build/series/province_series.csv || [ $$? -eq 1 ]
 	# sibling outputs of the steps above:
 	#   data/build/series/zone_table_status.csv
+	#   data/build/series/zone_table_letality.csv
 	#   data/build/series/province_summary_status.csv
+	#   data/build/series/province_summary_letality.csv
 	#   data/build/series/prose_provinces_status.csv
 	#   data/build/series/lab_prose_status.csv
 	#   data/build/series/banner_status.csv

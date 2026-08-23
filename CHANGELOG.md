@@ -16,6 +16,63 @@ carries the rest.
 
 ---
 
+## `data/2026-08-18-r4` — 2026-08-23 — fix
+
+**Not breaking**: no column added, removed or renamed. One report's daily
+death split is withdrawn. **If you have fitted δ, f_cfr, or the community
+share, refit** — those move, and by more than the audit predicted.
+
+**Sitrep 080 (2 August) is structurally corrupt, and we were publishing from
+it.** Its daily block is displaced by one printed row: the values on row *i*'s
+line belong to row *i−1*. `Adja` carries 11 cumulative cases against 49 new
+cases and 23 deaths in 24 hours; the zone rows sum to 148 new cases against a
+printed national 58. Three independent lines of evidence agree — word
+geometry, the zone sums, and the report's own provincial summary, which on the
+same page closes on all six letality figures and prints a national 44,9 %
+where the zone table prints 44,2 %, that being *sitrep 079's* pair.
+
+The daily block only is rejected, via `registers/rejected_routes.tsv`. The
+report's cumulative columns are sound and its national identity closes, so
+the rest of it still ships.
+
+| stream | was | now |
+|---|---|---|
+| `community_deaths_daily_national` | 2026-08-02: 40 / 72 | row withdrawn |
+| `community_deaths_daily_nord_kivu` | 2026-08-02: 0 / 0 | row withdrawn |
+| `community_deaths_daily_haut_uele` | 2026-08-02: 0 / 0 | row withdrawn |
+| `community_deaths_national` (wk to 08-04) | 158 / 262, 6 report-days | **118 / 190**, 5 |
+| `community_deaths_nord_kivu` | 20 / 33, 6 report-days | 20 / 33, **5** |
+| `community_deaths_haut_uele` | 3 / 7, 6 report-days | 3 / 7, **5** |
+
+Every `cases_*` and `deaths_*` file, weekly and daily, is byte-identical.
+`community_deaths_daily_ituri` is unchanged — Ituri never had a 2 August
+observation, because the displacement moved its values onto Adja's line.
+
+**Quantities a consumer derives from these, all of which move:**
+
+| quantity | before | after |
+|---|---|---|
+| δ, care exit rate | 0.1119 /day (8.9 d stay) | **0.1065 /day (9.4 d)** |
+| f_cfr, fatality in care | 0.4563 | **0.4288** |
+| γq/τ, span-matched | 0.405 | **0.382** |
+
+`notes/2026-08-22-pipeline-audit.md` predicted δ and f_cfr would be
+*unchanged*, on the grounds that the affected window lay outside the care
+ledger. It does not: the ledger window ends on 2 August, the very report
+withdrawn. The audit was wrong on that row and the figures above supersede it.
+
+**A new check now catches this class automatically.** `tablespec.py` had
+documented the printed letality column as "a free per-row check" since the
+beginning without anyone implementing it. It now runs over 3,182 checkable
+rows and closes on 3,113; of 54 unexplained, **47 are sitrep 080** and the
+worst other report is 3 of 40. Results land in `zone_table_letality.csv` and
+five new columns of `zone_table_status.csv`. The build fails only when a
+column disagrees with more than half its own rows — isolated failures are the
+source's own rounding or a figure carried forward from the previous report,
+neither of which is our defect.
+
+---
+
 ## `data/2026-08-18-r3` — 2026-08-23 — fix
 
 **Not breaking**: no column added, removed or renamed. Two national daily
