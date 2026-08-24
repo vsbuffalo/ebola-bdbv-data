@@ -1629,13 +1629,13 @@ def _synthetic_panel(path, ituri_cases, ituri_deaths):
     d.select(PANEL_COLUMNS).write_csv(path)
 
 
-def _run_build(monkeypatch, panel, out_dir):
+def _run_build(monkeypatch, panel, out_dir, *extra):
     monkeypatch.chdir(ROOT)
     monkeypatch.setattr(sys, "argv", [
         "build_streams.py", "--panel", str(panel),
         "--geojson", str(ROOT / "data/raw/health_zones.geojson"),
         "--population", str(ROOT / "data/raw/zone_population.csv"),
-        "--out-dir", str(out_dir)])
+        "--out-dir", str(out_dir), *extra])
     BS.main()
 
 
@@ -1716,3 +1716,166 @@ def test_an_untouched_build_still_writes_the_empty_record(monkeypatch, tmp_path)
     assert rev.height == 0
     assert rev.columns == ["stream", "column", "time", "raw", "emitted",
                            "carry_after", "flags"]
+
+
+# --------------------------------------------------------------------------
+# THE GENERATED DATA DICTIONARY
+#
+# `data/build/streams/README.md` ships with the vendored data and says, per
+# published file, what it measures and what it covers. Two things can go wrong
+# with a generated document, and both are silent: it can omit a file that
+# shipped, and it can state a span that is not the span of the file it names.
+# The third case is the one the register exists for -- a new stream arriving
+# with no sentence describing it -- which must stop the build rather than
+# ship an undocumented file.
+# --------------------------------------------------------------------------
+
+FAMILIES = ROOT / "registers" / "stream_families.tsv"
+DICTIONARY = STREAMS / "README.md"
+needs_dictionary = pytest.mark.skipif(
+    not DICTIONARY.exists(),
+    reason="the streams are not built; run `make build && make streams`")
+
+
+def _dictionary_rows(path) -> dict[str, list[str]]:
+    """The document's table rows, keyed on the filename each one describes.
+
+    A row is a markdown table line whose first cell is a backticked filename,
+    which is what separates it from the header, the rule beneath it and the
+    prose around it.
+    """
+    rows = {}
+    for line in path.read_text().splitlines():
+        if line.startswith("| `"):
+            cells = [c.strip() for c in line.strip("|").split("|")]
+            rows[cells[0].strip("`")] = cells
+    return rows
+
+
+@pytest.mark.parametrize("stem, family, place", [
+    ("cases_ituri", "cases", "ituri"),
+    ("cases_daily_ituri", "cases", "ituri"),
+    ("community_deaths_daily_nord_kivu", "community_deaths", "nord_kivu"),
+    ("deaths_national", "deaths", "national"),
+    ("lab_daily_haut_uele", "lab", "haut_uele"),
+    ("lab_national", "lab", "national"),
+    # No place suffix at all: a front-page dashboard reading, national by
+    # construction. `patients_isolated_confirmed` must not be split on the
+    # shorter `patients_isolated` that is also a family here.
+    ("patients_isolated", "patients_isolated", "national"),
+    ("patients_isolated_confirmed", "patients_isolated_confirmed",
+     "national"),
+    ("cumul_recovered", "cumul_recovered", "national"),
+])
+def test_the_family_is_what_is_left_after_place_and_resolution(stem, family,
+                                                               place):
+    """Documentation is keyed on the family, so the split has to be exact:
+    eight files publish the case family, and one wrong split would either
+    silently invent a family or document a stream as the wrong quantity."""
+    assert BS.stream_identity(stem) == (family, place)
+
+
+def test_every_family_the_register_names_is_reachable():
+    """A register row no filename can ever produce is a sentence that will
+    never be printed, and would hide a typo in the key."""
+    families = BS.load_families(FAMILIES)
+    for family in families:
+        assert BS.stream_identity(family) == (family, "national"), family
+
+
+@needs_dictionary
+def test_every_published_file_is_documented():
+    """Nothing ships undescribed. Every TSV in the release appears either as
+    a row of a family table or by name in one of the two sections for the
+    files that are not observation streams."""
+    rows = _dictionary_rows(DICTIONARY)
+    text = DICTIONARY.read_text()
+    for path in sorted(STREAMS.glob("*.tsv")):
+        if path.name in ("revisions.tsv", "uganda_exports.tsv"):
+            assert f"`{path.name}`" in text
+            continue
+        assert path.name in rows, f"{path.name} shipped but is not documented"
+    assert len(rows) == len(list(STREAMS.glob("*.tsv"))) - 2
+
+
+@needs_dictionary
+def test_the_stated_range_is_the_range_of_the_file():
+    """The spans are read off the files rather than out of `meta.json`, whose
+    reconciliation block carries no dates for the community-death or
+    laboratory streams. This asserts what the document claims against what
+    the file it names actually holds."""
+    rows = _dictionary_rows(DICTIONARY)
+    assert rows
+    for name, cells in rows.items():
+        _, _, _, n_obs, first, last, _ = cells
+        d = pl.read_csv(STREAMS / name, separator="\t",
+                        infer_schema_length=None)
+        times = sorted(str(x) for x in d["time"].to_list())
+        assert int(n_obs) == d.height, name
+        assert (first, last) == (times[0], times[-1]), name
+
+
+@needs_dictionary
+def test_metadata_columns_are_never_listed_as_observations():
+    """`days_covered` states how wide a row's window is and `n_report_days`
+    how much of it the source reported on. A consumer that fitted either as a
+    count would be fitting the calendar."""
+    for name, cells in _dictionary_rows(DICTIONARY).items():
+        listed = cells[-1]
+        for meta in BS.METADATA_COLUMNS:
+            assert f"`{meta}`" not in listed, f"{name} lists {meta}"
+
+
+@needs_pdftotext
+def test_an_unregistered_family_stops_the_build(monkeypatch, tmp_path):
+    """A stream with no sentence describing it must not be able to ship.
+
+    The register is doctored to drop `deaths` while the build still writes
+    eight death files. The build stops, names every one of them, and says
+    which family is missing -- and it does not leave a data dictionary behind
+    that is silently missing a quarter of the release.
+    """
+    register = tmp_path / "families.tsv"
+    register.write_text("\n".join(
+        line for line in FAMILIES.read_text().splitlines()
+        if not line.startswith("deaths\t")) + "\n")
+    panel = tmp_path / "panel.csv"
+    _synthetic_panel(panel, [10, 20, 30, 40], [2, 4, 6, 8])
+    out = tmp_path / "streams"
+    with pytest.raises(SystemExit) as e:
+        _run_build(monkeypatch, panel, out, "--families", str(register))
+    msg = str(e.value)
+    assert "A PUBLISHED STREAM IS UNDOCUMENTED" in msg
+    assert "deaths_ituri.tsv (family `deaths`)" in msg
+    assert "deaths_daily_national.tsv (family `deaths`)" in msg
+    # The cases family is registered, so it is not among the complaints.
+    assert "cases_ituri.tsv" not in msg
+    assert not (out / "README.md").exists()
+
+
+@needs_pdftotext
+def test_the_same_run_that_writes_the_streams_writes_the_dictionary(
+        monkeypatch, tmp_path):
+    """It travels with the data, so it is produced by the build rather than
+    by a separate step that could be skipped or run against another vintage.
+
+    This build has no laboratory or dashboard inputs, so those families are
+    absent from the document entirely -- a section with no files is omitted,
+    not printed empty.
+    """
+    panel = tmp_path / "panel.csv"
+    _synthetic_panel(panel, [10, 20, 30, 40], [2, 4, 6, 8])
+    out = tmp_path / "streams"
+    _run_build(monkeypatch, panel, out)
+    doc = out / "README.md"
+    rows = _dictionary_rows(doc)
+    assert set(rows) == {p.name for p in out.glob("*.tsv")
+                         if p.name != "revisions.tsv"}
+    text = doc.read_text()
+    assert "Data date 2026-05-23" in text          # the panel's newest report
+    assert "## Laboratory testing effort" not in text
+    assert "## Cumulative recoveries" not in text
+    # The carry record is written even when empty, and documented either way.
+    assert "no rows yet, header only" in text
+    # No uganda_exports was named, so no section claims one shipped.
+    assert "uganda_exports" not in text

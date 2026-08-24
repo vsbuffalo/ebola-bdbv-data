@@ -12,6 +12,17 @@ source published and what our own fetchers wrote.
 | --- | --- |
 | `reconciliation_exceptions.tsv` | *I opened this page, added the printed rows, and the source does not agree with itself.* A claim about one document, keyed on its SHA-256. |
 | `sitrep_number_overrides.tsv` | *This upload's filename does not state its report number or data date correctly; the page says otherwise.* |
+| `rejected_routes.tsv` | *This extraction route reads this document's values as something they are not, in a way no identity can catch from inside.* |
+| `zone_province_overrides.tsv` | *The page states which province this row belongs to, but the table's geometry does not carry it.* |
+| `zone_aliases_local.csv` | *This printed spelling and this shapefile name are the same health zone.* |
+| `stream_families.tsv` | *This is what the streams of this observation family measure, in one sentence.* Keyed on the family, never on the file, so four province variants of one quantity cannot drift apart. |
+
+The last one is the only register that is not a judgement about a page: it is a
+judgement about a **quantity**, and it exists because the generated data
+dictionary at `data/build/streams/README.md` can measure a stream's span, its
+row count and its columns off the file itself, but cannot say what the numbers
+mean. A stream this pipeline publishes whose family has no row there stops the
+build, so a new stream cannot ship undocumented.
 
 ## Rules that apply to every register here
 

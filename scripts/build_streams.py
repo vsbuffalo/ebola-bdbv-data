@@ -74,6 +74,7 @@ import datetime as dt
 import json
 import sys
 from pathlib import Path
+from typing import NamedTuple
 
 import polars as pl
 
@@ -259,6 +260,71 @@ def spans(times, left) -> list[int]:
     return out
 
 
+# ---- THE VOCABULARY THE PUBLISHED FILES ARE DOCUMENTED IN ----------------
+# `data/build/streams/README.md` travels with the vendored data and answers
+# the question `meta.json` cannot: what is `community_deaths_daily_ituri`, and
+# what dates does it cover? Everything in it is read back off the files this
+# run wrote; the one thing no build can generate -- the sentence saying what a
+# quantity MEASURES -- comes from `registers/stream_families.tsv`.
+
+#: `time` aside, these columns describe the ROW rather than observing
+#: anything: how wide its window is, how much of that window the source
+#: reported on, what the page said about that day, and how many provinces fed
+#: it. Every other column in a stream file is an observation.
+METADATA_COLUMNS = ("days_covered", "n_report_days", "flags", "n_provinces")
+
+#: How a row's `time` relates to the count beside it. Passed at every write
+#: site rather than inferred from the filename, because it is a property of
+#: how the rows were MADE -- differenced into 7-day bins, differenced per
+#: report day, or read off the front-page dashboard at an instant.
+WEEKLY, DAILY, STOCK = "weekly", "daily", "stock"
+
+RESOLUTION_PROSE = {
+    WEEKLY: "weekly, 7-day bins",
+    DAILY: "one row per report day",
+    STOCK: "a reading at an instant",
+}
+
+
+class Written(NamedTuple):
+    """A file this run published, and how its rows relate to time."""
+    path: Path
+    resolution: str
+
+
+def stream_places() -> dict[str, str]:
+    """Place slug -> the place it names, for the generated documentation.
+
+    Derived from the provinces streams are built for, so adding one adds its
+    place here too. `national` is every province the source reports, which is
+    NOT the sum of the province streams: three small provinces and the rows
+    the source has not attributed are deliberately outside them.
+    """
+    return {slug: prov for prov, slug in STREAM_PROVINCES.items()} | {
+        "national": "DRC, all provinces"}
+
+
+def stream_identity(stem: str) -> tuple[str, str]:
+    """`(family, place slug)` for a published stream, from its file stem.
+
+    The family is what is left once the place and the `daily` marker come off
+    -- `community_deaths_daily_ituri` is the community-death family in Ituri,
+    `lab_national` the laboratory family nationally, `patients_isolated`
+    itself, nationally. Longest slug first, so a family name that happened to
+    end in a shorter slug could not be mis-split.
+
+    Documentation is keyed on the family, never on the file: eight files
+    publish the case family in two resolutions for four places, and one
+    sentence describing all eight cannot drift between them.
+    """
+    for slug in sorted(stream_places(), key=len, reverse=True):
+        if stem.endswith("_" + slug):
+            rest = stem[: -(len(slug) + 1)]
+            return (rest[:-len("_daily")] if rest.endswith("_daily")
+                    else rest), slug
+    return stem, "national"
+
+
 def daily_increments(cum: pl.DataFrame, report_dates: pl.Series) -> pl.DataFrame:
     """One row per REPORT DAY: the cumulative's movement since the previous
     report day, and the length of the interval that movement covers.
@@ -334,6 +400,187 @@ def negative_values(paths: list[Path]) -> list[str]:
             for r in t.filter(pl.col(col) < 0).iter_rows(named=True):
                 out.append(f"{path.name}: {col} = {r[col]} at {r['time']}")
     return out
+
+
+#: Where the sentences live, and how the generated file names it to a reader.
+#: Repository-relative on both counts: nothing committed or generated here
+#: carries a path that is true on one filesystem only.
+FAMILY_REGISTER = "registers/stream_families.tsv"
+DICTIONARY = "README.md"
+
+
+def load_families(path: Path) -> dict[str, dict[str, str]]:
+    """The register of what each observation family measures, keyed on family.
+
+    Hand-authored and unregenerable, like every other register: a sentence
+    saying what a quantity is has no identity a pipeline could check it
+    against, which is exactly why it cannot be derived and must be written
+    down once per quantity rather than once per file.
+    """
+    d = pl.read_csv(path, separator="\t", comment_prefix="#",
+                    infer_schema_length=0)
+    return {r["family"]: r for r in d.iter_rows(named=True)}
+
+
+def stream_facts(path: Path) -> dict:
+    """What a published file says about itself: how many rows, which `time`
+    values it spans, and which of its columns are observations.
+
+    READ OFF THE FILE, not off `meta.json`. The reconciliation block carries a
+    date range for the streams built by differencing a cumulative, but not for
+    the community-death or laboratory streams, so keying documentation off it
+    would leave thirteen of the published files with no stated span. A
+    document that states the range of the file it documents, measured from
+    that file, is also simply the more honest construction.
+    """
+    t = pl.read_csv(path, separator="\t", infer_schema_length=None)
+    times = sorted(str(x) for x in t["time"].to_list())
+    return {"n_obs": t.height,
+            "first": times[0] if times else "-",
+            "last": times[-1] if times else "-",
+            "all_columns": list(t.columns),
+            "columns": [c for c in t.columns
+                        if c != "time" and c not in METADATA_COLUMNS]}
+
+
+def _table(rows: list[list[str]], header: list[str],
+           align: list[str]) -> list[str]:
+    return ["| " + " | ".join(header) + " |",
+            "| " + " | ".join(align) + " |"] + \
+           ["| " + " | ".join(r) + " |" for r in rows]
+
+
+def _aside(path: Path, entry: dict[str, str], shape: str) -> list[str]:
+    """One of the two files that are NOT observation streams, in its own
+    section. Forcing either into the streams table would state a resolution,
+    a place and an accumulation window that it does not have."""
+    f = stream_facts(path)
+    span = (f"{f['n_obs']} rows, {f['first']} to {f['last']}"
+            if f["n_obs"] else "no rows yet, header only")
+    return [f"## {entry['title']}", "",
+            f"`{path.name}` — {entry['measures']}", "",
+            shape, "",
+            "Columns: " + ", ".join(f"`{c}`" for c in f["all_columns"])
+            + f". {span}.", ""]
+
+
+def data_dictionary(written: list[Written], register: Path, *,
+                    data_date: str, revisions: Path,
+                    uganda: Path | None) -> str:
+    """The per-release reference card for the files this run published.
+
+    FAIL-CLOSED, over the files THIS RUN WROTE. The set comes from the write
+    log rather than from a glob of the output directory, which can still hold
+    a stream from an older vintage of this script that no rule produces any
+    more -- documenting one of those would describe the release as containing
+    a file it does not ship. A written stream whose family has no sentence
+    stops the build and names the file, so a new stream cannot ship
+    undocumented; adding one means adding a row to the register, once per
+    quantity rather than once per place.
+    """
+    families = load_families(register)
+    orphans = [(w.path.name, stream_identity(w.path.stem)[0]) for w in written
+               if stream_identity(w.path.stem)[0] not in families]
+    if orphans:
+        sys.exit(
+            "A PUBLISHED STREAM IS UNDOCUMENTED. This run wrote these files, "
+            f"but their observation family has no row in {FAMILY_REGISTER}, "
+            f"so {DICTIONARY} cannot say what they measure:\n  "
+            + "\n  ".join(f"{name} (family `{fam}`)"
+                          for name, fam in sorted(orphans))
+            + "\nAdd one row per FAMILY, not per file: the place and the "
+              "resolution are filled in from the files themselves.")
+
+    # The two files that are not observation streams are documented from the
+    # same register, in their own sections, so their sentences cannot go
+    # missing quietly either.
+    asides = ["revisions"] + (["uganda_exports"] if uganda is not None else [])
+    if absent := [f for f in asides if f not in families]:
+        sys.exit(f"{FAMILY_REGISTER} has no row for {absent}, and these files "
+                 "are published: every section of the data dictionary is "
+                 "written from the register or not at all.")
+
+    places = stream_places()
+    order = {slug: i for i, slug in enumerate(places)}
+    rank = {WEEKLY: 0, DAILY: 1, STOCK: 2}
+    by_family: dict[str, list[Written]] = {}
+    for w in written:
+        by_family.setdefault(stream_identity(w.path.stem)[0], []).append(w)
+
+    out = [
+        "# The published observation streams", "",
+        f"**Data date {data_date}** — the newest situation report this build "
+        "read.",
+        "",
+        "**Generated** by `scripts/build_streams.py` during `make streams`, "
+        f"from `{FAMILY_REGISTER}`. Do not edit it by hand; the next build "
+        "overwrites it. Every count and date below is read back off the file "
+        "it describes.", "",
+        "## Reading any row", "",
+        "- **`time` is the observation time, and what it spans depends on the "
+        "resolution.** A weekly row is scored over its 7-day bin. A daily row "
+        "covers `(previous report day, this report day]` — report days are "
+        "irregular, so `days_covered` states the length of that interval, and "
+        "nothing is spread across it. A stock row is a reading at that "
+        "instant and accumulates over no window at all.",
+        "- **A day with no report is absent, never zero.** A gap is a missing "
+        "observation, not an observed absence of transmission.",
+        "- **No published count is negative.** Where the source revised its "
+        "own cumulative downward, the deficit is carried into later rows "
+        "rather than clipped, so a stream still totals exactly what the "
+        "source's cumulative moved. `revisions.tsv` below is the row-by-row "
+        "record of every row that touched.",
+        "- **Observation columns and metadata columns.** The first column is "
+        "always `time`. "
+        + ", ".join(f"`{c}`" for c in METADATA_COLUMNS)
+        + " describe the row rather than the epidemic; every other column is "
+        "an observation, and each is named below.", "",
+    ]
+
+    for family, entry in families.items():
+        group = by_family.get(family)
+        if not group:                    # a vintage this build has no rows for
+            continue
+        rows = []
+        for w in sorted(group, key=lambda w: (rank[w.resolution],
+                                              order[stream_identity(
+                                                  w.path.stem)[1]])):
+            f = stream_facts(w.path)
+            rows.append([f"`{w.path.name}`",
+                         places[stream_identity(w.path.stem)[1]],
+                         RESOLUTION_PROSE[w.resolution],
+                         str(f["n_obs"]), f["first"], f["last"],
+                         ", ".join(f"`{c}`" for c in f["columns"])])
+        out += [f"## {entry['title']}", "", entry["measures"], ""]
+        out += _table(rows,
+                      ["File", "Place", "Resolution", "Obs", "First `time`",
+                       "Last `time`", "Observation column(s)"],
+                      ["---", "---", "---", "---:", "---", "---", "---"])
+        out += [""]
+
+    out += _aside(
+        revisions, families["revisions"],
+        "Not an observation stream, and keyed differently: one row per "
+        "published row a deficit was open at, keyed `stream, column, time` so "
+        "it joins straight onto the stream file it names. `raw` is what "
+        "differencing the source gave, `emitted` is what the stream carries, "
+        "and `carry_after` is the deficit still outstanding after that row. "
+        "An empty file with its header is the normal, healthy state.")
+    if uganda is not None:
+        out += _aside(
+            uganda, families["uganda_exports"],
+            "Not an incidence stream, and deliberately unlike the ones beside "
+            "it: these are CUMULATIVE counts read at the moments WHO "
+            "bulletins pin, so there is no `days_covered` and no "
+            "`n_report_days` — the rows accumulate over no window, and a span "
+            "column would assert one that does not exist.")
+
+    out += ["The contract these files ship under, and what a consumer must do "
+            "when it changes, is in the repository's `README.md` and "
+            "`CHANGELOG.md`. `meta.json` beside them carries the build's "
+            "global fields — `day0`, `bin_days`, `population`, the dropped "
+            "provinces and the reconciliation record.", ""]
+    return "\n".join(out)
 
 
 def daily_flags(dates: pl.Series, caveat: pl.DataFrame | None,
@@ -607,6 +854,14 @@ def main() -> None:
                     default=ROOT / "registers/reconciliation_exceptions.tsv",
                     help="the exception register, for the stale-distribution "
                          "flag on daily rows")
+    ap.add_argument("--families", type=Path, default=ROOT / FAMILY_REGISTER,
+                    help="the register of what each observation family "
+                         "measures; a stream this run writes whose family is "
+                         "not in it stops the build")
+    ap.add_argument("--uganda-stream", type=Path, default=None,
+                    help="uganda_exports.tsv, so the data dictionary can "
+                         "state its span; written by build_uganda_stream.py, "
+                         "which the Makefile runs first for that reason")
     args = ap.parse_args()
     args.out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -645,17 +900,21 @@ def main() -> None:
     weekly_by_name: dict[str, pl.DataFrame] = {}
     revisions: list[dict] = []
     carry_failures: list[str] = []
-    written: list[Path] = []
+    written: list[Written] = []
 
-    def write_stream(d: pl.DataFrame, path: Path) -> None:
+    def write_stream(d: pl.DataFrame, path: Path, resolution: str) -> None:
         """Write a published stream, and remember that we published it.
 
-        The non-negativity gate reads back exactly the files THIS run wrote --
-        not everything in the output directory, which can still hold a file
-        from an older vintage of this script that no rule produces any more.
+        Two read-backs work off this log rather than off the output directory,
+        which can still hold a file from an older vintage of this script that
+        no rule produces any more: the non-negativity gate, and the generated
+        data dictionary. `resolution` is stated here because how a row relates
+        to time is a property of how these rows were made, not of the name
+        they are written under.
         """
+        assert resolution in RESOLUTION_PROSE, resolution
         d.write_csv(path, separator="\t")
-        written.append(path)
+        written.append(Written(path, resolution))
 
     def carried(d: pl.DataFrame, stream: str, column: str, *,
                 count_col: str = "count", time_col: str = "time",
@@ -770,7 +1029,7 @@ def main() -> None:
                 .select(pl.col("time").dt.to_string("%Y-%m-%d"),
                         pl.col("count").alias(name),
                         "days_covered", "n_report_days"),
-                args.out_dir / f"{name}.tsv")
+                args.out_dir / f"{name}.tsv", WEEKLY)
 
         asc, asc_vs = ascertainment(panel, prov)
         if not asc.is_empty():
@@ -788,7 +1047,7 @@ def main() -> None:
                         pl.col("deaths_community").alias(cname),
                         pl.col("deaths_total").alias(tname),
                         "days_covered", "n_report_days"),
-                args.out_dir / f"{cname}.tsv")
+                args.out_dir / f"{cname}.tsv", WEEKLY)
             recon[cname] = {
                 "n_obs": asc.height,
                 "emitted": int(asc["deaths_community"].sum()),
@@ -943,7 +1202,7 @@ def main() -> None:
             .select(pl.col("time").dt.to_string("%Y-%m-%d"),
                     pl.col("count").alias(name),
                     "days_covered", "n_report_days"),
-            args.out_dir / f"{name}.tsv")
+            args.out_dir / f"{name}.tsv", WEEKLY)
 
     # National ascertainment, from the printed national row's daily split --
     # checked per date against the sum of the printed PROVINCE rows, the
@@ -990,7 +1249,7 @@ def main() -> None:
                     pl.col("deaths_community").alias("community_deaths_national"),
                     pl.col("deaths_total").alias("deaths_split_national"),
                     "days_covered", "n_report_days"),
-            args.out_dir / "community_deaths_national.tsv")
+            args.out_dir / "community_deaths_national.tsv", WEEKLY)
         recon["community_deaths_national"] = {
             "n_obs": weekly.height,
             "emitted": int(weekly["deaths_community"].sum()),
@@ -1053,7 +1312,7 @@ def main() -> None:
             .select(pl.col("date").dt.to_string("%Y-%m-%d").alias("time"),
                     pl.col("count").alias(obs), "days_covered",
                     "n_report_days", "flags"),
-            args.out_dir / f"{name}.tsv")
+            args.out_dir / f"{name}.tsv", DAILY)
 
     for prov, slug in STREAM_PROVINCES.items():
         for col, stem in (("cum_cases", "cases"), ("cum_deaths", "deaths")):
@@ -1107,7 +1366,7 @@ def main() -> None:
                     pl.col("deaths_community").alias(cname),
                     pl.col("deaths_total").alias(tname),
                     "days_covered", "n_report_days", "flags"),
-            args.out_dir / f"{name}.tsv")
+            args.out_dir / f"{name}.tsv", DAILY)
         recon[name] = {"n_obs": d.height,
                        "emitted": int(d["deaths_community"].sum()),
                        "emitted_total": int(d["deaths_total"].sum()),
@@ -1152,7 +1411,7 @@ def main() -> None:
                         pl.col("positives").alias("positives_national"),
                         pl.col("samples").alias("tests_national"),
                         "days_covered", "n_report_days"),
-                args.out_dir / "lab_national.tsv")
+                args.out_dir / "lab_national.tsv", WEEKLY)
             # THE DAILY FORM IS THE COVERAGE-HONEST ONE, and this stream needs
             # it most: a weekly total is the sum over however many report-days
             # and however many PROVINCES licensed a sentence that week, and
@@ -1178,7 +1437,7 @@ def main() -> None:
                         pl.col("samples").alias("tests_national"),
                         "days_covered", "n_report_days",
                         pl.col("n_prov").alias("n_provinces"), "flags"),
-                args.out_dir / "lab_daily_national.tsv")
+                args.out_dir / "lab_daily_national.tsv", DAILY)
             recon["lab_daily_national"] = {
                 "n_obs": dl.height,
                 "tests": int(dl["samples"].sum()),
@@ -1216,12 +1475,14 @@ def main() -> None:
                 d = d.with_columns(daily_flags(d["date"], caveat, exceptions,
                                                prov))
                 name = f"lab_daily_{slug}"
-                (d.with_columns(pl.lit(1, pl.Int64).alias("n_report_days"))
-                 .select(pl.col("date").dt.to_string("%Y-%m-%d").alias("time"),
-                         pl.col("positives").alias(f"positives_{slug}"),
-                         pl.col("samples").alias(f"tests_{slug}"),
-                         "days_covered", "n_report_days", "flags")
-                 .write_csv(args.out_dir / f"{name}.tsv", separator="\t"))
+                write_stream(
+                    d.with_columns(pl.lit(1, pl.Int64).alias("n_report_days"))
+                    .select(pl.col("date").dt.to_string("%Y-%m-%d")
+                            .alias("time"),
+                            pl.col("positives").alias(f"positives_{slug}"),
+                            pl.col("samples").alias(f"tests_{slug}"),
+                            "days_covered", "n_report_days", "flags"),
+                    args.out_dir / f"{name}.tsv", DAILY)
                 recon[name] = {
                     "n_obs": d.height,
                     "tests": int(d["samples"].sum()),
@@ -1280,7 +1541,7 @@ def main() -> None:
             if d.is_empty():
                 continue
             write_stream(d.select(pl.col("date").alias("time"), pl.col(col)),
-                         args.out_dir / f"{col}.tsv")
+                         args.out_dir / f"{col}.tsv", STOCK)
             recon[col] = {"n_obs": d.height, "kind": "stock",
                           "first_date": d["date"][0],
                           "last_date": d["date"][-1],
@@ -1325,6 +1586,23 @@ def main() -> None:
     }
     (args.out_dir / "meta.json").write_text(json.dumps(meta, indent=2,
                                                        sort_keys=True) + "\n")
+
+    # ---- THE PER-RELEASE DATA DICTIONARY -----------------------------
+    # Written HERE, by the run that wrote the streams, so it ships with the
+    # vendored data rather than describing some other vintage of it. Written
+    # BEFORE the gates for the same reason `revisions.tsv` is: a failing build
+    # should still leave behind the evidence of what it produced. It has its
+    # own gate -- a written stream with no sentence stops the build -- which
+    # fires here rather than joining the block below, because a data
+    # dictionary missing one of its files must not be written at all.
+    if args.uganda_stream is not None and not args.uganda_stream.exists():
+        sys.exit(f"--uganda-stream {args.uganda_stream.name} was named but "
+                 "does not exist; run build_uganda_stream.py before this "
+                 "script, as the Makefile does.")
+    (args.out_dir / DICTIONARY).write_text(data_dictionary(
+        written, args.families, data_date=panel["date"].max(),
+        revisions=args.out_dir / "revisions.tsv",
+        uganda=args.uganda_stream))
 
     for name, r in sorted(recon.items()):
         if r.get("kind") == "stock":
@@ -1381,7 +1659,7 @@ def main() -> None:
     #   3. every deficit the carry opened was discharged before the series
     #      ended. A residual means part of a revision was dropped on the
     #      floor, which also breaks (1) -- this names the cause.
-    negatives = negative_values(written)
+    negatives = negative_values([w.path for w in written])
     if failures or negatives or carry_failures:
         msg = []
         if failures:
