@@ -323,7 +323,13 @@ def draw_release_grid(inputs: dict[str, Path], out: Path) -> None:
             ax.axhline(y0, color="#ffffff", linewidth=2.4)
 
     ax.set_xlim(0, nx)
-    ax.set_ylim(0, ny)
+    # HEADROOM FOR THE EVENT TICKS, INSIDE THE AXES. They sit above the top
+    # row, and drawing them outside the axes (`clip_on=False`) put them in
+    # whatever space the figure had left -- which is the subtitle's. Reserving
+    # the band in DATA coordinates makes the collision impossible instead of
+    # merely unlikely, and keeps the tick row anchored to the grid it annotates
+    # rather than to the canvas.
+    ax.set_ylim(0, ny + 1.15)
     ax.set_yticks([])
     ax.set_xticks([])
     for s in ax.spines.values():
@@ -424,7 +430,14 @@ def draw_release_grid(inputs: dict[str, Path], out: Path) -> None:
     # constrained_layout does not reserve space for a figure legend, so the
     # band is carved out of the layout rect explicitly or the second row
     # falls off the page.
-    fig.get_layout_engine().set(rect=(0, 0.105, 1, 0.90))
+    # `rect` HERE IS (left, bottom, WIDTH, HEIGHT), not (left, bottom, right,
+    # top). Read as the latter, `(0, 0.105, 1, 0.90)` asks for a top edge at
+    # 0.105 + 0.90 = 1.005 -- so the bottom band was reserved as intended and
+    # the TOP was never constrained at all. That is why the event ticks sat
+    # hard against the top of the canvas and printed through anything placed
+    # up there. Height is the figure fraction between the legend band and the
+    # header: 0.105 + 0.79 puts the axes top at 0.895, clear of the subtitle.
+    fig.get_layout_engine().set(rect=(0, 0.105, 1, 0.79))
     leg1 = fig.legend(handles=handles, loc="lower left", ncol=2,
                       frameon=False, fontsize=8.5, handlelength=1.1,
                       handleheight=1.1, columnspacing=1.6, labelspacing=0.6,
@@ -452,11 +465,16 @@ def draw_release_grid(inputs: dict[str, Path], out: Path) -> None:
     leg2.get_title().set_fontsize(8.5)
     fig.add_artist(leg1)
 
+    # Title and subtitle are both FIGURE-level and left-aligned to the same
+    # x, so the subtitle reads as the title's second line. As an axes title it
+    # started at the grid's left edge instead, which put it under the event
+    # ticks rather than under the title.
     fig.suptitle("What the release contains, report by report",
-                 x=0.008, ha="left", fontsize=14, fontweight="bold")
-    ax.set_title(f"{nx} report-days carrying at least one observation · "
-                 f"{ny} published streams · {all_dates[0]} to {all_dates[-1]}",
-                 loc="left", fontsize=9.5, color="#555555", pad=8)
+                 x=0.008, y=0.988, ha="left", fontsize=14, fontweight="bold")
+    fig.text(0.008, 0.938,
+             f"{nx} report-days carrying at least one observation · "
+             f"{ny} published streams · {all_dates[0]} to {all_dates[-1]}",
+             ha="left", va="top", fontsize=9.5, color="#555555")
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, dpi=200)
     plt.close(fig)
