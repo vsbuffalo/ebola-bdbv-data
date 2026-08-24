@@ -149,7 +149,7 @@ def draw_availability(inputs: dict[str, Path], out: Path) -> None:
     cal.set_title("The route each report was read through", loc="left",
                   fontsize=10)
     cal.grid(axis="x", **GRID)
-    cal.xaxis.set_major_formatter(mdates.DateFormatter("%d %b"))
+    cal.xaxis.set_major_formatter(mdates.DateFormatter("%b %-d"))
 
     for a in (ax, cal):
         for s in ("top", "right", "left"):
@@ -485,7 +485,7 @@ def draw_release_grid(inputs: dict[str, Path], out: Path) -> None:
     # math run have to be escaped or they are dropped.
     d0 = dt.date.fromisoformat(all_dates[0])
     d1 = dt.date.fromisoformat(all_dates[-1])
-    span = f"{d0:%-d\\ %b}\\ to\\ {d1:%-d\\ %b\\ %Y}"
+    span = f"{d0:%b\\ %-d}\\ to\\ {d1:%b\\ %-d,%Y}"
     fig.text(0.008, 0.951,
              f"{nx} report-days carrying at least one observation \u00b7 "
              f"{ny} published streams \u00b7 $\\bf{{{span}}}$",
@@ -632,7 +632,7 @@ def draw_epi_curve(inputs: dict[str, Path], out: Path) -> None:
         ax.set_xlim(min(xs) - 2, max(xs) + 2)
     d_lo.xaxis.set_major_locator(mdates.WeekdayLocator(byweekday=mdates.MO,
                                                        interval=2))
-    d_lo.xaxis.set_major_formatter(mdates.DateFormatter("%d %b"))
+    d_lo.xaxis.set_major_formatter(mdates.DateFormatter("%b %-d"))
 
     handles = [plt.Rectangle((0, 0), 1, 1, facecolor=FLAG_COLOR[f],
                              label=FLAG_LABEL[f])
@@ -649,8 +649,8 @@ def draw_epi_curve(inputs: dict[str, Path], out: Path) -> None:
                  fontsize=15, fontweight="bold")
     fig.text(0.006, 0.938,
              f"{tot_c:,} confirmed cases and {tot_d:,} confirmed deaths · "
-             f"$\\bf{{{cases['time'].min():%d\\ %b}\\ to\\ "
-             f"{cases['time'].max():%d\\ %b\\ %Y}}}$",
+             f"$\\bf{{{cases['time'].min():%b\\ %-d}\\ to\\ "
+             f"{cases['time'].max():%b\\ %-d,%Y}}}$",
              ha="left", va="top", fontsize=11, color="#333333")
     # constrained_layout owns inter-axes spacing and overrides a subgridspec
     # hspace, so the two halves of each break are pinned by hand once it has
@@ -755,7 +755,7 @@ def draw_validation(inputs: dict[str, Path], out: Path) -> None:
         ax.spines[sp].set_color("#999999")
     ax.xaxis.set_major_locator(mdates.WeekdayLocator(byweekday=mdates.MO,
                                                      interval=2))
-    ax.xaxis.set_major_formatter(mdates.DateFormatter("%d %b"))
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %-d"))
 
     sm, im = meta["scan"], meta["inrb"]
     ax.annotate(f"{sm['equal']} of {sm['compared']} national figures identical "
@@ -781,11 +781,11 @@ def draw_validation(inputs: dict[str, Path], out: Path) -> None:
             pin = line.split("\t")[-1].strip()
     rows = [
         ("ours", ours_days["date"].min(), ours_days["date"].max(),
-         im["ours_zone_days"], OURS, "to " + f"{dt.date.fromisoformat(str(ours_days['date'].max())):%d %b}"),
+         im["ours_zone_days"], OURS, "to " + f"{dt.date.fromisoformat(str(ours_days['date'].max())):%b %-d}"),
         ("INRB-UMIE", zc["date"].min(), im["inrb_last_date"],
          im["inrb_zone_days"], INRB,
-         f"to {dt.date.fromisoformat(im['inrb_last_date']):%d %b} "
-         f"in the snapshot pinned {dt.date.fromisoformat(pin):%d %b}"),
+         f"to {dt.date.fromisoformat(im['inrb_last_date']):%b %-d} "
+         f"in the snapshot pinned {dt.date.fromisoformat(pin):%b %-d}"),
     ]
     for yi, (name, lo, hi, n, colour, extent) in enumerate(reversed(rows)):
         a = mdates.date2num(dt.date.fromisoformat(str(lo)))
@@ -989,7 +989,7 @@ def draw_ascertainment(inputs: dict[str, Path], out: Path) -> None:
                  loc="left", fontsize=11, color="#333333")
     sh.grid(axis="y", **GRID)
     sh.xaxis.set_major_locator(mdates.WeekdayLocator(byweekday=mdates.MO))
-    sh.xaxis.set_major_formatter(mdates.DateFormatter("%d %b"))
+    sh.xaxis.set_major_formatter(mdates.DateFormatter("%b %-d"))
 
     for a in (ax, sh):
         for s in ("top", "right"):
@@ -997,8 +997,8 @@ def draw_ascertainment(inputs: dict[str, Path], out: Path) -> None:
         a.spines["left"].set_color("#999999")
         a.spines["bottom"].set_color("#999999")
 
-    bold_span = (f"{d['time'].min():%d\\ %b}\\ to\\ "
-                 f"{d['time'].max():%d\\ %b\\ %Y}")
+    bold_span = (f"{d['time'].min():%b\\ %-d}\\ to\\ "
+                 f"{d['time'].max():%b\\ %-d,%Y}")
     fig.suptitle("Confirmed deaths found in the community, not in care",
                  x=0.006, ha="left", fontsize=15, fontweight="bold")
     ax.set_title("Every confirmed death the reports classify, by where it was "
@@ -1061,7 +1061,7 @@ def draw_province_series(inputs: dict[str, Path], out: Path) -> None:
         ax.set_yscale("log")
         ax.set_title(title, loc="left", fontsize=11)
         ax.grid(True, **GRID)
-        ax.xaxis.set_major_formatter(mdates.DateFormatter("%d %b"))
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %-d"))
         for s in ("top", "right"):
             ax.spines[s].set_visible(False)
         ax.margins(x=0.09)
@@ -1231,7 +1231,7 @@ def draw_streams_detail(inputs: dict[str, Path], out: Path) -> None:
             _caveat_rug(ax, caveat)
             for sp in ("top", "right"):
                 ax.spines[sp].set_visible(False)
-            ax.xaxis.set_major_formatter(mdates.DateFormatter("%d %b"))
+            ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %-d"))
             if ri == 0:
                 ax.set_title(prov, loc="left", fontsize=11, fontweight="bold",
                              color=color)
@@ -1290,7 +1290,7 @@ def draw_streams_detail(inputs: dict[str, Path], out: Path) -> None:
         a.grid(True, **GRID)
         for sp in ("top", "right"):
             a.spines[sp].set_visible(False)
-        a.xaxis.set_major_formatter(mdates.DateFormatter("%d %b"))
+        a.xaxis.set_major_formatter(mdates.DateFormatter("%b %-d"))
 
     # THE NATIONAL STOCKS, on their own row. These are readings at an
     # instant, not flows, so they are drawn as levels rather than smoothed
@@ -1327,7 +1327,7 @@ def draw_streams_detail(inputs: dict[str, Path], out: Path) -> None:
         a.margins(x=0.05)
         for sp in ("top", "right"):
             a.spines[sp].set_visible(False)
-        a.xaxis.set_major_formatter(mdates.DateFormatter("%d %b"))
+        a.xaxis.set_major_formatter(mdates.DateFormatter("%b %-d"))
         _caveat_rug(a, caveat)
 
     # ONE CALENDAR FOR EVERY PANEL. A stream that starts on 13 July must show
