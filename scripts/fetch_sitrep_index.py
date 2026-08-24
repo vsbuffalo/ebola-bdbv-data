@@ -36,7 +36,9 @@ import argparse
 import json
 import re
 import sys
+import urllib.error
 import urllib.request
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 
 from lib.provenance import REPO_ROOT, UA, record
@@ -128,6 +130,90 @@ def _pages(start: str):
                 total_pages = int(resp.headers.get("X-WP-TotalPages", 1))
             yield from json.loads(resp.read())
         page += 1
+
+
+def _upload_dir(url: str) -> str:
+    """The WordPress uploads directory a file was published into."""
+    return url.rsplit("/", 1)[0]
+
+
+def _probe(url: str, timeout: float) -> str | None:
+    """Publication date of `url` if it is a PDF that exists, else None."""
+    req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": UA})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            if resp.status != 200:
+                return None
+            if "pdf" not in resp.headers.get("Content-Type", "").lower():
+                return None
+            stamp = resp.headers.get("Last-Modified", "")
+    except (urllib.error.URLError, TimeoutError):
+        return None
+    if not stamp:
+        return ""
+    try:
+        return parsedate_to_datetime(stamp).date().isoformat()
+    except (TypeError, ValueError):
+        return ""
+
+
+def probe_gaps(rows: list[dict], timeout: float = 30.0) -> list[dict]:
+    """Reports the media listing skips, recovered by asking for them directly.
+
+    THE MEDIA API IS NOT A COMPLETE ENUMERATION OF WHAT INSP HAS PUBLISHED,
+    and until this ran the index simply took its word for it. Report 097 is
+    served at `.../2026/08/97.pdf`, returns 200, and is a complete SitRep
+    N°097 for 19 August 2026 -- but no media entry lists it, so the index
+    jumped from 096 to 098 and the archive held no report for that day.
+
+    Nothing downstream would have said so. Every check the pipeline has asks
+    whether the reports we HOLD reconcile; a day that was never fetched
+    reconciles perfectly by being absent, and `make check` reported CURRENT
+    while the ascertainment figure drew 19 August as a day INSP published
+    nothing. The gap was printed in this script's own summary, as one line of
+    advisory text among the counts, and acted on by no one.
+
+    Only the bare-numbered form is tried, and only inside the range already
+    listed. That is the shape these unlisted uploads take -- 083-085 were
+    re-uploaded as `83.pdf` after their named URLs began 404ing, and 091, 094
+    -096, 099 and 100 were published that way from the start -- and it is the
+    only form that can be constructed without guessing at a title, a date
+    format and a version marker all at once. The directory is not guessed
+    either: it is taken from the reports either side of the gap.
+
+    A HIT IS STILL UNRESOLVED. The probe establishes that a file exists at a
+    number-shaped URL, which is not the same as establishing which report it
+    is, so the row is emitted with an empty `sitrep` exactly as a listed bare
+    upload would be, and the summary prints it for someone to read the front
+    page and record in `sitrep_number_overrides.tsv`.
+    """
+    numbered = sorted(((int(r["sitrep"]), r) for r in rows if r["sitrep"]),
+                      key=lambda t: t[0])
+    if not numbered:
+        return []
+    have = {n for n, _ in numbered}
+    out: list[dict] = []
+    for n in range(numbered[0][0] + 1, numbered[-1][0]):
+        if n in have:
+            continue
+        dirs: list[str] = []
+        for _, r in [*[t for t in numbered if t[0] < n][-1:],
+                     *[t for t in numbered if t[0] > n][:1]]:
+            d = _upload_dir(r["url"])
+            if d not in dirs:
+                dirs.append(d)
+        for d in dirs:
+            url = f"{d}/{n}.pdf"
+            published = _probe(url, timeout)
+            if published is None:
+                continue
+            out.append({
+                "sitrep": "", "data_date": "", "published": published,
+                "status": "plain", "pick": "",
+                "filename": f"{n}.pdf", "url": url,
+            })
+            break
+    return out
 
 
 def parse_row(entry: dict) -> dict | None:
@@ -257,11 +343,22 @@ def main() -> None:
             fn, num, date = line.split("\t")
             overrides[fn] = (num, date)
 
+    def apply_overrides(rs: list[dict]) -> None:
+        for r in rs:
+            if r["filename"] in overrides:
+                r["sitrep"], r["data_date"] = overrides[r["filename"]]
+
     entries = list(_pages(EPIDEMIC_START))
     all_mve = [r for r in (parse_row(e) for e in entries) if r]
-    for r in all_mve:
-        if r["filename"] in overrides:
-            r["sitrep"], r["data_date"] = overrides[r["filename"]]
+    apply_overrides(all_mve)
+    # Numbers the listing skips are asked for directly -- see `probe_gaps`.
+    # Overrides are applied to the listed rows first, because the gap is
+    # computed from RESOLVED numbers: a bare upload carries no number in its
+    # filename, so before the register is consulted every one of them looks
+    # like a gap.
+    probed = probe_gaps(all_mve)
+    apply_overrides(probed)
+    all_mve += probed
     rows = [r for r in all_mve if r["published"] >= EPIDEMIC_START]
     prior_epidemic = len(all_mve) - len(rows)
     ambiguous = choose(rows)
@@ -288,6 +385,12 @@ def main() -> None:
     # corrected re-issue is sometimes only reachable through the per-post
     # endpoint. Report the gaps without asserting they do not exist.
     print(f"  absent from the media API: {sorted(set(range(min(nums), max(nums)+1)) - set(nums))}")
+    if probed:
+        print(f"  RECOVERED by probing the gaps the listing left "
+              f"({len(probed)}), published but never listed:")
+        for r in probed:
+            print(f"    {r['published']}  {r['url']}"
+                  f"{'' if r['sitrep'] else '   <- read the front page'}")
     print(f"  duplicate uploads collapsed: {len(rows) - len(picks) - len(unresolved)}")
     if ambiguous:
         print(f"  AMBIGUOUS version choice (same marker, same date) for SitRep "

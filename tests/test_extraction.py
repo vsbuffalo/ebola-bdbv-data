@@ -1425,8 +1425,9 @@ def test_the_two_stock_series_never_fall():
     """A cumulative that decreases is either a source revision -- which these
     two have never carried -- or a flow read as a stock. This is the standing
     check over the whole archive behind the bare-label gate."""
+    pdfs = sorted(PDFS.glob("sitrep_*.pdf"))
     seen: dict[str, list] = {"cumul_recovered": [], "cumul_deaths": []}
-    for p in sorted(PDFS.glob("sitrep_*.pdf")):
+    for p in pdfs:
         got, _, _ = B.extract(p)
         for k in seen:
             if got.get(k) is not None:
@@ -1434,12 +1435,19 @@ def test_the_two_stock_series_never_fall():
     for k, series in seen.items():
         falls = [(a, b) for a, b in zip(series, series[1:]) if b[1] < a[1]]
         assert not falls, f"{k} falls at {falls}"
-    # One per report in the archive, which is 90; sitrep 007 prints ND for
-    # recoveries. These counts move whenever the archive grows, so a failure
-    # here means "reports were fetched", not "the reader broke" -- check the
-    # falls assertion above first, which is the one that is about the data.
-    assert len(seen["cumul_recovered"]) == 89
-    assert len(seen["cumul_deaths"]) == 90
+    # EVERY report yields both, and the exception is named rather than
+    # subtracted. This used to pin the two counts as literals, which meant a
+    # green suite went red on the next `make fetch` for the sole reason that
+    # the archive had grown -- and re-pinning a number that is SUPPOSED to
+    # move trains the reader to bump it without asking whether a report
+    # stopped yielding the field, which is the failure the check exists for.
+    # Naming the exception keeps that failure detectable as the archive grows.
+    ND_RECOVERIES = {"sitrep_007"}          # prints ND where the count goes
+    missing = {k: sorted({p.name for p in pdfs} - {n for n, _ in v})
+               for k, v in seen.items()}
+    assert missing["cumul_deaths"] == [], missing["cumul_deaths"]
+    assert {n[:10] for n in missing["cumul_recovered"]} == ND_RECOVERIES, \
+        missing["cumul_recovered"]
 
 
 @needs_pdfs

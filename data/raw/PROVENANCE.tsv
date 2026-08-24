@@ -1,6 +1,7 @@
 path	source_url	sha256	bytes	fetched_utc
 data/raw/health_zones.geojson	https://raw.githubusercontent.com/INRB-UMIE/BDBV2026-Data/main/build/drc_health_zones.geojson	5666c9bd219d6cf24148669f724ee1298f716ddfbd7cdfc00d4249a1bf812a01	854543	2026-08-16
 data/raw/insp_sitrep_index.tsv	https://insp.cd/wp-json/wp/v2/media?after=2026-05-01T00:00:00&per_page=100&orderby=date&order=asc&_fields=id,date,source_url	1c1b62de7380712d1b443c9f40d8bdc778a49447e93cc524165c99cc5eed89fd	15377	2026-08-22
+data/raw/insp_sitrep_index.tsv	https://insp.cd/wp-json/wp/v2/media?after=2026-05-01T00:00:00&per_page=100&orderby=date&order=asc&_fields=id,date,source_url	2d484925ac18a24d2469b6bd922da62a5bd42311fbd7547e37b6fb69b87fb14e	15812	2026-08-23
 data/raw/insp_sitrep_index.tsv	https://insp.cd/wp-json/wp/v2/media?after=2026-05-01T00:00:00&per_page=100&orderby=date&order=asc&_fields=id,date,source_url	78d821ab9f9ef3ac5939dfe619c28c92db94ef965104ab6e3a027cb2f39f98f6	15720	2026-08-23
 data/raw/insp_sitrep_index.tsv	https://insp.cd/wp-json/wp/v2/media?after=2026-05-01T00:00:00&per_page=100&orderby=date&order=asc&_fields=id,date,source_url	8378207a9fd91de20a29f6002487e20413afc8629d6a2aa0accccddb7eba17b3	15101	2026-08-17
 data/raw/insp_sitrep_index.tsv	https://insp.cd/wp-json/wp/v2/media?after=2026-05-01T00:00:00&per_page=100&orderby=date&order=asc&_fields=id,date,source_url	b33ffb2fd88e3ac2a4362f73beb06285f372fbe5c2cf1a25dd9cbc57098a552b	14941	2026-08-16
@@ -92,6 +93,7 @@ data/raw/sitrep_pdfs/sitrep_093_2026-08-15.pdf	https://insp.cd/wp-content/upload
 data/raw/sitrep_pdfs/sitrep_094_2026-08-16.pdf	https://insp.cd/wp-content/uploads/2026/08/94.pdf	dae42a524c828eb942c1d8dcd3ed18729e62b55e5f7ddfacbc4669286b5fb288	691363	2026-08-22
 data/raw/sitrep_pdfs/sitrep_095_2026-08-17.pdf	https://insp.cd/wp-content/uploads/2026/08/95.pdf	dec201b4126f10944d6f5e60c8a6d1d43dba1ad87b67f87f37817e06943a275a	699854	2026-08-22
 data/raw/sitrep_pdfs/sitrep_096_2026-08-18.pdf	https://insp.cd/wp-content/uploads/2026/08/96.pdf	1f500978f1dece31299fe4260e8baaa4896693f89ef235c035381ea9c9bb7380	720592	2026-08-22
+data/raw/sitrep_pdfs/sitrep_097_2026-08-19.pdf	https://insp.cd/wp-content/uploads/2026/08/97.pdf	2e200120055bb09f3f6d0bf6c18efcf6cb74cc13f1efdd9c21104f462f46ff2b	712886	2026-08-23
 data/raw/sitrep_pdfs/sitrep_098_2026-08-20.pdf	https://insp.cd/wp-content/uploads/2026/08/SitRep_MVEBDB_098_20_08_2026_VF_98.pdf	85c9960caf2b19fbf32c3bc80a0993e50718850c944c707e239a0ae9eaa5c7c1	3520369	2026-08-23
 data/raw/sitrep_pdfs/sitrep_099_2026-08-21.pdf	https://insp.cd/wp-content/uploads/2026/08/99.pdf	89f177446cb1095df16dc9364cd982a9a7680c111ea839dd53038ac801d11c59	698668	2026-08-23
 data/raw/sitrep_pdfs/sitrep_100_2026-08-22.pdf	https://insp.cd/wp-content/uploads/2026/08/100.pdf	68db99d1c64cc6f0acc46dd1c482543c50fbc562adee6aab77bd4a7df439a43b	695951	2026-08-23
