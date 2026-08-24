@@ -279,7 +279,14 @@ def draw_release_grid(inputs: dict[str, Path], out: Path) -> None:
         constrained_layout=True)
 
     # --- the grid itself -------------------------------------------------
-    ax.set_facecolor("#f7f7f7")            # the ground IS "no observation"
+    # THE GROUND IS "NO OBSERVATION", so it must not extend past the rows that
+    # could carry one. The axes is white and the grey is painted only over the
+    # stream rows; the tick band above them is annotation, not a stream, and
+    # colouring it grey would claim a missing observation where there is no
+    # series to miss.
+    ax.set_facecolor("#ffffff")
+    ax.add_patch(plt.Rectangle((0, 0), nx, ny, facecolor="#f7f7f7",
+                               edgecolor="none", zorder=0))
     seen_flags: set[str] = set()
     for yi, (key, label) in enumerate(reversed(rows)):
         df = streams[f"stream_{key}"]
@@ -471,10 +478,18 @@ def draw_release_grid(inputs: dict[str, Path], out: Path) -> None:
     # ticks rather than under the title.
     fig.suptitle("What the release contains, report by report",
                  x=0.008, y=0.988, ha="left", fontsize=14, fontweight="bold")
-    fig.text(0.008, 0.938,
-             f"{nx} report-days carrying at least one observation · "
-             f"{ny} published streams · {all_dates[0]} to {all_dates[-1]}",
-             ha="left", va="top", fontsize=9.5, color="#555555")
+    # The span is bolded with mathtext, the same way the sibling slide figure
+    # does it. That works here because the dates are set as `19 May to 22 Aug
+    # 2026` rather than ISO: in math mode a hyphen is a BINARY MINUS, so
+    # `2026-05-19` would come out spaced like arithmetic. Spaces inside the
+    # math run have to be escaped or they are dropped.
+    d0 = dt.date.fromisoformat(all_dates[0])
+    d1 = dt.date.fromisoformat(all_dates[-1])
+    span = f"{d0:%-d\\ %b}\\ to\\ {d1:%-d\\ %b\\ %Y}"
+    fig.text(0.008, 0.951,
+             f"{nx} report-days carrying at least one observation \u00b7 "
+             f"{ny} published streams \u00b7 $\\bf{{{span}}}$",
+             ha="left", va="top", fontsize=11, color="#555555")
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, dpi=200)
     plt.close(fig)
