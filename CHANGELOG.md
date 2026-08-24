@@ -22,6 +22,18 @@ carries the rest.
 column and no number changes. One file is added. **If you have fitted anything
 on `data/2026-08-22`, you do not need to refit.**
 
+### Which streams stop early is now stated, not left to be noticed
+
+A stream that stopped weeks ago looks exactly like a current one unless the
+reader compares two dates in a table, which is the comparison a consumer
+skips. The dictionary now carries a section listing every stream with no
+observation at the data date, and how far behind it is. At this release that
+is `patients_isolated_confirmed.tsv`, 20 days behind: **INSP stopped printing
+that front-page tile after sitrep 080 (2 August)** and none of the twenty
+reports since carries it. The stream ends because the source ended it, not
+because extraction failed. It is derived on every build rather than written
+down, so it stops being true the day the source resumes.
+
 ### The streams now ship a data dictionary
 
 Until now a consumer holding `data/build/streams/` could not answer *what is

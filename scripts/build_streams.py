@@ -537,6 +537,37 @@ def data_dictionary(written: list[Written], register: Path, *,
         "an observation, and each is named below.", "",
     ]
 
+    # A STREAM THAT STOPS EARLY LOOKS EXACTLY LIKE ONE THAT IS UP TO DATE
+    # unless the reader compares two dates in a table, which is precisely the
+    # comparison a consumer skips. `patients_isolated_confirmed` ends 20 days
+    # before the rest of this release because the source stopped printing its
+    # tile after sitrep 080; nothing in a per-file row says so. Derived rather
+    # than written into the register, because it must stop being true the day
+    # the source resumes -- and a hand-kept note would not.
+    behind = []
+    for w in written:
+        if w.path.name == DICTIONARY:
+            continue
+        last = stream_facts(w.path)["last"]
+        if last < data_date:
+            gap = (dt.date.fromisoformat(data_date)
+                   - dt.date.fromisoformat(last)).days
+            behind.append((w.path.name, last, gap))
+    if behind:
+        out += [
+            "## Streams with no observation at the data date", "",
+            "These stop before the rest of the release. A gap of this size is "
+            "normally the SOURCE having stopped publishing the quantity, not "
+            "this pipeline having failed to read it — but the two look "
+            "identical in the tables below, so check the `written_from` note "
+            "in `registers/stream_families.tsv` before fitting the tail.", "",
+        ]
+        out += _table(
+            [[f"`{n}`", last, f"{gap} days"] for n, last, gap in sorted(behind)],
+            ["File", "Last `time`", "Behind the data date"],
+            ["---", "---", "---:"])
+        out += [""]
+
     for family, entry in families.items():
         group = by_family.get(family)
         if not group:                    # a vintage this build has no rows for
