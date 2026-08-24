@@ -1,0 +1,44 @@
+# What each published observation stream MEASURES, in one sentence a
+# non-specialist can read. The one part of `data/build/streams/README.md` that
+# no build can generate: everything else in that file -- how many rows, which
+# dates, which columns -- is read back off the stream files themselves.
+#
+# KEYED ON THE FAMILY, NEVER ON THE FILE. `cases_ituri`, `cases_nord_kivu`,
+# `cases_haut_uele`, `cases_national` and their four daily companions are eight
+# files publishing ONE quantity in two resolutions for four places. A register
+# with eight rows would let the wording drift between them -- one row saying
+# "confirmed cases", another "cases", a third silently describing suspected
+# cases -- and nothing would catch it, because a sentence has no identity to
+# check. There is one row per quantity, and the place and the resolution are
+# substituted mechanically from the file the build actually wrote.
+#
+# The family is what is left of a stream's file stem once the place it covers
+# (`ituri`, `nord_kivu`, `haut_uele`, `national`) and the `daily` marker are
+# taken off it: `community_deaths_daily_ituri` -> `community_deaths`,
+# `lab_daily_national` -> `lab`, `patients_isolated` -> `patients_isolated`.
+#
+# FAIL-CLOSED. A file this build writes whose family has no row here stops the
+# build and names the file. Adding a stream therefore means adding a sentence,
+# which is the point: a new stream must not be able to ship undocumented.
+#
+# COLUMNS
+#   family        the key, derived from the file stem as described above
+#   title         the heading its files are grouped under in the generated file
+#   measures      the sentence. Place-free and resolution-free -- both are
+#                 stated in their own columns beside it -- and written for
+#                 someone who has never read a situation report.
+#   written_from  what the sentence was read against, so it can be re-examined
+#
+# `revisions` and `uganda_exports` are here too, and are the two files that are
+# NOT observation streams: they are rendered in their own sections rather than
+# forced into a table whose columns do not fit them.
+family	title	measures	written_from
+cases	Confirmed cases	How many people were newly confirmed to have Ebola, taken as the movement of the cumulative confirmed-case count the source prints.	the cumulative case column of the health-zone and province tables, read on every report since sitrep 005
+deaths	Confirmed deaths	How many deaths among confirmed Ebola cases were newly recorded, taken as the movement of the cumulative death count the source prints.	the cumulative death column, which the zone and province tables gained on sitrep 015 (29 May); earlier dates come from the front-page dashboard tile
+community_deaths	Deaths ascertained in the community	How many confirmed Ebola deaths were of people who were never admitted to a treatment centre — found by swabbing the body after death — published beside the confirmed deaths recorded over the same period however they were ascertained, so the two can be read as a fraction.	the daily ascertainment block, printed as `Décès communautaires` beside `Décès total`; the community column first appears on sitrep 059 (12 July) with no total beside it, so the streams begin on 13 July, the first day both are printed
+lab	Laboratory testing effort	How many samples the laboratory analysed and how many of them tested positive — the testing effort behind the case counts, which is what separates a rise in cases from a rise in looking.	the laboratory paragraph, taken only where the sentence prints its own positivity so the pair checks itself (scripts/extract_lab_prose.py)
+patients_isolated	People in isolation and care	How many people were in isolation and under care at that moment, confirmed cases and suspected cases counted together.	the front-page dashboard tile; sitrep 070 prints 766 and its own occupancy table splits that into 278 confirmed and 488 suspected
+patients_isolated_confirmed	People in isolation and care, confirmed only	How many of the people in isolation and under care at that moment were confirmed cases rather than suspected ones.	the occupancy table's confirmed column; its share of the total runs 0.23 to 0.53, so it is not a fixed fraction of `patients_isolated`
+cumul_recovered	Cumulative recoveries	How many people had been discharged as recovered by that moment, counted from the start of the outbreak.	the front-page dashboard tile (`Guéris`), gated against the bare label so a heading is never read as a count
+uganda_exports	Exported cases detected in Uganda	How many Ebola cases exported from DRC had been detected in Uganda by that moment, counted from the start of the outbreak.	WHO Disease Outbreak News, transcribed by hand into data/raw/uganda_cases.toml with a source string on every field
+revisions	The carried-forward record	Which published rows were touched because the source revised its own cumulative downward: what the raw increment was, what the stream emitted instead, and how much of the revision was still outstanding after that row.	generated by the same run that writes the streams; see the carry-forward rule in scripts/build_streams.py
