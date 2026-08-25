@@ -296,8 +296,15 @@ figures:
 ##            the same way.
 CHANNEL ?= ../ebola-bdbv-camdl/data-agent-channel.md
 watch-data-channel:
+	# ONE-SHOT BY DEFAULT, because the exit IS the notification: a harness
+	# that re-invokes on completion wakes with the added lines in hand.
+	# `--loop` re-arms instead, which is right for a human watching a
+	# terminal and WRONG for an agent -- it fires, prints, re-arms, and
+	# nobody is woken. That is what this target used to do. LOOP=1 restores
+	# it for the human case. `--state` persists the last REPORTED line
+	# count, so re-arming between runs loses nothing.
 	uv run python scripts/watch_data_channel.py --file $(CHANNEL) --notify \
-		--loop --state logs/.data_channel_seen \
+		$(if $(LOOP),--loop,) --state logs/.data_channel_seen \
 		--interval $(or $(INTERVAL),60) --timeout $(or $(TIMEOUT),21600)
 
 ## release-check -- build the COMMITTED state in a scratch clone before
