@@ -397,6 +397,7 @@ def test_multi_page_tables_keep_their_province_rows(n):
 # --------------------------------------------------------------------------
 
 import aggregate_provinces as A                                   # noqa: E402
+import json
 import polars as pl                                               # noqa: E402
 
 REGISTER = ROOT / "registers" / "reconciliation_exceptions.tsv"
@@ -1487,6 +1488,7 @@ import datetime as dt                                             # noqa: E402
 import build_streams as BS                                        # noqa: E402
 
 STREAMS = ROOT / "data" / "build" / "streams"
+SERIES = ROOT / "data" / "build" / "series"
 needs_streams = pytest.mark.skipif(
     not (STREAMS / "revisions.tsv").exists(),
     reason="the streams are not built; run `make build && make streams`")
@@ -1609,23 +1611,47 @@ def test_the_record_holds_every_revision_the_source_made():
 #: = 18 is the movement that had no earlier reading to be measured against.
 #: Nord-Kivu's 711 is unchanged, because 004 and 005 both print 3 there.
 @needs_streams
-@pytest.mark.parametrize("stream, column, total", [
-    ("cases_daily_ituri", "cases_ituri", 4577),
-    ("deaths_daily_ituri", "deaths_ituri", 2030),
-    ("cases_daily_nord_kivu", "cases_nord_kivu", 711),
-    ("deaths_daily_nord_kivu", "deaths_nord_kivu", 484),
-    ("cases_daily_haut_uele", "cases_haut_uele", 172),
-    ("deaths_daily_haut_uele", "deaths_haut_uele", 76),
-    ("cases_haut_uele", "cases_haut_uele", 172),
-    ("deaths_haut_uele", "deaths_haut_uele", 76),
+@pytest.mark.parametrize("stream, column", [
+    ("cases_daily_ituri", "cases_ituri"),
+    ("deaths_daily_ituri", "deaths_ituri"),
+    ("cases_daily_nord_kivu", "cases_nord_kivu"),
+    ("deaths_daily_nord_kivu", "deaths_nord_kivu"),
+    ("cases_daily_haut_uele", "cases_haut_uele"),
+    ("deaths_daily_haut_uele", "deaths_haut_uele"),
+    ("cases_haut_uele", "cases_haut_uele"),
+    ("deaths_haut_uele", "deaths_haut_uele"),
 ])
-def test_a_corrected_stream_still_totals_the_source_movement(stream, column,
-                                                             total):
+def test_a_corrected_stream_still_totals_the_source_movement(stream, column):
     """The point of carrying rather than clipping: the corrected stream sums
-    to exactly what the source's cumulative moved, unchanged by the fix."""
+    to exactly what the source's cumulative moved, unchanged by the fix.
+
+    CHECKED AGAINST THE BUILD'S OWN ACCOUNTING, NOT A PINNED LITERAL. This was
+    eight hardcoded totals, and every one went red on the next `make fetch`
+    for the sole reason that the source had published another report -- which
+    is the quantity the test is ABOUT. Re-pinning a number that is supposed to
+    move trains the reader to bump it without asking whether the carry still
+    discharges, which is the failure this exists to catch.
+
+    What it can and cannot see, stated plainly: `source_delta` is computed by
+    the build from the panel, and the sum here is read back off the EMITTED
+    FILE, so this catches the two disagreeing -- a carry that did not
+    discharge, a row dropped or written twice. It is not an independent
+    recomputation of the movement, and it does not pretend to be; the panel
+    aggregation it would have to duplicate is production code, and a test that
+    re-runs the code it is testing proves nothing. The independent check on the
+    movement itself is the extraction identity, which is gated in `make build`.
+    """
+    meta = json.loads((STREAMS / "meta.json").read_text())
+    recon = meta["reconciliation"][stream]
     d = pl.read_csv(STREAMS / f"{stream}.tsv", separator="\t",
-                    infer_schema_length=None)
-    assert int(d[column].sum()) == total
+                    infer_schema_length=None, null_values="NA")
+    emitted = int(d[column].sum())
+    assert emitted == recon["source_delta"], (
+        f"{stream} sums to {emitted} but the build recorded the source's "
+        f"cumulative moving {recon['source_delta']}")
+    assert recon["carry_residual"] == 0, (
+        f"{stream} left {recon['carry_residual']} of a downward revision "
+        f"undischarged at the end of the series")
 
 
 # -- the synthetic province whose revision never discharges ----------------
@@ -2812,7 +2838,9 @@ def test_province_occupancy_cannot_see_a_saturated_centre():
     import plot_figures as P
     care, _ = _built()
     o = P.occupancy_at_province_grain(care)
-    assert o["n"] == 68
+    # The province-day COUNT grows on every fetch and is not the finding;
+    # assert that it is a real sample, then assert the finding itself.
+    assert o["n"] > 50
     assert o["n_over_100"] == 1
     assert o["over_100"][0]["province"] == "Nord-Kivu"
     assert round(o["over_100"][0]["occ"]) == 139
@@ -2937,8 +2965,14 @@ def test_the_ward_census_stops_and_only_the_undivided_residual_continues():
     assert after["in_ward"].null_count() == after.height
     assert after["unaccounted"].null_count() == after.height
     assert after["residual"].null_count() == 0
-    assert h["last_date"] == "2026-08-22"
-    assert h["last_residual"] == 1672 > h["census_residual"] == 1368
+    # `last_date` is the newest report the archive holds and moves on every
+    # fetch, so it is DERIVED rather than pinned -- what matters is that the
+    # headline reports the end of the series it drew, and that the residual
+    # has grown since the census stopped.
+    assert h["last_date"] == led["date"].max()
+    assert h["last_date"] > h["census_date"]
+    assert h["last_residual"] > h["census_residual"]
+    assert h["census_residual"] == 1368
 
 
 @needs_outcome_build
