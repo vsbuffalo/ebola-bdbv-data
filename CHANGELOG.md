@@ -16,6 +16,70 @@ carries the rest.
 
 ---
 
+## `data/2026-08-22-r3` — 2026-08-24 — figures only: the care ledger drawn, and one panel split in two
+
+**Not breaking, and nothing to refit.** No stream file changes. No column is
+added, renamed or removed; no published value moves; `meta.json` and
+`revisions.tsv` are byte-identical to `data/2026-08-22-r2`. A consumer that
+vendors `data/build/streams/` can ignore this release entirely — it exists
+because the figures are published artefacts too, and two of them changed.
+
+### `streams_detail.png` is now two figures
+
+It carried six per-province flow rows and, concatenated beneath them, four
+national-only panels, at eleven by twenty-six inches. `streams_detail.png`
+keeps the province rows; `national_detail.png` takes the four national panels
+at two-by-two. Both are committed under `docs/figures/` and both are inside the
+`release-check` gate, which requires every committed figure to rebuild
+byte-identically from a fresh clone.
+
+The two figures share one calendar, derived from the report index rather than
+from whichever series a panel holds, so they can still be read against each
+other. Every caveat the national panel titles carried is kept. Two dates those
+titles stated in words are now read off the series instead, and **one of them
+was wrong**: the cumulative-suspected panel said "printed to 1 June only" when
+the national suspected series' last observation is **27 May**.
+
+### `care_ledger.png` — the first figure to draw `care_prose.csv`
+
+`data/build/series/care_prose.csv` shipped at `r2` with nothing reading it.
+The new figure draws it in four bands, and states in words only numbers it
+computes, each pinned by a test:
+
+- **A, the validation.** The front-page ISOLEMENT/CTE tile and the care
+  pillar's whole-response sentence are two readings of the same page by two
+  different readers in this repository. They print a confirmed isolation census
+  on the same 24 report days and **agree on all 24**; they print a total census
+  on 27 days and agree on 25. Both exceptions are the source contradicting
+  itself, and the split says which half: on 2026-07-07 the sentence states 694
+  against its own 232 + 518 = 750, and on 2026-07-14 it states 753 against
+  270 + 466 = 736 — the tile agrees with the split on both.
+- **A, corrected framing.** The tile does *not* stop after SitRep 080. Its
+  **total** census is printed to the end of the archive; only the **confirmed**
+  half stops there — and the whole-response sentence stops on the same report.
+  After that the confirmed census exists only in the per-province bullets, and
+  those are **not summable to a national total**: a median of one of the six
+  affected provinces prints a bullet on a given day, at most three, and where
+  the sentence is also printed the sum falls short of it on 15 of 17 days, by
+  up to 279 patients.
+- **B, occupancy against capacity.** Province occupancy runs 15 % to 139 %
+  over 68 province-days and exceeds capacity on one (Nord-Kivu, 3 August,
+  196 patients for 141 beds). It is a ratio of sums over a whole province and
+  cannot resolve a full centre inside a half-full one; the panel says so rather
+  than letting the slack read as free beds.
+- **C, the ledger flows,** faceted by the passage that printed them and never
+  summed across facets: on 11 report days both the whole-response sentence and
+  a province bullet print an exit count.
+- **D, the absconder counts** — 24 province-days in the whole archive, 5 after
+  the handover, 14 of them national rather than provincial — drawn as isolated
+  marks and stems, never joined.
+
+No row is dropped for failing a check. A rug at the head of each panel says
+whether a row's own arithmetic closed, failed to close, or had nothing to close
+against; the last two are different claims and the figure keeps them apart.
+
+---
+
 ## `data/2026-08-22-r2` — 2026-08-24 — the outbreak's first three reports
 
 **Not breaking — but refit anyway.** Nothing is renamed, removed or revalued:
