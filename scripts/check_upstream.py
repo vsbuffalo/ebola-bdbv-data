@@ -89,6 +89,33 @@ def _committed(index: Path) -> tuple[set[int], dict[str, str]]:
     return nums, urls
 
 
+def _external_sitreps() -> set[int]:
+    """Report numbers held from a secondary archive because INSP does not serve
+    them. Absent from the media listing BY DECLARATION, not by a change in the
+    source, so this guard must not read them as one.
+
+    Reads through the canonical loader rather than parsing the register again:
+    a second parser is a second thing to drift, and this file already imports
+    the one `report_date` uses to file those reports in the first place.
+    """
+    return {int(r.sitrep) for r in load_external_sitreps().values()}
+
+
+def _url_for(urls: dict, n: int) -> str | None:
+    """The picked URL for report `n`, or None if the index has no pick for it."""
+    for url, num in urls.values():
+        if num == n:
+            return url
+    return None
+
+
+def _alive(url: str) -> bool:
+    """True only on a 200. A network failure is NOT alive -- the same rule the
+    spot-check applies, and for the same reason: an exception treated as a pass
+    is how a dead link gets waved through."""
+    return _head(url)[0] == 200
+
+
 def _head(url: str) -> tuple[int, int]:
     """(status, content_length) for one URL; (0, -1) when the request itself
     failed. A dead link in the committed index is a CHANGE, and a link whose
@@ -180,16 +207,48 @@ def main() -> None:
     # If our own enumeration finds fewer reports than we already hold, the
     # source has moved in a way our predicate no longer follows. Being BEHIND is
     # ordinary; finding LESS THAN WE HAVE is not.
-    missing_from_listing = sorted(have_nums - listed)
-    if missing_from_listing:
+    # TWO ROUTES NOW PUT REPORTS IN THE ARCHIVE THAT THE LISTING NEVER HELD,
+    # and this guard predates both. Left as written it fires on every build:
+    #
+    #   * `probe_gaps` recovers reports SERVED at a bare-numbered URL but absent
+    #     from the media API -- sitrep 097 is the case that motivated it, and it
+    #     was never in the listing, so "no longer includes" is the wrong reading.
+    #   * `registers/external_sitreps.tsv` declares reports INSP does not serve
+    #     at all -- 001, 002 and 004, obtained from a secondary archive.
+    #
+    # The guard must still catch the eleven-day failure, so neither route is
+    # waved through on trust. The externally-sourced reports are subtracted
+    # because the register DECLARES they are not INSP's to list. Everything else
+    # unlisted is PROBED: still served means the listing never carried it and
+    # nothing has moved; not served means the file has gone or been renamed,
+    # which is the alarm this guard exists for.
+    external = _external_sitreps()
+    unlisted = sorted(have_nums - listed - external)
+    still_served, gone = [], []
+    for n in unlisted:
+        url = _url_for(have_urls, n)
+        (still_served if url and _alive(url) else gone).append(n)
+
+    if gone:
         verdict = CHANGED
         findings.append(
-            f"the listing no longer includes {len(missing_from_listing)} "
-            f"report(s) we already hold: {missing_from_listing[:12]}"
-            f"{' ...' if len(missing_from_listing) > 12 else ''}\n"
+            f"the listing no longer includes {len(gone)} report(s) we already "
+            f"hold, AND their files are no longer served: {gone[:12]}"
+            f"{' ...' if len(gone) > 12 else ''}\n"
             f"      Our query or the site's naming has changed. THIS IS THE "
             f"FAILURE MODE THAT HID FOR ELEVEN DAYS -- do not assume the "
             f"reports were withdrawn.")
+    if still_served:
+        findings.append(
+            f"{len(still_served)} report(s) we hold are absent from the "
+            f"listing but STILL SERVED: {still_served}\n"
+            f"      Recovered by `probe_gaps`; the media API never carried "
+            f"them. Not a change in the source.")
+    if external:
+        findings.append(
+            f"{len(external)} report(s) are held from a secondary archive "
+            f"because INSP does not serve them: {sorted(external)}\n"
+            f"      Declared in registers/external_sitreps.tsv.")
 
     # THE SPOT-CHECK SAMPLES THE WHOLE RANGE, not only the newest picks --
     # `items[-n:]` HEADed reports 89-93 forever and never once revisited the
