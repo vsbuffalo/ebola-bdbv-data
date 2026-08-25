@@ -2720,7 +2720,8 @@ def draw_care_ledger(inputs: dict[str, Path], out: Path) -> None:
             "One row per report and province from the care pillar's prose — "
             "admissions, exits and the four ways out, the end-of-day census "
             "with its confirmed and suspected halves, and the beds.\n"
-            "Nothing is published as an observation stream. No row is dropped "
+            "These quantities are published as observation streams; this figure "
+            "draws the extraction they are built from. No row is dropped "
             "for failing a check: where a report's own numbers disagree the "
             "row is drawn and flagged, because the disagreement is the "
             "source's, not the reader's.",
