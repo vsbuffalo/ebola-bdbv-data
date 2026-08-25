@@ -18,6 +18,18 @@ carries the rest.
 
 ## `data/2026-08-22-r3` — 2026-08-24 — figures only: the care ledger drawn, and one panel split in two
 
+**Also in this tag, and the reason a consumer may need it:** `make check` no
+longer refuses on two legitimate acquisition routes. It compared the archive
+against the live media listing and flagged anything held that the listing
+lacked — which is now the normal signature of reports recovered by
+`probe_gaps` (served at a bare URL, never listed: sitrep 097) and of reports
+declared in `registers/external_sitreps.tsv` (not served by INSP at all: 001,
+002, 004). It blocked a downstream vendoring run. Externals are now
+subtracted because the register declares them; everything else unlisted is
+PROBED, so still-served means the listing never carried it and not-served is
+still the alarm. Verified benign: 097 returns 200, and the 052 CORRIGE link
+the spot-check flagged returns 200 on retry.
+
 **Not breaking, and nothing to refit.** No stream file changes. No column is
 added, renamed or removed; no published value moves; `meta.json` and
 `revisions.tsv` are byte-identical to `data/2026-08-22-r2`. A consumer that
