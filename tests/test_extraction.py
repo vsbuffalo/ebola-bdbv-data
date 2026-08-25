@@ -1435,18 +1435,29 @@ def test_the_two_stock_series_never_fall():
     for k, series in seen.items():
         falls = [(a, b) for a, b in zip(series, series[1:]) if b[1] < a[1]]
         assert not falls, f"{k} falls at {falls}"
-    # EVERY report yields both, and the exception is named rather than
+    # EVERY report yields both, and the exceptions are named rather than
     # subtracted. This used to pin the two counts as literals, which meant a
     # green suite went red on the next `make fetch` for the sole reason that
     # the archive had grown -- and re-pinning a number that is SUPPOSED to
     # move trains the reader to bump it without asking whether a report
     # stopped yielding the field, which is the failure the check exists for.
     # Naming the exception keeps that failure detectable as the archive grows.
-    ND_RECOVERIES = {"sitrep_007"}          # prints ND where the count goes
+    # Each exception is a REPORT THAT DOES NOT PRINT THE FIGURE, and is named
+    # here with the reason the page gives, so a tile that starts refusing for
+    # some other reason cannot hide inside the set.
+    NO_RECOVERIES = {
+        "sitrep_001",   # prints `?` -- the first report did not yet know
+        "sitrep_004",   # prints `Guéris du jour`, a daily flow, not the stock
+        "sitrep_007",   # prints ND where the count goes
+    }
+    NO_DEATHS = {
+        "sitrep_002",   # prints ND under `Décès confirmés`
+    }
     missing = {k: sorted({p.name for p in pdfs} - {n for n, _ in v})
                for k, v in seen.items()}
-    assert missing["cumul_deaths"] == [], missing["cumul_deaths"]
-    assert {n[:10] for n in missing["cumul_recovered"]} == ND_RECOVERIES, \
+    assert {n[:10] for n in missing["cumul_deaths"]} == NO_DEATHS, \
+        missing["cumul_deaths"]
+    assert {n[:10] for n in missing["cumul_recovered"]} == NO_RECOVERIES, \
         missing["cumul_recovered"]
 
 
@@ -1573,9 +1584,16 @@ def test_the_record_holds_every_revision_the_source_made():
 #: then spiked to 6,200 and fell back to 3,487 on 099, and the carry that
 #: absorbs a downward revision published the spike. 6 249 - 4 559 = 1 690 is
 #: exactly the province residual that report was failing by.
+#:
+#: Ituri's cases then ROSE by 18, from 4 559 to 4 577, when sitrep 004 was
+#: admitted to the archive. The stream is what the source's cumulative MOVED,
+#: so it is measured from the earliest report that states a level: the base
+#: was Ituri's 48 on sitrep 005 and is now its 30 on sitrep 004, and 48 - 30
+#: = 18 is the movement that had no earlier reading to be measured against.
+#: Nord-Kivu's 711 is unchanged, because 004 and 005 both print 3 there.
 @needs_streams
 @pytest.mark.parametrize("stream, column, total", [
-    ("cases_daily_ituri", "cases_ituri", 4559),
+    ("cases_daily_ituri", "cases_ituri", 4577),
     ("deaths_daily_ituri", "deaths_ituri", 2030),
     ("cases_daily_nord_kivu", "cases_nord_kivu", 711),
     ("deaths_daily_nord_kivu", "deaths_nord_kivu", 484),
@@ -1879,3 +1897,254 @@ def test_the_same_run_that_writes_the_streams_writes_the_dictionary(
     assert "no rows yet, header only" in text
     # No uganda_exports was named, so no section claims one shipped.
     assert "uganda_exports" not in text
+
+
+# --------------------------------------------------------------------------
+# THE THREE REPORTS INSP DOES NOT SERVE
+#
+# SitReps 001, 002 and 004 are held from a secondary archive, their PDFs are
+# committed, and `registers/external_sitreps.tsv` is the only thing that says
+# so. Everything below pins a property that would otherwise fail silently:
+# the register applying, the committed bytes being the ones it was written
+# about, the archive reconciliation admitting them without going soft, and the
+# date adjudication that keeps sitrep 004 off sitrep 005's day.
+# --------------------------------------------------------------------------
+
+import csv as _csv                                                # noqa: E402
+
+import fetch_sitrep_pdfs as F                                     # noqa: E402
+import lib.report_date as RD                                      # noqa: E402
+from lib.report_date import (load_external_sitreps,               # noqa: E402
+                             printed_dates, report_key,
+                             verify_external)
+
+EXTERNAL = ROOT / "registers" / "external_sitreps.tsv"
+MANIFEST = ROOT / "data" / "raw" / "sitrep_pdfs.manifest.tsv"
+INDEX = ROOT / "data" / "raw" / "insp_sitrep_index.tsv"
+
+
+def test_the_external_register_parses():
+    reg = load_external_sitreps(EXTERNAL)
+    assert {r.sitrep for r in reg.values()} == {1, 2, 4}
+    assert set(reg) == {"sitrep_001_2026-05-14.pdf",
+                        "sitrep_002_2026-05-17.pdf",
+                        "sitrep_004_2026-05-18.pdf"}
+    for r in reg.values():
+        assert len(r.sha256) == 64
+        assert r.upstream_repo.startswith("https://")
+        assert r.upstream_path and r.upstream_commit and r.retrieved
+        # The note is what a future reader has instead of a fetch log.
+        assert len(r.note) > 40
+
+
+@needs_pdfs
+def test_the_committed_pdfs_are_the_bytes_the_register_names():
+    """These files have no upstream this project can re-fetch from, so the
+    committed bytes ARE the source and the register is the only check on them.
+
+    It also catches the one way the archive can now be assembled wrongly: if
+    `data/raw/sitrep_pdfs` is symlinked in as a whole directory, these three
+    resolve to a shared copy rather than to what git holds.
+    """
+    for name, r in load_external_sitreps(EXTERNAL).items():
+        f = PDFS / name
+        assert f.is_file(), f"{name} is not held"
+        assert not f.is_symlink(), (
+            f"{name} is a symlink; the three committed reports must be real "
+            f"files, or a working copy can lose them without git noticing")
+        verify_external(f, r)      # raises SystemExit on a mismatch
+
+
+@needs_pdfs
+def test_a_substituted_external_pdf_stops_the_build(tmp_path):
+    text = EXTERNAL.read_text().replace(
+        "821ea26be20720b8ead7ae39f5f3b1df38970ee29198c6851d491882f39ecb39",
+        "0" * 64)
+    bad = tmp_path / "external.tsv"
+    bad.write_text(text)
+    reg = load_external_sitreps(bad)["sitrep_001_2026-05-14.pdf"]
+    with pytest.raises(SystemExit, match="DOES NOT MATCH ITS REGISTER"):
+        verify_external(PDFS / "sitrep_001_2026-05-14.pdf", reg)
+
+
+def test_a_row_whose_filename_contradicts_its_date_is_refused(tmp_path):
+    """The archive name is DERIVED from the adjudicated date, so a row where
+    one was edited and the other was not would name the file for one day while
+    asserting another."""
+    text = EXTERNAL.read_text().replace(
+        "4\t2026-05-18\t2026-05-19", "4\t2026-05-16\t2026-05-19")
+    bad = tmp_path / "external.tsv"
+    bad.write_text(text)
+    with pytest.raises(SystemExit, match="names the file"):
+        load_external_sitreps(bad)
+
+
+def test_a_row_missing_provenance_is_refused(tmp_path):
+    out = []
+    for ln in EXTERNAL.read_text().splitlines():
+        if ln.startswith("1\t2026-05-14"):
+            parts = ln.split("\t")
+            parts[7] = ""                       # upstream_commit
+            ln = "\t".join(parts)
+        out.append(ln)
+    bad = tmp_path / "external.tsv"
+    bad.write_text("\n".join(out) + "\n")
+    with pytest.raises(SystemExit, match="upstream_commit"):
+        load_external_sitreps(bad)
+
+
+# --- the date adjudication ------------------------------------------------
+
+@needs_pdfs
+@needs_pdftotext
+def test_sitrep_004_prints_sitrep_005s_dates():
+    """The source defect the register adjudicates, asserted on the pages
+    themselves: two consecutive reports print the same reporting date AND the
+    same publication date, while carrying different cumulative counts."""
+    import subprocess
+
+    def printed(n):
+        t = subprocess.run(["pdftotext", "-q", "-layout", str(pdf(n)), "-"],
+                           capture_output=True, text=True).stdout
+        return printed_dates(t)
+
+    assert printed(4) == printed(5)
+    assert printed(4)[0].isoformat() == "2026-05-19"    # date de rapportage
+    assert printed(4)[1].isoformat() == "2026-05-20"    # date de publication
+
+
+@needs_pdfs
+@needs_pdftotext
+def test_the_register_files_sitrep_004_a_day_before_its_printed_date():
+    assert report_key(pdf(1)) == (1, "2026-05-14")
+    assert report_key(pdf(2)) == (2, "2026-05-17")
+    assert report_key(pdf(4)) == (4, "2026-05-18")
+    # ...and 005 keeps the day both pages claim, so nothing collides.
+    assert report_key(pdf(5)) == (5, "2026-05-19")
+    assert report_key(pdf(6)) == (6, "2026-05-20")
+
+
+@needs_pdfs
+@needs_pdftotext
+def test_a_register_that_misquotes_the_page_stops_the_build(tmp_path,
+                                                            monkeypatch):
+    """The register licenses one substitution on one document, not a rule. If
+    the page stops printing what the row says it prints, the judgement was made
+    about a different document."""
+    text = EXTERNAL.read_text().replace(
+        "4\t2026-05-18\t2026-05-19", "4\t2026-05-18\t2026-05-21")
+    bad = tmp_path / "external.tsv"
+    bad.write_text(text)
+    monkeypatch.setattr(RD, "_external", lambda: load_external_sitreps(bad))
+    with pytest.raises(SystemExit, match="EXTERNAL REGISTER IS STALE"):
+        RD.report_key(pdf(4))
+
+
+# --- the archive reconciliation -------------------------------------------
+
+def _index_nums() -> set[int]:
+    with INDEX.open() as fh:
+        return {int(r["sitrep"]) for r in _csv.DictReader(fh, delimiter="\t")
+                if r["pick"] == "yes"}
+
+
+@needs_pdfs
+def test_the_manifest_lists_every_report_including_the_three():
+    with MANIFEST.open() as fh:
+        listed = {r["file"] for r in _csv.DictReader(fh, delimiter="\t")}
+    assert listed == {p.name for p in PDFS.glob("*.pdf")}
+    assert {"sitrep_001_2026-05-14.pdf", "sitrep_002_2026-05-17.pdf",
+            "sitrep_004_2026-05-18.pdf"} <= listed
+
+
+def test_the_three_are_declared_by_the_register_and_not_by_the_index():
+    """The property that makes the union necessary: no index row will ever name
+    them, so on the index alone they reconcile as strays."""
+    assert _index_nums().isdisjoint({1, 2, 4})
+    assert {r.sitrep for r in
+            load_external_sitreps(EXTERNAL).values()} == {1, 2, 4}
+
+
+def _stub_archive(tmp_path: Path) -> Path:
+    """The archive's NAMES, with one-byte contents.
+
+    `_write_manifest` reconciles on the report number parsed out of the
+    filename and hashes whatever is there, so the bytes are irrelevant to what
+    is under test and copying 141 MB per test is not.
+    """
+    archive = tmp_path / "pdfs"
+    archive.mkdir()
+    for p in PDFS.glob("*.pdf"):
+        (archive / p.name).write_bytes(b"%PDF-stub")
+    return archive
+
+
+@needs_pdfs
+def test_reconciliation_admits_the_register_but_not_an_undeclared_pdf(tmp_path):
+    """Unioning the register's NUMBERS in must not soften the check: a PDF
+    declared by neither the index nor the register is still a file globbed
+    straight into the trunk with nothing accounting for it."""
+    archive = _stub_archive(tmp_path)
+    declared = _index_nums() | {1, 2, 4}
+    F._write_manifest(archive, declared, tmp_path / "m.tsv")     # closes
+    assert (tmp_path / "m.tsv").exists()
+
+    (archive / "sitrep_777_2026-09-01.pdf").write_bytes(b"%PDF-stub")
+    with pytest.raises(SystemExit, match="declared nowhere"):
+        F._write_manifest(archive, declared, tmp_path / "m2.tsv")
+
+
+@needs_pdfs
+def test_the_index_alone_would_call_the_three_strays(tmp_path):
+    """States the defect the union fixes, so a future edit that drops the
+    register out of `want_nums` fails here rather than at someone's build."""
+    with pytest.raises(SystemExit, match=r"declared nowhere: \[1, 2, 4\]"):
+        F._write_manifest(_stub_archive(tmp_path), _index_nums(),
+                          tmp_path / "m.tsv")
+
+
+# --- what they extract to -------------------------------------------------
+
+@needs_pdfs
+def test_sitrep_001_matches_no_registered_table():
+    """The outbreak's first report is narrative: it prints no table of any
+    geometry this project reads, and the per-zone figures on its page 2 are
+    inside an image the text layer does not carry. Recorded as
+    `no_matching_table` rather than fitted to a spec invented for it."""
+    rows, status = E.extract(pdf(1))
+    assert status == "no_matching_table"
+    assert rows == []
+
+
+@needs_pdfs
+def test_sitrep_002_zone_table_is_transposed_and_so_matches_nothing():
+    """002 DOES break its counts down by health zone -- `Tableau 1`: Mongbwalu
+    0, Rwampara 13, Bunia 0 -- but with indicators as ROWS and zones as
+    COLUMNS, which is not the geometry of any registered spec."""
+    rows, status = E.extract(pdf(2))
+    assert status == "no_matching_table"
+    assert rows == []
+
+
+@needs_pdfs
+def test_sitrep_004_reads_the_early_layout_and_closes():
+    rows, status = E.extract(pdf(4))
+    assert status == "ok"
+    assert {r["table"] for r in rows} == {"zone_early"}
+    assert {r["zone_reported"]: r["cum_cases"] for r in rows} == {
+        "Mongbwalu": 1, "Rwampara": 19, "Bunia": 6, "Nyankunde": 4,
+        "Goma": 1, "Katwa": 1, "Butembo": 1, "Total": 33}
+    # The zone rows sum to the printed national total exactly.
+    assert E.reconcile(rows, column="cum_cases") == {
+        "identity": "ok", "residual": 0, "printed_total": 33,
+        "parts_sum": 33, "basis": "zones"}
+
+
+@needs_pdfs
+def test_sitrep_004_is_the_first_report_to_place_cases_outside_ituri():
+    """Three of its seven health zones are in Nord-Kivu, one case each. That is
+    what the report adds beyond a national total: the date at which the
+    outbreak is first recorded outside the province it began in."""
+    rows, _ = E.extract(pdf(4))
+    got = {r["zone_reported"] for r in rows} & {"Goma", "Katwa", "Butembo"}
+    assert got == {"Goma", "Katwa", "Butembo"}

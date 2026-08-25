@@ -2,7 +2,7 @@
 # by design: `build` and `doc` never touch the network, so a rebuild can never
 # silently change what the source says.
 
-.PHONY: watch-data-channel release-check escape-fraction care-ledger oneoff-testing oneoff-death-split oneoff-death-flow cron-install cron-uninstall check fetch refresh verify build streams compare figures external \
+.PHONY: watch-data-channel release-check escape-fraction care-ledger oneoff-testing oneoff-death-split oneoff-death-flow cron-install cron-uninstall check fetch refresh manifest verify build streams compare figures external \
 	external-update scan-refresh doc serve test
 
 ## check   -- is the archive current, and does the source still look the same?
@@ -46,6 +46,17 @@ cron-uninstall:
 	launchctl bootout gui/$$(id -u)/$(CRON_LABEL) 2>/dev/null || true
 	rm -f ~/Library/LaunchAgents/$(CRON_LABEL).plist
 	@echo "removed"
+
+## manifest -- OFFLINE. Rewrite data/raw/sitrep_pdfs.manifest.tsv from the
+##            archive, reconciling it against the index and against
+##            registers/external_sitreps.tsv. Same code path `fetch` ends with,
+##            minus the network: the manifest is a pure function of those three
+##            inputs, so changing the register must not require re-downloading
+##            anything to make the committed manifest true again.
+manifest:
+	uv run python scripts/fetch_sitrep_pdfs.py --no-fetch \
+		--index data/raw/insp_sitrep_index.tsv \
+		--out data/raw/sitrep_pdfs --manifest data/raw/sitrep_pdfs.manifest.tsv
 
 ## verify  -- OFFLINE. Every held PDF hashes to what the manifest records.
 verify:
@@ -284,7 +295,22 @@ RC_DIR ?= /tmp/ebola-bdbv-release-check
 release-check:
 	rm -rf $(RC_DIR)
 	git clone -q . $(RC_DIR)
-	ln -s $$(pwd)/data/raw/sitrep_pdfs $(RC_DIR)/data/raw/sitrep_pdfs
+	# THE ARCHIVE IS SHARED FILE BY FILE, not by symlinking the directory.
+	# Three reports (001, 002, 004) are COMMITTED -- INSP does not serve them
+	# and nothing can fetch them again -- so the clone already has a real
+	# `data/raw/sitrep_pdfs/` holding them, and `ln -s src dir` would put the
+	# link INSIDE it and leave the gate reading three PDFs. Linking only what
+	# the clone lacks also keeps the committed three as the real bytes git
+	# holds, which is what this gate is supposed to be testing.
+	@mkdir -p $(RC_DIR)/data/raw/sitrep_pdfs
+	@for f in $$(pwd)/data/raw/sitrep_pdfs/*.pdf; do \
+		b=$$(basename $$f); \
+		test -e $(RC_DIR)/data/raw/sitrep_pdfs/$$b \
+			|| ln -s $$f $(RC_DIR)/data/raw/sitrep_pdfs/$$b; \
+	done
+	@echo "--- the committed reports must be the bytes their register names ---"
+	cd $(RC_DIR) && uv run python scripts/verify_archive.py \
+		--pdfs data/raw/sitrep_pdfs --manifest data/raw/sitrep_pdfs.manifest.tsv
 	# external/ is gitignored but pinned in external.lock, so share the
 	# verified checkout rather than re-cloning it over the network: an
 	# offline gate must stay offline.

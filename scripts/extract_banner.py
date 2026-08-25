@@ -239,7 +239,18 @@ NUM = re.compile(rf"^[{_MARK}]?\s*(?P<n>{_INT})\s*[{_MARK}]*"
 #: so a decimal point alone marks it.
 RATE = re.compile(rf"^{_INT}[.,]\d+\s*%?\s*[\d{_MARK}]*$"
                   rf"|^{_INT}\s*%\s*[\d{_MARK}]*$")
-MISSING = re.compile(r"^(?:ND|N\.?D\.?|NA|N\s*/\s*[AD]|[\u2014\u2013-]+)$", re.I)
+#: `?` IS ONE OF THE SPELLINGS, and it appears on exactly one page in the
+#: archive: sitrep 001, the outbreak's first report, writes `?` in the three
+#: tiles it had no figure for (both bed-occupancy rates and recoveries) while
+#: printing counts in the other four. Without it that value row is not a
+#: dashboard row at all, and the `D\u00e9c\u00e8s confirm\u00e9s` tile beside them -- 4
+#: deaths at 14 May, a real printed count on the first day of the series --
+#: refused for want of an aligned number above it. Admitting the marker reads
+#: the neighbouring tile; it does not read the `?` as anything, and the
+#: recoveries tile still refuses, because a report that says it does not know
+#: has not said zero.
+MISSING = re.compile(
+    r"^(?:ND|N\.?D\.?|NA|N\s*/\s*[AD]|\?|[\u2014\u2013-]+)$", re.I)
 #: A parenthetical or a marker stranded on its own continuation line, e.g.
 #: sitrep 055 prints `227` on one line and `(60 décès)**` on the next.
 STRANDED = re.compile(rf"^(?:[{_MARK}]+|\([^)]*\)\s*[\d{_MARK}]*)$")

@@ -9,6 +9,18 @@
 # cases entered Nord-Kivu -- once -- and persisted in its stream by forward
 # fill. The front page of the same report states the membership in words.
 #
+# ON SITREP 004 THE SAME CELL LANDS BETWEEN TWO ROWS AND IS LOST ENTIRELY. Its
+# `Ituri` label centres in the gap between `Rwampara` and `Bunia` rather than
+# on either, so the grid records it on a row of its own carrying no zone name
+# and no counts -- which the extraction drops, having nothing to extract. Only
+# `Nord-Kivu` survives into the panel, on the row it shares with `Katwa`, and
+# a carry with ONE anchor cannot partition a two-province table: all seven
+# zones went to Nord-Kivu, putting 30 Ituri cases in Nord-Kivu's stream and
+# leaving Ituri with none that day. The four entries below state what the page
+# states. They are the register's usual remedy, not its only possible one: a
+# reader that treated a label-only row as an anchor for its block would make
+# them unnecessary, and they should be retired if one ever does.
+#
 # An entry asserts what the PAGE says a row belongs to. `province` may be
 # `none`, meaning the page assigns the row to no province (a national pool
 # row); such rows stay out of every province series and inside the national
@@ -32,3 +44,7 @@ sitrep	date	sha256_16	zone	province	verified_by	note
 9	2026-05-23	281f68c03b1a9db8	Echantillons sans fiche	none	same reading as sitrep 007; row recovered 2026-08-17	Same row. Without this entry the carry hands the row to Nord-Kivu by mere adjacency -- the row sits beneath the Nord-Kivu block -- which no page states.
 10	2026-05-24	6f7b3a684913da7b	Echantillons sans fiche	none	same reading as sitrep 007; row recovered 2026-08-17	Same row, same vintage.
 11	2026-05-25	1464a88ca562a77a	Echantillons sans fiche	none	same reading as sitrep 007; row recovered 2026-08-17	Same row, same vintage.
+4	2026-05-18	202dd6db65d2d3c2	Mongbwalu	Ituri	read against the page 2026-08-24: the page-3 prose, the page-1 province table, and the table block order	The page reads "Deux provinces touchees dont l Ituri (4 ZS : Bunia, Nyankunde, Mongbwalu et Rwampara) et NordKivu (3 ZS : Katwa, Goma et Butembo)", and its page-1 province table prints Ituri 30, Nord-Kivu 3, Total 33 -- which the four Ituri zone rows (1+19+6+4=30) and the three Nord-Kivu rows (1+1+1=3) reproduce exactly. The table also groups these four above the Nord-Kivu block; only the merged Ituri label falling between two rows misleads the carry.
+4	2026-05-18	202dd6db65d2d3c2	Rwampara	Ituri	same reading as the sitrep 004 Mongbwalu entry	Same table, same lost label. Named in the page-3 prose as one of Ituri s four zones.
+4	2026-05-18	202dd6db65d2d3c2	Bunia	Ituri	same reading as the sitrep 004 Mongbwalu entry	Same table, same lost label. Named in the page-3 prose as one of Ituri s four zones.
+4	2026-05-18	202dd6db65d2d3c2	Nyankunde	Ituri	same reading as the sitrep 004 Mongbwalu entry	Same table, same lost label. Named in the page-3 prose as one of Ituri s four zones.
