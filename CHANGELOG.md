@@ -16,6 +16,43 @@ carries the rest.
 
 ---
 
+## `data/2026-08-23` — 2026-08-25 — sitrep 101
+
+**Not breaking. New observations only** — no stream added or removed, no column
+renamed, no previously published value changed. **Refit**: every national and
+province series gains 23 August, and the weekly bins move with it.
+
+Sitrep 101, data date 2026-08-23, national cumulative **5,584 confirmed cases
+and 2,680 confirmed deaths**. Extraction identity holds with residual 0; the
+letality check is clean; 95 PDFs in the archive and the manifest reconciles in
+both directions.
+
+The header prints `SitRep N°101`. Report 100 printed `N°0100` — a three-digit
+template overflowing at the century mark — and a predicate keyed to `N°0(\d\d)`
+would have read it as report 10 and collided with 2026-04. The padding does not
+recur at 101, so that hazard was confined to one report.
+
+### Tests that pinned numbers the archive moves
+
+Not a contract change, recorded because it explains a large test diff. The
+fetch turned ten tests red, all pinning quantities that move when the source
+publishes another report — eight stream totals as literals, a province-day
+count, and a data date. They are derived now.
+
+The stream totals assert the emitted file against the build's own
+`source_delta` and require `carry_residual == 0`. What that sees, and does not:
+it catches the emitted file disagreeing with the accounting — an undischarged
+carry, a row dropped or written twice — and is **not** an independent
+recomputation of the movement, because the panel aggregation it would have to
+duplicate is production code. The independent check on the movement is the
+extraction identity, gated in `make build`.
+
+The findings inside those tests are unchanged and still pinned: exactly one
+province-day over 100% occupancy (Nord-Kivu, 139%), and the census residual at
+1,368.
+
+---
+
 ## `data/2026-08-22-r6` — 2026-08-25 — where the record of a confirmed case is
 
 **No stream changes and no value changes. Figures only**, so nothing a
