@@ -286,6 +286,12 @@ figures:
 	# is checked.
 	uv run python scripts/plot_figures.py --figure ascertainment \
 		--out data/build/figures/ascertainment.png
+	# SLIDE FIGURE, 16:9. Of everyone ever confirmed, who appears in one of
+	# the published outcome ledgers and who appears in none of them. An
+	# arithmetic residual over four printed counts, so the top band is a
+	# count of people rather than a gap between two estimates.
+	uv run python scripts/plot_figures.py --figure outcomes \
+		--out data/build/figures/outcomes.png
 	uv run python scripts/plot_figures.py --figure province_series \
 		--out data/build/figures/province_series.png
 	# THE PROVINCE FLOWS AND THE NATIONAL-ONLY SERIES ARE TWO FIGURES, not
@@ -314,6 +320,7 @@ figures:
 	cp data/build/figures/care_ledger.png docs/figures/
 	cp data/build/figures/release_grid.png docs/figures/
 	cp data/build/figures/ascertainment.png docs/figures/
+	cp data/build/figures/outcomes.png docs/figures/
 	cp data/build/figures/epi_curve.png docs/figures/
 
 ## watch-data-channel -- poll the shared data channel (which lives in the

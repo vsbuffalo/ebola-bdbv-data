@@ -2847,6 +2847,124 @@ def test_the_two_care_grains_overlap_so_the_ledger_is_faceted_not_stacked():
     assert P.exits_double_counted_if_summed(care) == 11
 
 
+# --------------------------------------------------------------------------
+# THE OUTCOME LEDGER -- WHERE THE RECORD OF A CONFIRMED CASE IS
+#
+# `outcomes` claims, in words on a slide, that better than a quarter of
+# everyone ever confirmed appears in none of the four counts INSP publishes.
+# That is arithmetic over printed numbers, so the arithmetic is pinned here:
+# the decomposition must close against the published case total, and the
+# headline figures must be what the built series say. Nothing below tests
+# pixels.
+
+OUT_BUILD = ROOT / "data" / "build" / "series"
+needs_outcome_build = pytest.mark.skipif(
+    not (OUT_BUILD / "zone_table.csv").exists()
+    or not (OUT_BUILD / "banner.csv").exists(),
+    reason="the series are not built; run `make build`")
+
+
+def _outcome_inputs():
+    import polars as pl
+    return (pl.read_csv(OUT_BUILD / "zone_table.csv", infer_schema_length=None),
+            pl.read_csv(OUT_BUILD / "banner.csv", infer_schema_length=None))
+
+
+@needs_outcome_build
+def test_the_outcome_decomposition_closes_against_the_published_case_total():
+    """THE PROPERTY THE WHOLE FIGURE RESTS ON. The four bands are not four
+    estimates that happen to be near each other; they partition the published
+    cumulative confirmed total exactly, which is why the top one can be read as
+    a count of people. On every row that carries a ward census the four sum to
+    `cum_cases`, and on every row without one the three that remain sum to it
+    with the undivided residual, with no slack anywhere."""
+    import polars as pl
+    import plot_figures as P
+    led = P.outcome_ledger(*_outcome_inputs())
+    assert led.height > 60
+    closes = led.select(
+        (pl.col("cum_deaths") + pl.col("cumul_recovered") + pl.col("residual")
+         == pl.col("cum_cases")).all()).item()
+    assert closes, "dead + recovered + residual does not equal cum_cases"
+    full = led.drop_nulls("unaccounted")
+    four = full.select(
+        (pl.col("cum_deaths") + pl.col("cumul_recovered") + pl.col("in_ward")
+         + pl.col("unaccounted") == pl.col("cum_cases")).all()).item()
+    assert four, "the four bands do not sum to cum_cases"
+    # And the residual is an upper bound on the unaccounted count, which is
+    # what licenses carrying it past the day the census stops.
+    assert full.filter(pl.col("residual") < pl.col("unaccounted")).height == 0
+
+
+@needs_outcome_build
+def test_the_headline_numbers_are_what_the_published_series_say():
+    """The four counts the figure states, on the last report day all four
+    exist. 2 August (sitrep 080) prints 3,802 confirmed cases and 1,707
+    confirmed deaths in the health-zone table's national row; the front-page
+    tiles print 727 cumulative recoveries and 335 confirmed patients in
+    isolation. The remainder is 1,033 people, 27% of everyone ever confirmed,
+    and it is 1,033 because those four numbers are those four numbers."""
+    import plot_figures as P
+    h = P.outcome_headline(P.outcome_ledger(*_outcome_inputs()))
+    assert h["census_date"] == "2026-08-02"
+    assert (h["cum_cases"], h["cum_deaths"]) == (3802, 1707)
+    assert (h["cumul_recovered"], h["in_ward"]) == (727, 335)
+    assert h["unaccounted"] == 1033
+    assert h["unaccounted"] == (h["cum_cases"] - h["cum_deaths"]
+                                - h["cumul_recovered"] - h["in_ward"])
+    assert round(h["share"], 4) == 0.2717
+    # The count grows across the window over which the share is flat, so the
+    # steadiness of the share is not the steadiness of the problem.
+    assert h["run_start"] == "2026-07-18"
+    assert (h["run_days"], h["run_start_unaccounted"]) == (14, 676)
+    assert 0.27 <= h["run_share_min"] <= h["run_share_max"] <= 0.29
+
+
+@needs_outcome_build
+def test_the_ward_census_stops_and_only_the_undivided_residual_continues():
+    """WHY THE COMPOSITION CHANGES SHAPE. The confirmed half of the isolation
+    census is published for the last time on 2 August, while the case, death
+    and recovery counts run to the end of the archive. Past that day the ward
+    band and the unaccounted band cannot be told apart -- so the figure draws
+    them as one, and what it may still assert is the sum, which is larger on
+    the last report day than the whole residual was when the census stopped."""
+    import polars as pl
+    import plot_figures as P
+    led = P.outcome_ledger(*_outcome_inputs())
+    h = P.outcome_headline(led)
+    after = led.filter(pl.col("date") > pl.lit(h["census_date"]))
+    assert after.height > 10
+    assert after["in_ward"].null_count() == after.height
+    assert after["unaccounted"].null_count() == after.height
+    assert after["residual"].null_count() == 0
+    assert h["last_date"] == "2026-08-22"
+    assert h["last_residual"] == 1672 > h["census_residual"] == 1368
+
+
+@needs_outcome_build
+def test_every_hole_in_the_outcome_composition_carries_a_reason():
+    """A break in the composition is a report day with no national cumulative,
+    and there are three different causes: INSP published nothing that day, the
+    report printed no health-zone table, or the table printed only its 24-hour
+    columns. The figure labels each break with which, so a reader never has to
+    read absence as a value -- and none may fall through to an unlabelled
+    default."""
+    import plot_figures as P
+    import polars as pl
+    zone, banner = _outcome_inputs()
+    status = pl.read_csv(OUT_BUILD / "zone_table_status.csv",
+                         infer_schema_length=None)
+    gaps = P.outcome_gaps(P.outcome_ledger(zone, banner), status)
+    assert len(gaps) == 8
+    assert all(g["why"].strip() for g in gaps)
+    assert {(g["lo"].isoformat(), g["why"].replace("\n", " ")) for g in gaps} >= {
+        ("2026-07-28", "no report published"),
+        ("2026-08-06", "no health-zone table printed"),
+        # sitrep 087 DOES print a health-zone table; it prints only the
+        # 24-hour columns, so blaming the missing table would be wrong.
+        ("2026-08-09", "no cumulative columns printed")}
+
+
 @needs_build
 def test_the_figure_registry_declares_every_input_each_figure_reads():
     """The declared inputs ARE the dependency set -- the data document's guard
@@ -2855,7 +2973,8 @@ def test_the_figure_registry_declares_every_input_each_figure_reads():
     two is exactly when that goes wrong, because the inputs move with the
     panels."""
     import plot_figures as P
-    for name in ("streams_detail", "national_detail", "care_ledger"):
+    for name in ("streams_detail", "national_detail", "care_ledger",
+                 "outcomes"):
         _, inputs = P.FIGURES[name]
         for rel in inputs.values():
             assert (ROOT / rel).exists(), f"{name} declares missing {rel}"
