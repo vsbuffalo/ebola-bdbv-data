@@ -56,9 +56,15 @@ def ledger(streams: Path) -> dict:
     cen = pl.read_csv(
         streams / "patients_isolated_confirmed.tsv", separator="\t", try_parse_dates=True
     )
+    # `null_values="NA"`, and then only the scored rows: the daily flow files
+    # carry a row on every report day they span and hole the ones the source
+    # said nothing on. Without the token the counts read back as strings and
+    # the subtraction below fails; without the filter the holes would enter a
+    # sum as nulls and quietly void it.
     dth = pl.read_csv(
-        streams / "community_deaths_daily_national.tsv", separator="\t", try_parse_dates=True
-    )
+        streams / "community_deaths_daily_national.tsv", separator="\t",
+        try_parse_dates=True, null_values="NA"
+    ).filter(pl.col("n_report_days") > 0)
 
     lo = max(rec["time"].min(), cen["time"].min(), dth["time"].min())
     hi = min(rec["time"].max(), cen["time"].max(), dth["time"].max())

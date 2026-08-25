@@ -72,7 +72,7 @@ def main() -> None:
 
     for ci, scope in enumerate(args.scopes):
         d = pl.read_csv(args.streams / f"community_deaths_{scope}.tsv",
-                        separator="\t")
+                        separator="\t", null_values="NA")
         num, den = f"community_deaths_{scope}", f"deaths_split_{scope}"
         # The death stream over the same weeks, to expose what was never
         # classified. Absent for a scope with no death stream; then the band
@@ -80,7 +80,7 @@ def main() -> None:
         dstream = args.streams / f"deaths_{scope}.tsv"
         unclassified = None
         if dstream.exists():
-            w = pl.read_csv(dstream, separator="\t")
+            w = pl.read_csv(dstream, separator="\t", null_values="NA")
             j = d.join(w, on="time", how="left")
             unclassified = [max(int(a or 0) - int(b), 0) for a, b
                             in zip(j[f"deaths_{scope}"], j[den])]

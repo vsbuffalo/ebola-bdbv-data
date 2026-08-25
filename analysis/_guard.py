@@ -81,8 +81,16 @@ def figure(rel: str) -> str:
 
 
 def load(rel: str) -> pl.DataFrame:
+    # `NA` IS DECLARED AS THE NULL TOKEN. A published flow stream carries a row
+    # on every report day it spans and writes `NA` where the source said
+    # nothing, so that a model accumulating between observations closes its
+    # interval on schedule. polars does not read `NA` as null by default: one
+    # hole would turn a count column into a string column, and a plot of that
+    # column draws the strings at the axis baseline -- a hole rendered as an
+    # observed zero, in a figure that looks entirely plausible.
     path = _require_declared(rel)
-    return pl.read_csv(path, separator=_sep(path), infer_schema_length=None)
+    return pl.read_csv(path, separator=_sep(path), infer_schema_length=None,
+                       null_values="NA")
 
 
 def load_json(rel: str) -> dict:

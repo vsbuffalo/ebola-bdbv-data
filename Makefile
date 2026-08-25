@@ -123,6 +123,13 @@ build:
 ##            stream it writes has no sentence in registers/stream_families.tsv
 ##            saying what it measures -- a new stream must not ship
 ##            undocumented, so adding one means adding a sentence.
+##            AND FAILS UNLESS EVERY SCORED ROW ON A FLOW FILE SITS EXACTLY
+##            `days_covered` DAYS AFTER THE ROW BEFORE IT. A model accumulates
+##            a modelled flow between the ROWS that are present -- an NA row
+##            resets the accumulator just as a scored one does -- so a row
+##            further from its predecessor than the window it claims is scored
+##            against more flow than it represents, and no other gate here can
+##            see it: the counts are right and the totals reconcile.
 streams:
 	# FIRST, because build_streams.py writes the data dictionary that
 	# documents every published file and reads this one's span off it.
@@ -165,11 +172,14 @@ streams:
 	#   data/build/streams/meta.json
 	# and THE CARE LEDGER, from the care pillar's prose: the isolation census
 	# as a STOCK per province, and the day's admissions and exits as flows the
-	# report states for the report day (so days_covered is 1, never the gap).
-	# One file per quantity per place, written only where the source states
-	# that quantity for that place at all -- a file that would be empty is not
-	# written, and `n_report_days_silent` in the ones that are counts the
-	# report days that passed the quantity over:
+	# report states for the report day. One file per quantity per place,
+	# written only where the source states that quantity for that place at
+	# all -- a file that would be empty is not written. THE FLOW FILES CARRY A
+	# ROW ON EVERY REPORT DAY THEY SPAN, holding NA where the source said
+	# nothing, because a model accumulates between the rows that are present
+	# and a file holding only the stated days makes each next row's window as
+	# wide as the silence behind it. The census files are stocks and are NOT
+	# gridded: they accumulate over nothing, so a gap in one costs nothing:
 	#   data/build/streams/care_census_{ituri,nord_kivu,haut_uele,national}.tsv
 	#   data/build/streams/care_census_confirmed_{ituri,nord_kivu,haut_uele,national}.tsv
 	#   data/build/streams/care_census_suspect_{ituri,nord_kivu,haut_uele,national}.tsv

@@ -183,11 +183,38 @@ carries about 23% fewer positives than the case series, and that shortfall
 was very nearly fitted as a probability of publication — but split by
 coverage, report days whose paragraph covers three or four provinces agree
 with the case series to within about a percent, and the deficit is entirely
-the provinces that went unwritten. Streams built from a **table**, which
-prints every province or does not exist, carry `n_report_days` alone;
-streams built from **prose** carry the coverage columns, and the prose ones
+the provinces that went unwritten. Every stream carries `n_report_days`; the
+ones whose window can contain a report day that passed the quantity over
+carry `n_report_days_silent` beside it, and the ones read out of **prose**
 also carry `checks`, the source's own arithmetic on the passage a value came
 from (`closes`, `contradicts`, `unchecked`).
+
+**Every flow file claims the window it sits in, and the build fails if one
+does not.**
+
+```
+for every SCORED row:  time - (time of the previous ROW, NA or scored) == days_covered
+```
+
+An engine accumulates a modelled flow from the previous **row** of the same
+stream to this one, and a row carrying no observation still resets that
+accumulator — what resets it is the row being present, not the row being
+scored. So a scored row whose `days_covered` understates its gap makes the
+model accumulate over a window the row does not claim: it is scored against
+more flow than it represents, and nothing in the file says so. The families
+the source states as a single 24-hour figure per report — the care ledger's
+admissions and exits, the daily laboratory files, the daily community-death
+split — therefore carry **a row on every report day they span**, holding `NA`
+where the source said nothing. An `NA` contributes no likelihood term and is
+**not an observed zero**: a report that does not mention absconders is silent
+about them, not reporting none. Read these files with the token declared (in
+polars, `null_values="NA"`), because `NA` is not a null token by default and
+one hole otherwise turns a count column into a string column. The grid is
+**report days, never calendar days** — a row on a day the archive holds no
+report for would assert a bin the source never licensed. Stocks are outside
+all of this: `care_census_*`, `patients_isolated*` and `cumul_recovered` are
+readings at an instant, carry no `days_covered`, accumulate over no window,
+and a 46-day gap in one of them is a reading taken 46 days later.
 
 **No published count is negative, and no case is lost making it so.** INSP
 revises its own cumulative downward — Nord-Kivu goes 44 cases / 26 deaths on

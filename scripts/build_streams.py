@@ -260,6 +260,25 @@ def spans(times, left) -> list[int]:
     return out
 
 
+def report_day_grid(times, report_days) -> list:
+    """Every report day the stream spans, so a flow file has a ROW on each.
+
+    THE GRID IS REPORT DAYS, NEVER CALENDAR DAYS. A row asserts a bin, and a
+    bin on a day the archive holds no report for would be an assertion the
+    source never licensed -- it would also manufacture a reset point in an
+    engine that resets its accumulator on every row present. The days the
+    source did publish are days it said something, so a row there saying "and
+    nothing of this quantity for this place" is a statement the source
+    supports.
+
+    Bounded by the stream's own first and last observation. A row before the
+    first would claim the quantity was being reported and was empty; a row
+    after the last would claim the series is still running.
+    """
+    lo, hi = min(times), max(times)
+    return sorted(d for d in report_days if lo <= d <= hi)
+
+
 def silent_report_days(times, contributed: list[int], report_days, left) -> list[int]:
     """Per row, how many report days in its window said NOTHING of this
     quantity for this place.
@@ -300,6 +319,73 @@ def silent_report_days(times, contributed: list[int], report_days, left) -> list
     return out
 
 
+def on_report_day_grid(d: pl.DataFrame, report_days, *, time_col: str,
+                       divisors=()) -> pl.DataFrame:
+    """A flow stream with a row on every report day it spans: the days the
+    source stated the quantity carry it, the days it did not carry NA.
+
+    WHY A HOLE MUST BE A ROW. These streams hold a figure the report states
+    for the report day itself -- one 24-hour count -- so a row is one day of
+    flow whatever the gap behind it. An engine that accumulates a modelled
+    flow between consecutive OBSERVATION ROWS therefore integrates over the
+    whole gap and compares the result against a single day's count: a stream
+    whose rows sat 48 days apart asked the model to explain 48 days of
+    admissions with one day of them. Writing the gap into `days_covered`
+    instead does not help, because the accumulation window is set by the rows
+    that exist and not by any column. The row is what resets the accumulator,
+    so the hole has to be a row.
+
+    WHAT AN NA ROW SAYS AND WHAT IT DOES NOT. The observation cell is empty:
+    no likelihood term, and in particular NOT an observed zero -- a report
+    that does not mention absconders is silent about them, not reporting none.
+    Everything describing the row stays populated (`n_report_days_silent`,
+    `checks`, `flags` are the caller's; `days_covered` and `n_report_days` are
+    set here), because a row that says why it is empty is strictly better than
+    a bare hole and no engine reads those columns into a likelihood.
+
+    `n_report_days` IS THE SCORED MARKER: 1 where a report day fed the row and
+    0 where none did. It is already published on every flow file, it is already
+    documented as "how many report days fed the row", and 0 is the truthful
+    value for a row no report day fed -- so the file states which of its rows
+    can be scored without any new column and without a consumer having to
+    guess from a null.
+
+    A DIVISOR NEVER GOES EMPTY OR ZERO. Where a second observation column is
+    one the model DIVIDES BY -- `tests_*` beneath `positives_*` -- the division
+    can be evaluated on a row that contributes no likelihood term, and an empty
+    or zero cell there is a division by zero in an expression nobody meant to
+    compute. So an inserted row carries the placeholder 1: never read, because
+    the numerator beside it is empty and the row is unscored, and positive so
+    that it cannot reach a division as a zero. A denominator the model passes
+    as a binomial `n` rather than dividing by is NOT filled -- see
+    `DENOMINATOR_OF` for why the two roles part company here.
+
+    Pure, and the observation columns are whatever `d` carries besides
+    `time_col`: the caller has already reduced its frame to the columns it
+    intends to publish, so nothing here needs to know what a stream measures.
+    """
+    have = d[time_col].to_list()
+    grid = report_day_grid(have, report_days)
+    if missing := sorted(set(have) - set(grid)):
+        raise SystemExit(
+            f"a stream has an observation on {missing}, which the report-day "
+            "calendar does not hold. Gridding onto report days would drop "
+            "those rows, so the calendar is wrong rather than the stream.")
+    out = (pl.DataFrame({time_col: grid}, schema={time_col: pl.Date})
+           .join(d.with_columns(pl.lit(1, pl.Int64).alias("n_report_days")),
+                 on=time_col, how="left")
+           .sort(time_col)
+           .with_columns(pl.col("n_report_days").fill_null(0)))
+    times = out[time_col].to_list()
+    left = times[0] - dt.timedelta(days=1)
+    return out.with_columns(
+        pl.Series("days_covered", spans(times, left), dtype=pl.Int64),
+        pl.Series("n_report_days_silent",
+                  silent_report_days(times, out["n_report_days"].to_list(),
+                                     report_days, left), dtype=pl.Int64),
+        *[pl.col(c).fill_null(1) for c in divisors])
+
+
 # ---- THE VOCABULARY THE PUBLISHED FILES ARE DOCUMENTED IN ----------------
 # `data/build/streams/README.md` travels with the vendored data and answers
 # the question `meta.json` cannot: what is `community_deaths_daily_ituri`, and
@@ -322,6 +408,82 @@ def silent_report_days(times, contributed: list[int], report_days, left) -> list
 #: measuring how much of the country the paragraph had been written out for.
 METADATA_COLUMNS = ("days_covered", "n_report_days", "flags", "n_provinces",
                     "n_province_days", "n_report_days_silent", "checks")
+
+#: HOW A HOLE IS SPELLED ON DISK, in one place because both sides of it have
+#: to agree. The engines these files are written for read the literal token
+#: `NA` in an observation cell as "scheduled, unobserved": no likelihood term,
+#: but the row still closes the interval. An EMPTY cell is not that token, so
+#: the writer states it explicitly rather than taking polars' default.
+#:
+#: The same token is a trap on the reading side, and this repository reads its
+#: own output in four places -- the gates, the generated dictionary, the
+#: figures and the tests. In polars `NA` does not parse as null by default, so
+#: one hole turns an integer column into a STRING column: the non-negativity
+#: gate then skips it as non-numeric, and a plotting library draws the strings
+#: at the axis baseline, which renders a hole as an observed zero in a figure
+#: that looks entirely plausible. Everything here reads through `read_stream`
+#: for that reason.
+NULL_TOKEN = "NA"
+
+
+def read_stream(path: Path) -> pl.DataFrame:
+    """A published stream file, with holes read as nulls rather than as the
+    string `NA`. The only way this repository reads its own output."""
+    return pl.read_csv(path, separator="\t", infer_schema_length=None,
+                       null_values=NULL_TOKEN)
+
+
+#: What a model does with a denominator, which decides what an UNSCORED row
+#: must carry in it. Two roles, and the difference is the whole reason the
+#: distinction is written down rather than assumed:
+#:
+#:   DIVISOR        the model divides by it. A division can be evaluated on a
+#:                  row that is never scored, so the column must hold a
+#:                  positive value on every row -- an empty or zero cell is a
+#:                  division by zero in a term nobody meant to compute. An
+#:                  unscored row therefore carries the placeholder 1.
+#:   BINOMIAL_SIZE  the model passes it as the `n` of a binomial or
+#:                  beta-binomial. `binomial(n = NA)` cannot be constructed at
+#:                  all, so an engine reading it turns the whole row into a
+#:                  hole, which is exactly what an unscored row should be. A
+#:                  placeholder would be a fabricated trial count for no gain,
+#:                  so the column goes empty beside its numerator.
+DIVISOR, BINOMIAL_SIZE = "divisor", "binomial size"
+
+#: family -> (the observation column that is a DENOMINATOR, what a model does
+#: with it). A denominator is the total that the other observation column
+#: beside it is a count OUT OF, rather than a count in its own right.
+#:
+#: IDENTIFIED STRUCTURALLY, NOT BY NAME. A denominator can only exist where a
+#: file publishes more than one observation column, so the candidate set is
+#: exactly the files with two, and `no_declared_denominator` below fails the
+#: build if one of those has no entry here -- a future two-column stream
+#: cannot ship until someone has decided which of its columns is the total and
+#: what is done with it.
+#:
+#: The roles are read off the consuming models rather than guessed.
+#: `tests_national` appears as `beta_binomial(n = tests_national, mean =
+#: projected / tests_national, ...)`, so it is a divisor as well as a size and
+#: takes the stricter rule; the per-province `tests_*` are summed into that
+#: same divisor upstream, so the family takes one rule throughout.
+#: `deaths_split_*` appears only as `beta_binomial(n = deaths_split_*, mean =
+#: projected, ...)`, where `projected` is a ratio of modelled intensities and
+#: no data column enters the division -- it is a size and never a divisor.
+DENOMINATOR_OF = {"lab": ("tests", DIVISOR),
+                  "community_deaths": ("deaths_split", BINOMIAL_SIZE)}
+
+
+def denominators_in(stem: str, columns, *, role: str | None = None
+                    ) -> tuple[str, ...]:
+    """A published file's denominator columns, from its stem; `role` narrows
+    to the ones a model uses that way."""
+    family, slug = stream_identity(stem)
+    entry = DENOMINATOR_OF.get(family)
+    if entry is None or (role is not None and entry[1] != role):
+        return ()
+    col = f"{entry[0]}_{slug}"
+    return (col,) if col in columns else ()
+
 
 #: How a row's `time` relates to the count beside it. Passed at every write
 #: site rather than inferred from the filename, because it is a property of
@@ -443,12 +605,132 @@ def negative_values(paths: list[Path]) -> list[str]:
     """
     out: list[str] = []
     for path in sorted(paths):
-        t = pl.read_csv(path, separator="\t", infer_schema_length=None)
+        t = read_stream(path)
         for col in t.columns:
             if not t[col].dtype.is_numeric():
                 continue
             for r in t.filter(pl.col(col) < 0).iter_rows(named=True):
                 out.append(f"{path.name}: {col} = {r[col]} at {r['time']}")
+    return out
+
+
+def observation_columns(columns) -> list[str]:
+    """A published file's observation columns: `time` and the row-describing
+    columns removed, everything else is something the source measured."""
+    return [c for c in columns if c != "time" and c not in METADATA_COLUMNS]
+
+
+def accumulation_windows(written: list[Written]) -> list[str]:
+    """Every scored row on a flow file whose `days_covered` is not the gap to
+    the row before it, as findings.
+
+    THE INVARIANT, AND WHY IT IS A GATE RATHER THAN A CONVENTION:
+
+        for every SCORED row on a flow file
+            time - (time of the previous ROW, NA or scored) == days_covered
+
+    The engines these files are written for accumulate a modelled flow from
+    the previous ROW OF THE SAME STREAM to this one, and a row that carries no
+    observation still resets the accumulator, because the reset is the row
+    existing rather than the row being scored. `days_covered` is what the file
+    claims that window to be. Where the two differ the model integrates over
+    one interval and compares the result against a count covering another, and
+    nothing in the file says so: the numerator silently widens while the
+    denominator stays where it was. Four published streams had gaps of 11 to
+    48 days under a `days_covered` of 1 before this gate existed, and one
+    assertion would have named every one of them.
+
+    Read back off DISK, like `negative_values` and for the same reason: what a
+    consumer fits is the file. Flow files only -- a stock is a reading at an
+    instant, accumulates over no window and carries no `days_covered`, so
+    there is nothing here for it to violate. The FIRST row of a file is
+    exempt: it has no previous row, so the gap it would be measured against
+    does not exist.
+    """
+    out: list[str] = []
+    for w in sorted(written, key=lambda w: w.path):
+        if w.resolution == STOCK:
+            continue
+        t = read_stream(w.path)
+        rows = t.iter_rows(named=True)
+        prev = next(rows, None)
+        if prev is None:
+            continue
+        for r in rows:
+            gap = (dt.date.fromisoformat(r["time"])
+                   - dt.date.fromisoformat(prev["time"])).days
+            prev = r
+            if r["n_report_days"] and gap != r["days_covered"]:
+                out.append(
+                    f"{w.path.name}: the row at {r['time']} claims "
+                    f"days_covered = {r['days_covered']} but sits {gap} day(s) "
+                    "after the row before it, so a model accumulating between "
+                    f"rows would score {gap} day(s) of flow against it")
+    return out
+
+
+def unscored_rows(written: list[Written]) -> list[str]:
+    """Every way an NA row could be malformed, as findings.
+
+    Three properties, all of which a consumer relies on and none of which is
+    visible in a column name:
+
+      * a row marked unscored (`n_report_days` 0) really is empty of
+        observations, so nothing is half-scored -- a row with a count in one
+        cell and a hole in another has semantics no engine here has been
+        tested against;
+      * a row marked scored has no hole in it, for the same reason;
+      * a DIVISOR is present and non-zero on an unscored row, because the
+        division can be evaluated on a row that contributes no likelihood
+        term.
+
+    A divisor is exempt from the first property, and that is the point of
+    naming it: the placeholder is not an observation, it is what keeps an
+    unscored row from being arithmetically dangerous.
+    """
+    out: list[str] = []
+    for w in sorted(written, key=lambda w: w.path):
+        if w.resolution == STOCK:
+            continue
+        t = read_stream(w.path)
+        obs = observation_columns(t.columns)
+        div = denominators_in(w.path.stem, t.columns, role=DIVISOR)
+        for r in t.iter_rows(named=True):
+            scored = bool(r["n_report_days"])
+            for c in obs:
+                if scored and r[c] is None:
+                    out.append(f"{w.path.name}: {c} is empty at {r['time']} on "
+                               "a row marked scored (n_report_days > 0)")
+                elif not scored and c not in div and r[c] is not None:
+                    out.append(f"{w.path.name}: {c} = {r[c]} at {r['time']} on "
+                               "a row marked unscored (n_report_days = 0)")
+            for c in div:
+                if not scored and not r[c]:
+                    out.append(
+                        f"{w.path.name}: the divisor {c} is "
+                        f"{'empty' if r[c] is None else r[c]} at {r['time']} "
+                        "on an unscored row, where it can still be divided by")
+    return out
+
+
+def no_declared_denominator(written: list[Written]) -> list[str]:
+    """Files publishing two observation columns whose family has not said
+    which of them is the total the other is drawn out of.
+
+    The candidate set for a denominator is exactly the files with more than
+    one observation column, so this is the whole of the question `DENOMINATOR_OF`
+    answers. Fail-closed so that adding a two-column stream forces the
+    decision, rather than leaving a divisor to be discovered by a model
+    dividing by a hole.
+    """
+    out: list[str] = []
+    for w in sorted(written, key=lambda w: w.path):
+        t = read_stream(w.path)
+        obs = observation_columns(t.columns)
+        if len(obs) > 1 and not denominators_in(w.path.stem, t.columns):
+            out.append(f"{w.path.name}: publishes {obs} and its family "
+                       f"`{stream_identity(w.path.stem)[0]}` has no entry in "
+                       "DENOMINATOR_OF saying which is the denominator")
     return out
 
 
@@ -473,8 +755,21 @@ def load_families(path: Path) -> dict[str, dict[str, str]]:
 
 
 def stream_facts(path: Path) -> dict:
-    """What a published file says about itself: how many rows, which `time`
-    values it spans, and which of its columns are observations.
+    """What a published file says about itself: how many rows, how many of
+    them carry an observation, which `time` values it spans, and which of its
+    columns are observations.
+
+    ROWS AND OBSERVATIONS ARE TWO NUMBERS, and conflating them is exactly the
+    thing this release exists to stop. A flow file has a row on every report
+    day it spans, and the rows the source said nothing on hold `NA`; counting
+    those as observations would report a stream printed on nine days out of
+    thirty-one as having thirty-one. `n_obs` is the scored count -- what a
+    likelihood actually sees -- and `n_rows` is the file's height.
+
+    SPANS AND GAPS ARE MEASURED OVER SCORED TIMES for the same reason. The
+    interior gaps of a gridded file are one day by construction; the gap that
+    tells a reader how intermittent the quantity is, is the gap between the
+    days the source stated it.
 
     READ OFF THE FILE, not off `meta.json`. The reconciliation block carries a
     date range for the streams built by differencing a cumulative, but not for
@@ -483,9 +778,13 @@ def stream_facts(path: Path) -> dict:
     document that states the range of the file it documents, measured from
     that file, is also simply the more honest construction.
     """
-    t = pl.read_csv(path, separator="\t", infer_schema_length=None)
-    times = sorted(str(x) for x in t["time"].to_list())
-    return {"n_obs": t.height,
+    t = read_stream(path)
+    scored = (t.filter(pl.col("n_report_days") > 0)
+              if "n_report_days" in t.columns else t)
+    times = sorted(str(x) for x in scored["time"].to_list())
+    return {"n_obs": scored.height,
+            "n_rows": t.height,
+            "n_holes": t.height - scored.height,
             "first": times[0] if times else "-",
             "last": times[-1] if times else "-",
             "times": times,
@@ -593,6 +892,40 @@ def data_dictionary(written: list[Written], register: Path, *,
         "instant and accumulates over no window at all.",
         "- **A day with no report is absent, never zero.** A gap is a missing "
         "observation, not an observed absence of transmission.",
+        "- **EVERY FLOW FILE SATISFIES THIS, AND THE BUILD FAILS IF IT DOES "
+        "NOT:**",
+        "",
+        "  ```",
+        "  for every SCORED row:  time - (time of the previous ROW, NA or "
+        "scored) == days_covered",
+        "  ```",
+        "",
+        "  An engine accumulates a modelled flow from the previous ROW OF THE "
+        "SAME STREAM to this one, and a row carrying no observation still "
+        "resets that accumulator, because what resets it is the row being "
+        "present and not the row being scored. `days_covered` is what the file "
+        "claims the window to be. A scored row whose `days_covered` understates "
+        "its gap therefore makes the model accumulate over a window the row "
+        "does not claim — it is scored against more flow than it represents, "
+        "and nothing in the file says so. Where the source published no report "
+        "at all, the gap widens and `days_covered` widens with it: an honest "
+        "wide bin rather than a silent one.",
+        "- **A HOLE IS A ROW WITH `NA` IN IT, and `n_report_days` says which "
+        "rows those are.** On the flow families the source states as a single "
+        "24-hour figure per report, every report day the file spans is a row: "
+        "the days the source stated the quantity carry it, and the days it did "
+        "not carry `NA` in every observation column with `n_report_days` 0. An "
+        "`NA` contributes no likelihood term and is **not an observed zero** — "
+        "a report that does not mention absconders is silent about them, not "
+        "reporting none. Read these files with `NA` declared as the null "
+        "token (in polars, `null_values=\"NA\"`): it is not a null token by "
+        "default, and one hole otherwise turns an integer column into a string "
+        "column that a plotting library will draw at the axis baseline, "
+        "rendering a hole as an observed zero. The one column that stays "
+        "populated on an unscored row is a **divisor** — `tests_*`, which a "
+        "model divides by — where a placeholder of 1 is written, because a "
+        "division can be evaluated on a row that is never scored and a null or "
+        "zero there would divide by zero.",
         "- **No published count is negative.** Where the source revised its "
         "own cumulative downward, the deficit is carried into later rows "
         "rather than clipped, so a stream still totals exactly what the "
@@ -611,12 +944,14 @@ def data_dictionary(written: list[Written], register: Path, *,
         "fitted as the second. `n_provinces` is how many provinces a row's "
         "total is the sum over, and `n_province_days` how many "
         "province-report-days; `n_report_days` is how many report days fed "
-        "the row, and `n_report_days_silent` how many report days fell in the "
-        "same window and said nothing of this quantity for this place. A row "
-        "read without them is a total over an unstated denominator. Streams "
-        "built from a TABLE, which prints every province or does not exist, "
-        "carry `n_report_days` alone; streams built from PROSE, which writes "
-        "out whichever provinces its author wrote out, carry the rest.",
+        "the row — 0 on a hole, which is what marks a row as unscored — and "
+        "`n_report_days_silent` how many report days fell in the same window "
+        "and said nothing of this quantity for this place. A row read without "
+        "them is a total over an unstated denominator. Every stream carries "
+        "`n_report_days`; the ones whose window can contain a report day that "
+        "passed the quantity over carry `n_report_days_silent` beside it, and "
+        "the ones summing over provinces carry `n_provinces` and "
+        "`n_province_days`.",
         "- **`checks` is the source's own arithmetic on the passage a value "
         "came from**, on the streams read out of prose: `closes` where every "
         "check bearing on that quantity passed, `contradicts` where one "
@@ -704,13 +1039,20 @@ def data_dictionary(written: list[Written], register: Path, *,
             rows.append([f"`{w.path.name}`",
                          places[stream_identity(w.path.stem)[1]],
                          RESOLUTION_PROSE[w.resolution],
-                         str(f["n_obs"]), f["first"], f["last"],
+                         str(f["n_obs"]),
+                         str(f["n_holes"]) if f["n_holes"] else "—",
+                         f["first"], f["last"],
                          ", ".join(f"`{c}`" for c in f["columns"])])
         out += [f"## {entry['title']}", "", entry["measures"], ""]
+        # OBS AND HOLES ARE SEPARATE COLUMNS. `Obs` is what a likelihood sees;
+        # `NA rows` is how many report days the file spans on which the source
+        # said nothing, present so the accumulation window each observation is
+        # scored over is exactly the window its row claims.
         out += _table(rows,
-                      ["File", "Place", "Resolution", "Obs", "First `time`",
-                       "Last `time`", "Observation column(s)"],
-                      ["---", "---", "---", "---:", "---", "---", "---"])
+                      ["File", "Place", "Resolution", "Obs", "`NA` rows",
+                       "First `time`", "Last `time`", "Observation column(s)"],
+                      ["---", "---", "---", "---:", "---:", "---", "---",
+                       "---"])
         # HOW TO READ IT, beneath the table that says what is in it. Every
         # trap listed here has already cost someone in this project real time,
         # and none of them is visible in a span and a column name.
@@ -1175,7 +1517,11 @@ def main() -> None:
         they are written under.
         """
         assert resolution in RESOLUTION_PROSE, resolution
-        d.write_csv(path, separator="\t")
+        # `NA` AND NOT AN EMPTY CELL, on every file whether or not it has a
+        # hole in it: the token is a property of the format, so a consumer
+        # reading the release with `null_values="NA"` reads all of it the same
+        # way and a file that gains its first hole does not change format.
+        d.write_csv(path, separator="\t", null_value=NULL_TOKEN)
         written.append(Written(path, resolution))
 
     def carried(d: pl.DataFrame, stream: str, column: str, *,
@@ -1594,9 +1940,16 @@ def main() -> None:
                        printed["date"], "national")
 
     # The daily ascertainment split: these columns are ALREADY the day's own
-    # 24-hour flows as the source prints them, so a row covers one day
-    # whatever the gap before it -- `days_since_prev_report` says how far
-    # back the previous observation sits without claiming the interval.
+    # 24-hour flows as the source prints them, so a row covers ONE day and
+    # `days_covered` says 1. The report days on which no page classified a
+    # death this way are rows with both cells empty, so the interval a row
+    # claims is the interval a model accumulates over.
+    #
+    # BOTH COLUMNS GO EMPTY TOGETHER on such a row. `deaths_split_*` is the
+    # total the community count is drawn out of, and a model passes it as a
+    # binomial size; a count in one cell and a hole in the other is a shape
+    # nothing here has been tested against, and a fabricated trial count would
+    # be worse than a hole.
     for prov, slug in list(STREAM_PROVINCES.items()) + [(None, "national")]:
         lvl = "national" if prov is None else "province"
         sel = panel.filter((pl.col("level") == lvl)
@@ -1609,30 +1962,35 @@ def main() -> None:
         d = (sel.with_columns(pl.col("date").str.to_date())
              .group_by("date")
              .agg(pl.col("deaths_community").last(), pl.col("deaths_total").last())
-             .sort("date")
-             .with_columns((pl.col("date") - pl.col("date").shift(1))
-                           .dt.total_days().fill_null(1)
-                           .alias("days_covered")))
-        d = d.with_columns(daily_flags(d["date"], caveat, exceptions,
-                                       prov or "national"))
+             .sort("date"))
         name = f"community_deaths_daily_{slug}"
         cname, tname = f"community_deaths_{slug}", f"deaths_split_{slug}"
-        fl = d["flags"].to_list()
+        n_stated = d.height
+        fl = daily_flags(d["date"], caveat, exceptions,
+                         prov or "national").to_list()
         d = carried(d, name, cname, count_col="deaths_community",
                     time_col="date", flags=fl)
         d = carried(d, name, tname, count_col="deaths_total",
                     time_col="date", flags=fl)
+        d = on_report_day_grid(
+            d.select("date", pl.col("deaths_community").alias(cname),
+                     pl.col("deaths_total").alias(tname)),
+            report_days, time_col="date")
+        d = d.with_columns(daily_flags(d["date"], caveat, exceptions,
+                                       prov or "national"))
         write_stream(
-            d.with_columns(pl.lit(1, pl.Int64).alias("n_report_days"))
-            .select(pl.col("date").dt.to_string("%Y-%m-%d").alias("time"),
-                    pl.col("deaths_community").alias(cname),
-                    pl.col("deaths_total").alias(tname),
-                    "days_covered", "n_report_days", "flags"),
+            d.select(pl.col("date").dt.to_string("%Y-%m-%d").alias("time"),
+                     cname, tname, "days_covered", "n_report_days",
+                     "n_report_days_silent", "flags"),
             args.out_dir / f"{name}.tsv", DAILY)
-        recon[name] = {"n_obs": d.height,
-                       "emitted": int(d["deaths_community"].sum()),
-                       "emitted_total": int(d["deaths_total"].sum()),
-                       "n_flagged": int(d.filter(pl.col("flags") != "-").height),
+        recon[name] = {"n_obs": n_stated, "n_rows": d.height,
+                       "emitted": int(d[cname].sum()),
+                       "emitted_total": int(d[tname].sum()),
+                       "report_days_silent":
+                           int(d["n_report_days_silent"].sum()),
+                       "n_flagged": int(d.filter((pl.col("flags") != "-")
+                                                 & (pl.col("n_report_days") > 0))
+                                        .height),
                        **carry_note(name, cname)}
 
     # THE TESTING STREAM, from the laboratory prose (extract_lab_prose.py:
@@ -1703,38 +2061,50 @@ def main() -> None:
             # national total is the sum over exactly those provinces, and a
             # consumer that ignores it will read a composition change as a
             # change in testing effort.
-            dl = daily.sort("date").with_columns(
-                (pl.col("date") - pl.col("date").shift(1)).dt.total_days()
-                .fill_null(1).alias("days_covered"))
-            dl = dl.with_columns(daily_flags(dl["date"], caveat, exceptions,
-                                             "national"))
-            fl = dl["flags"].to_list()
+            #
+            # AND IT IS GRIDDED ONTO THE REPORT DAYS, because the paragraph
+            # gives ONE DAY'S samples per report: a row is one day of testing
+            # however long ago the paragraph last named a province, so the
+            # report days it named none are rows with an empty
+            # `positives_national`. `tests_national` is the one column that
+            # does NOT go empty -- a model divides the modelled flow by it, and
+            # that division is evaluated whether or not the row is scored.
+            dl = daily.sort("date")
+            n_stated = dl.height
+            fl = daily_flags(dl["date"], caveat, exceptions,
+                             "national").to_list()
             dl = carried(dl, "lab_daily_national", "positives_national",
                          count_col="positives", time_col="date", flags=fl)
             dl = carried(dl, "lab_daily_national", "tests_national",
                          count_col="samples", time_col="date", flags=fl)
-            dl_silent = silent_report_days(
-                dl["date"].to_list(), [1] * dl.height, report_days,
-                dl["date"].min() - dt.timedelta(days=1))
+            stated_prov = dl["n_prov"]
+            dl = on_report_day_grid(
+                dl.select("date", pl.col("positives").alias("positives_national"),
+                          pl.col("samples").alias("tests_national"),
+                          pl.col("n_prov").alias("n_provinces")),
+                report_days, time_col="date", divisors=("tests_national",))
+            dl = dl.with_columns(
+                # Zero provinces fed a row no laboratory paragraph named one
+                # on, which is what the column is for; a hole here would read
+                # as coverage unknown rather than coverage none.
+                pl.col("n_provinces").fill_null(0),
+                daily_flags(dl["date"], caveat, exceptions, "national"))
             write_stream(
-                dl.with_columns(
-                    pl.lit(1, pl.Int64).alias("n_report_days"),
-                    pl.Series("n_report_days_silent", dl_silent))
-                .select(pl.col("date").dt.to_string("%Y-%m-%d").alias("time"),
-                        pl.col("positives").alias("positives_national"),
-                        pl.col("samples").alias("tests_national"),
-                        "days_covered", "n_report_days",
-                        "n_report_days_silent",
-                        pl.col("n_prov").alias("n_provinces"), "flags"),
+                dl.select(pl.col("date").dt.to_string("%Y-%m-%d").alias("time"),
+                          "positives_national", "tests_national",
+                          "days_covered", "n_report_days",
+                          "n_report_days_silent", "n_provinces", "flags"),
                 args.out_dir / "lab_daily_national.tsv", DAILY)
             recon["lab_daily_national"] = {
-                "n_obs": dl.height,
-                "tests": int(dl["samples"].sum()),
-                "positives": int(dl["positives"].sum()),
-                "n_provinces": {"median": float(dl["n_prov"].median()),
-                                "min": int(dl["n_prov"].min()),
-                                "max": int(dl["n_prov"].max())},
-                "report_days_silent": int(sum(dl_silent)),
+                "n_obs": n_stated, "n_rows": dl.height,
+                "tests": int(dl.filter(pl.col("n_report_days") > 0)
+                             ["tests_national"].sum()),
+                "positives": int(dl["positives_national"].sum()),
+                "n_provinces": {"median": float(stated_prov.median()),
+                                "min": int(stated_prov.min()),
+                                "max": int(stated_prov.max())},
+                "report_days_silent":
+                    int(dl["n_report_days_silent"].sum()),
                 **carry_note("lab_daily_national", "positives_national"),
             }
             # PER-PROVINCE DAILY LABORATORY STREAMS, so a consumer never has
@@ -1759,35 +2129,39 @@ def main() -> None:
                      .sort("date"))
                 if d.is_empty():
                     continue
-                d = d.with_columns(
-                    (pl.col("date") - pl.col("date").shift(1)).dt.total_days()
-                    .fill_null(1).alias("days_covered"))
-                d = d.with_columns(daily_flags(d["date"], caveat, exceptions,
-                                               prov))
                 name = f"lab_daily_{slug}"
                 # SINGLE-PROVINCE BY CONSTRUCTION, so `n_provinces` would say
                 # 1 on every row and state nothing. The coverage question that
                 # remains is the other one: the laboratory paragraph does not
-                # write this province out every report day, and a file holding
-                # only the days it did cannot say how many it skipped.
-                silent = silent_report_days(
-                    d["date"].to_list(), [1] * d.height, report_days,
-                    d["date"].min() - dt.timedelta(days=1))
+                # write this province out every report day, and the report days
+                # it skipped are rows with an empty `positives_{slug}` --
+                # Haut-Uele's nine observations sat up to 20 days apart with
+                # each row holding one day of testing, so a model accumulating
+                # between rows compared 20 days of modelled specimens against
+                # one day of real ones.
+                n_stated = d.height
+                d = on_report_day_grid(
+                    d.select("date",
+                             pl.col("positives").alias(f"positives_{slug}"),
+                             pl.col("samples").alias(f"tests_{slug}")),
+                    report_days, time_col="date",
+                    divisors=(f"tests_{slug}",))
+                d = d.with_columns(daily_flags(d["date"], caveat, exceptions,
+                                               prov))
                 write_stream(
-                    d.with_columns(pl.lit(1, pl.Int64).alias("n_report_days"),
-                                   pl.Series("n_report_days_silent", silent))
-                    .select(pl.col("date").dt.to_string("%Y-%m-%d")
-                            .alias("time"),
-                            pl.col("positives").alias(f"positives_{slug}"),
-                            pl.col("samples").alias(f"tests_{slug}"),
-                            "days_covered", "n_report_days",
-                            "n_report_days_silent", "flags"),
+                    d.select(pl.col("date").dt.to_string("%Y-%m-%d")
+                             .alias("time"),
+                             f"positives_{slug}", f"tests_{slug}",
+                             "days_covered", "n_report_days",
+                             "n_report_days_silent", "flags"),
                     args.out_dir / f"{name}.tsv", DAILY)
                 recon[name] = {
-                    "n_obs": d.height,
-                    "tests": int(d["samples"].sum()),
-                    "positives": int(d["positives"].sum()),
-                    "report_days_silent": int(sum(silent)),
+                    "n_obs": n_stated, "n_rows": d.height,
+                    "tests": int(d.filter(pl.col("n_report_days") > 0)
+                                 [f"tests_{slug}"].sum()),
+                    "positives": int(d[f"positives_{slug}"].sum()),
+                    "report_days_silent":
+                        int(d["n_report_days_silent"].sum()),
                 }
             # Cross-check: a day's positives should be the day's newly
             # confirmed cases, province by province. Equality on most dates is
@@ -1883,37 +2257,51 @@ def main() -> None:
                     continue
                 name = f"{family}_{slug}"
                 obs = f"{col}_{slug}"
-                left = d["date"].min() - dt.timedelta(days=1)
-                silent = silent_report_days(d["date"].to_list(),
-                                            [1] * d.height, report_days, left)
+                n_stated = d.height
                 state = [care_state(c, scope) for c in d["checks"].to_list()]
                 d = d.with_columns(
-                    pl.Series("n_report_days_silent", silent),
                     pl.Series("checks", state, dtype=pl.Utf8),
                     pl.col(col).cast(pl.Int64).alias(obs))
                 if stock:
                     # A reading at the end of the report day: no accumulation
                     # window at all, so no `days_covered` and no
                     # `n_report_days` -- the rule `uganda_exports` follows.
+                    # AND NO GRID EITHER: a stock has no window to be wider
+                    # than the one it claims, so a gap of 46 days is a reading
+                    # taken 46 days later and nothing is lost by leaving it a
+                    # gap. Rows are added only where a hole would otherwise
+                    # widen an accumulation.
+                    left = d["date"].min() - dt.timedelta(days=1)
+                    silent = silent_report_days(d["date"].to_list(),
+                                                [1] * d.height, report_days,
+                                                left)
+                    d = d.with_columns(
+                        pl.Series("n_report_days_silent", silent))
                     cols = [pl.col("date").dt.to_string("%Y-%m-%d")
                             .alias("time"), obs,
                             "n_report_days_silent", "checks"]
                     resolution = STOCK
                 else:
-                    # `days_covered` IS 1 ON EVERY ROW, AND THAT IS THE POINT.
-                    # The report states one 24-hour figure for the day it
-                    # covers; a row three report days after the last one still
-                    # holds one day of flow, so writing the calendar gap here
-                    # would invite a consumer to divide by it and read a rate
-                    # a third of the truth. The gap is in
-                    # `n_report_days_silent` instead, where it cannot be
-                    # mistaken for a window.
+                    # THE REPORT DAYS THIS QUANTITY WAS NOT STATED ON BECOME
+                    # ROWS WITH AN EMPTY OBSERVATION. The report states one
+                    # 24-hour figure, so a row is one day of flow -- but the
+                    # engine accumulates between rows, so leaving the silent
+                    # days out made each next row's window as wide as the gap
+                    # behind it while its count still covered a day.
+                    # `care_admissions_nord_kivu` had 1 June and 19 July in
+                    # consecutive rows: 48 days of modelled admissions against
+                    # one day of observed ones. With a row on every report day
+                    # in between, `days_covered` is the gap to the row before
+                    # and the two agree.
+                    d = on_report_day_grid(
+                        d.select("date", obs, "checks"), report_days,
+                        time_col="date")
                     d = d.with_columns(
-                        pl.lit(1, pl.Int64).alias("days_covered"),
-                        pl.lit(1, pl.Int64).alias("n_report_days"),
+                        pl.col("checks").fill_null("unchecked"),
                         daily_flags(d["date"], caveat, exceptions,
                                     prov if prov != CARE_NATIONAL
                                     else "national"))
+                    silent = d["n_report_days_silent"].to_list()
                     cols = [pl.col("date").dt.to_string("%Y-%m-%d")
                             .alias("time"), obs, "days_covered",
                             "n_report_days", "n_report_days_silent",
@@ -1922,8 +2310,9 @@ def main() -> None:
                 write_stream(d.select(cols), args.out_dir / f"{name}.tsv",
                              resolution)
                 recon[name] = {
-                    "n_obs": d.height, "kind": "care",
+                    "n_obs": n_stated, "kind": "care",
                     "resolution": resolution,
+                    "n_rows": d.height,
                     "first_date": str(d["date"][0]),
                     "last_date": str(d["date"][-1]),
                     "total": int(d[obs].sum()),
@@ -2042,16 +2431,35 @@ def main() -> None:
                   f"   carry {r['carry_after']}")
 
     # ---- THE GATES ---------------------------------------------------
-    # Three of them, all fatal, reported together so one run names every
+    # Six of them, all fatal, reported together so one run names every
     # problem rather than the first one:
     #   1. what a stream emits sums to what the source's cumulative moved;
     #   2. nothing published is negative -- read back off the files, so a
     #      column that never passed through the carry is covered too;
     #   3. every deficit the carry opened was discharged before the series
     #      ended. A residual means part of a revision was dropped on the
-    #      floor, which also breaks (1) -- this names the cause.
+    #      floor, which also breaks (1) -- this names the cause;
+    #   4. every scored row on a flow file claims the window it actually
+    #      sits in, so a model accumulating between rows scores each count
+    #      over the interval its own row states;
+    #   5. an unscored row is unscored in every observation cell, and any
+    #      divisor beside it is present and positive;
+    #   6. a file with two observation columns has said which of them is the
+    #      denominator, so no divisor can ship undeclared.
+    #
+    # (4) IS THE ONE WITH A BODY COUNT. Four published streams held rows 11 to
+    # 48 days apart while claiming `days_covered` of 1, which asked the model
+    # to explain up to 48 days of accumulated flow with a single day of it;
+    # the consumer measured a 13-day version of the same defect refusing 23 of
+    # 24 chains at initialisation. Nothing in the files said so, and no
+    # existing gate could see it -- the counts were right, the totals
+    # reconciled, and every column was populated.
     negatives = negative_values([w.path for w in written])
-    if failures or negatives or carry_failures:
+    windows = accumulation_windows(written)
+    unscored = unscored_rows(written)
+    undeclared = no_declared_denominator(written)
+    if failures or negatives or carry_failures or windows or unscored \
+            or undeclared:
         msg = []
         if failures:
             msg.append(f"STREAMS DO NOT RECONCILE: {failures}. "
@@ -2064,6 +2472,27 @@ def main() -> None:
                        "its series, so the emitted total is short of the "
                        "source's movement by that much:\n  "
                        + "\n  ".join(carry_failures))
+        if windows:
+            msg.append(
+                "A SCORED ROW DOES NOT SIT WHERE ITS `days_covered` SAYS IT "
+                "DOES. A model accumulates a modelled flow from the previous "
+                "ROW of the stream, scored or not, so a row further from its "
+                "predecessor than the window it claims is scored against more "
+                "flow than it represents. Emit a row -- with an empty "
+                "observation -- on every report day in the gap:\n  "
+                + "\n  ".join(windows))
+        if unscored:
+            msg.append(
+                "AN UNSCORED ROW IS MALFORMED. A row is either an observation "
+                "in every one of its observation columns or an observation in "
+                "none of them, and a divisor stays positive either way:\n  "
+                + "\n  ".join(unscored))
+        if undeclared:
+            msg.append(
+                "A DENOMINATOR IS UNDECLARED. A file publishing two "
+                "observation columns has one that is the total the other is "
+                "drawn out of; say which in DENOMINATOR_OF, and what a model "
+                "does with it, before it ships:\n  " + "\n  ".join(undeclared))
         sys.exit("\n".join(msg))
 
 
