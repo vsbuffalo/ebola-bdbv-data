@@ -56,6 +56,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fetch_sitrep_index import (API, EPIDEMIC_START, QUERY, _BARE, _NUM,
                                 parse_row)
 from lib.provenance import REPO_ROOT, UA
+from lib.report_date import load_external_sitreps
 
 OK, BEHIND, CHANGED, UNREACHABLE, STALE = 0, 1, 2, 3, 4
 
@@ -276,8 +277,14 @@ def main() -> None:
 
     label = {OK: "CURRENT", BEHIND: "BEHIND", CHANGED: "CHANGED",
              STALE: "STALE"}[verdict]
+    # THE DISK COUNT EXCEEDS THE INDEX COUNT BY DESIGN, and saying so here
+    # stops the summary reading as an inconsistency: reports INSP does not
+    # serve are held from a secondary archive and declared in
+    # registers/external_sitreps.tsv, so no index row will ever name them.
+    n_ext = len(load_external_sitreps())
     say(f"{label}  --  {len(listed)} reports listed by INSP, "
-        f"{len(have_nums)} in our index, {len(on_disk)} PDFs on disk")
+        f"{len(have_nums)} in our index, {len(on_disk)} PDFs on disk "
+        f"({n_ext} of them held from a secondary archive INSP does not serve)")
     say(f"          newest upload {newest or 'unknown'}; "
         f"our latest report {max(have_nums) if have_nums else 'none'}")
     for f in findings:

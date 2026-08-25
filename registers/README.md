@@ -12,6 +12,7 @@ source published and what our own fetchers wrote.
 | --- | --- |
 | `reconciliation_exceptions.tsv` | *I opened this page, added the printed rows, and the source does not agree with itself.* A claim about one document, keyed on its SHA-256. |
 | `sitrep_number_overrides.tsv` | *This upload's filename does not state its report number or data date correctly; the page says otherwise.* |
+| `external_sitreps.tsv` | *INSP does not serve this report; we hold it from a secondary archive, its PDF is committed because nothing can fetch it again, and here is where it came from.* Also carries the one place this project files a report against its own printed date, with the argument for it. |
 | `rejected_routes.tsv` | *This extraction route reads this document's values as something they are not, in a way no identity can catch from inside.* |
 | `zone_province_overrides.tsv` | *The page states which province this row belongs to, but the table's geometry does not carry it.* |
 | `zone_aliases_local.csv` | *This printed spelling and this shapefile name are the same health zone.* |

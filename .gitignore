@@ -1,12 +1,29 @@
 # The PDF archive: ~141 MB, regenerable from the committed index and manifest.
 # Pinned instead by data/raw/insp_sitrep_index.tsv (what exists upstream),
 # data/raw/sitrep_pdfs.manifest.tsv (sha256 per file) and data/raw/PROVENANCE.tsv.
-# NO TRAILING SLASH: a trailing slash matches a directory only, and the
-# supported way to build without re-fetching 141 MB -- the one `release-check`
-# itself uses -- is to SYMLINK the archive in. A symlink then showed as
-# untracked, one `git add -A` away from committing an absolute path to one
-# machine. Same for external/ below.
-data/raw/sitrep_pdfs
+#
+# THE CONTENTS ARE IGNORED, NOT THE DIRECTORY, and the difference is load-
+# bearing: git does not descend into an excluded directory, so with the
+# directory itself ignored the three negations below would match nothing and
+# be silently inert. `data/raw/sitrep_pdfs/*` matches every entry -- regular
+# file or symlink alike -- so the supported way to build without re-fetching
+# 141 MB is now to link the PDFs INTO this directory one by one, which is what
+# `release-check` does. (Symlinking the whole directory is no longer possible:
+# it would delete three tracked files, and `make verify` would say so.)
+data/raw/sitrep_pdfs/*
+
+# EXCEPT THESE THREE, which are committed because they cannot be re-fetched
+# from anywhere this project controls. INSP's media library does not list
+# SitReps 001, 002 and 004 and they are not at the bare-numbered URL, so
+# `make fetch` cannot bring them back; they were obtained from a secondary
+# archive that has already withdrawn a different dataset without notice.
+# ~7 MB of the repository, and the alternative is a working copy that loses
+# the outbreak's first three observations to a `git clean`.
+# registers/external_sitreps.tsv is what declares them and what the build
+# checks their bytes against.
+!data/raw/sitrep_pdfs/sitrep_001_2026-05-14.pdf
+!data/raw/sitrep_pdfs/sitrep_002_2026-05-17.pdf
+!data/raw/sitrep_pdfs/sitrep_004_2026-05-18.pdf
 
 # Everything under build/ has a rule. Delete it and `make build` returns it.
 data/build/

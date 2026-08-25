@@ -5,6 +5,10 @@ the source URL, a sha256 of the payload, its size and the fetch date in
 raw/PROVENANCE.tsv. That file is committed, so any raw artefact can be traced
 to where it came from and checked for drift without re-fetching.
 
+A raw artefact this project did NOT download goes through `record_held()`
+instead, so the log stays a complete account of `data/raw/` rather than an
+account of what happened to arrive over HTTP.
+
 Paths are always derived at runtime from this file's location -- never
 hardcoded (see CLAUDE.md).
 """
@@ -63,7 +67,22 @@ def record(dest: Path, url: str) -> None:
     _record(dest, url, dest.read_bytes())
 
 
-def _record(dest: Path, url: str, payload: bytes) -> None:
+def record_held(dest: Path, url: str, *, when: str) -> None:
+    """Log provenance for a file this project HOLDS but did not download.
+
+    Three situation reports are committed rather than fetched, because INSP
+    does not serve them (see `registers/external_sitreps.tsv`). They still
+    belong in this log -- a raw artefact with no provenance row is exactly what
+    the log exists to make impossible -- but no fetch ever happens, so the date
+    is the day the document was RETRIEVED, read from the register, not the day
+    this ran. Stamping "now" would rewrite three rows on every build and put a
+    diff in the working tree with no event behind it.
+    """
+    _record(dest, url, dest.read_bytes(), when=when)
+
+
+def _record(dest: Path, url: str, payload: bytes,
+            *, when: str | None = None) -> None:
     """Append-only, keyed on (path, sha256).
 
     The log used to overwrite on path alone -- so re-fetching a path REPLACED
@@ -74,8 +93,8 @@ def _record(dest: Path, url: str, payload: bytes) -> None:
     """
     rel = dest.resolve().relative_to(REPO_ROOT).as_posix()
     sha = hashlib.sha256(payload).hexdigest()
-    row = "\t".join([rel, url, sha, str(len(payload)),
-                     dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d")])
+    stamp = when or dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d")
+    row = "\t".join([rel, url, sha, str(len(payload)), stamp])
     PROVENANCE.parent.mkdir(parents=True, exist_ok=True)
     existing: dict[tuple[str, str], str] = {}
     if PROVENANCE.exists():

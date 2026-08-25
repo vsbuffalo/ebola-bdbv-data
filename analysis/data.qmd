@@ -288,6 +288,7 @@ un-excuses itself.
 zpo = source("registers/zone_province_overrides.tsv")
 sno = source("registers/sitrep_number_overrides.tsv")
 zal = source("registers/zone_aliases_local.csv")
+ext = source("registers/external_sitreps.tsv")
 Markdown(f"""
 | register | rows | each row asserts |
 |---|---|---|
@@ -296,6 +297,7 @@ Markdown(f"""
 | `zone_province_overrides.tsv` | {zpo.height} | the page states in words which province this row belongs to |
 | `zone_aliases_local.csv` | {zal.height} | this printed spelling is that canonical health zone |
 | `sitrep_number_overrides.tsv` | {sno.height} | this upload's filename misstates its report number or data date |
+| `external_sitreps.tsv` | {ext.height} | INSP does not serve this report; it is held from a secondary archive and its PDF is committed, because nothing can fetch it again |
 """)
 ```
 

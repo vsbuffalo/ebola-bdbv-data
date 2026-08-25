@@ -16,6 +16,115 @@ carries the rest.
 
 ---
 
+## `data/2026-08-22-r2` — 2026-08-24 — the outbreak's first three reports
+
+**Not breaking — but refit anyway.** Nothing is renamed, removed or revalued:
+every observation published at `data/2026-08-22-r1` is present here with the
+same value, and `revisions.tsv` is byte-identical. Nine stream files gain one
+or two rows **at the start of the series**. Schema-wise a consumer needs to
+change nothing. Scientifically a consumer should refit, because the rows added
+are the earliest ones there are, and the earliest rows are what identify **when
+the outbreak was seeded**. If you fit a seeding time on
+`data/2026-08-22-r1`, that estimate was made without them.
+
+### Three reports INSP does not serve
+
+Our series began at SitRep 005 (19 May) because that is the earliest report
+INSP's media library lists. SitReps 001, 002 and 004 exist and were never
+listed, and are not at the bare-numbered URL the other unlisted reports sit
+behind, so neither the index fetch nor its gap probe could reach them. They
+were obtained from the INRB-UMIE/BDBV2026-Data repository, which stores the
+PDFs it transcribes in git-lfs.
+
+**Their PDFs are committed**, alone among the ninety-four, because nothing this
+project controls can fetch them again and the repository that has them has
+already withdrawn a different dataset without notice. ~7 MB.
+`registers/external_sitreps.tsv` declares them — number, date, hash, upstream
+repository, path, commit and retrieval date — and the build verifies the
+committed bytes against it on every run.
+
+### What the three actually add
+
+Only one of them yields a case observation, and it is worth being precise about
+why:
+
+    2026-05-19   cases_national             18   (Ituri 18, Nord-Kivu 0)
+                 cases_ituri, cases_nord_kivu, and the three daily companions
+    2026-05-19   deaths_national             0
+    2026-05-18   deaths_daily_national       0   over 4 days
+    2026-05-17   cumul_recovered             0
+
+SitRep 004 (18 May) prints a health-zone table the extraction reads: seven
+zones plus a national total of 33 confirmed cases, and the zone rows sum to the
+printed total exactly. That gives the 19 May row a level to be differenced
+against — 51 − 33 = 18 — where before, 19 May was the first reading and so
+became the base rather than an observation.
+
+SitReps 001 (14 May) and 002 (17 May) print **no table of any geometry this
+project reads**. 001 is narrative; its per-zone figures are inside an image.
+002's `Tableau 1` does break the counts down by health zone but transposed,
+with indicators as rows and zones as columns. Both are recorded as
+`no_matching_table`. What they contribute is through the front-page banner:
+001's four confirmed deaths become the base of the national death series (four
+days earlier than before), and 002's zero recoveries extend `cumul_recovered`.
+
+**Still not read:** the front-page `Cas Confirmés` tile. SitRep 001 prints 8
+confirmed cases and 002 prints 13, both plainly on the page, and neither
+reaches any stream — the national case series is built from health-zone tables,
+and this project does not read that tile on any report. Those two national
+figures remain visible in the source and absent from the data.
+
+### SitRep 004 is filed against its own printed date
+
+SitRep 004's front page prints `Date de rapportage: 19 mai 2026` and `Date de
+publication: 20 mai 2026`. **SitRep 005's front page prints exactly the same
+two dates**, while the two reports carry different cumulative counts (33 and
+51). Data dates in this project come from the page and not from the filename,
+so under the printed dates these two reports collide on one day.
+
+Only one assignment gives each report its own day with a non-decreasing
+cumulative: 002 = 17 May (13), 004 = 18 May (33), 005 = 19 May (51), 006 =
+20 May (61). Moving 004 forward collides it with 005, and moving 005 forward
+collides it with 006, up the series. So 004 is filed as **18 May, against its
+printed date**. INRB's independently published national series dates that
+report 18 May as well — corroboration of the placement from a second reader of
+the same page, not independent evidence about the count.
+
+The full argument, and the printed date recorded beside the filed one, are in
+`registers/external_sitreps.tsv`. The build checks the page against the
+register on every run: if SitRep 004 ever stops printing `19 mai 2026`, the
+judgement was made about a different document and the build stops.
+
+### Two extraction corrections that came with them
+
+- **SitRep 004's `Ituri` label falls between two table rows and is lost.** The
+  early layout prints the province as a merged cell spanning its zones; here it
+  centres in the gap between `Rwampara` and `Bunia`, so the grid records it on a
+  row with no zone name and no counts, which the extraction drops. Only
+  `Nord-Kivu` survived, and a carry with one anchor cannot split a two-province
+  table: all 33 cases went to Nord-Kivu. Four entries in
+  `registers/zone_province_overrides.tsv` state what the page states in prose;
+  the result, Ituri 30 and Nord-Kivu 3, is what the report's own page-1 province
+  table prints.
+- **`?` is now recognised as a missing-value marker** in the front-page banner,
+  alongside `ND` and the dashes. SitRep 001 writes `?` in the three tiles it had
+  no figure for; without that, its value row was not recognised as a value row
+  at all and the `Décès confirmés` tile beside them refused. It changes no other
+  report in the archive. The `?` is still never read as a number, so 001's
+  recoveries tile still refuses: a report that says it does not know has not
+  said zero.
+
+### Checked against INRB
+
+Seven new zone-day comparisons at 2026-05-18, and all seven agree. Total
+disagreements across the archive are unchanged at 14. Note that INRB's own two
+files date SitRep 002 differently — their national series puts it at 17 May,
+their zone-level series at 15 May, which is the as-of date printed inside that
+report's table rather than its reporting date. We file it under 17 May, the
+date its front page gives.
+
+---
+
 ## `data/2026-08-22-r1` — 2026-08-24 — new file
 
 **Not breaking.** Nothing is renamed, removed or revalued: no stream file, no

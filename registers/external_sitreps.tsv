@@ -1,0 +1,105 @@
+# Situation reports we hold from a SECONDARY ARCHIVE, because INSP does not
+# serve them.
+#
+# Every other report in `data/raw/sitrep_pdfs/` came from insp.cd and can be
+# fetched again: the committed index names its URL, and `make fetch` will
+# re-download any file the archive is missing. THESE THREE CANNOT. INSP's
+# media library does not list them, and they are not at the bare-numbered URL
+# (`.../2026/05/4.pdf`) that the unlisted later reports sit behind. So
+# `fetch_sitrep_index.py` cannot discover them by either route it has, and its
+# `probe_gaps` could not reach them even if the URL existed: that probe runs
+# only BETWEEN the lowest and highest numbers the listing returns, and the
+# listing starts at 005. A working copy that deletes these files gets them
+# back from nowhere.
+#
+# THERE IS NO REPORT 003 HERE, and we do not know whether one exists. It is
+# absent from INSP, absent from the secondary archive, and absent from INRB's
+# published series, which carries no date between 2026-05-17 and 2026-05-18.
+# Recorded as an open gap, not as a report that does not exist.
+#
+# That is why the PDFs themselves are COMMITTED, alone among the ninety-four --
+# see the note in `.gitignore`. The register is what says which three, and why,
+# and the sha256 here is what a build checks the committed bytes against.
+#
+# WHERE THEY CAME FROM. The INRB-UMIE/BDBV2026-Data repository, which stores
+# the situation reports it transcribes under `data/insp_sitrep/raw/` in
+# git-lfs. That repository is a COMPARISON SOURCE for this project and never a
+# trunk: its extraction of these pages is a check against ours, and the
+# agreement or disagreement is reported by `compare_extractions.py`. What we
+# take from it here is the DOCUMENT, not anyone's reading of it. Our own
+# extraction of these three PDFs is the source of our numbers exactly as it is
+# for the other ninety-one.
+#
+# THE UPSTREAM PIN IS A RECORD, NOT A ROUTE BACK. `external.lock` pins that
+# repository at df7d1c5 for the comparison, and `data/insp_sitrep/raw/` does
+# not exist at that commit -- the directory appears at 0f56158, recorded per
+# row below. The same repository has already withdrawn a different dataset
+# without notice, so the commit is where these bytes were found, not somewhere
+# they can be relied on to stay. The sha256 is the identity that survives that.
+#
+# ------------------------------------------------------------------------
+# SITREP 004 IS FILED AGAINST ITS OWN PRINTED DATE, and this is the one
+# judgement in this file that changes a number.
+#
+# SitRep 004's front page prints `Date de rapportage: 19 mai 2026` and `Date de
+# publication: 20 mai 2026`. SitRep 005's front page prints exactly the same
+# two dates. They are not the same report: 004 prints a cumulative 33 confirmed
+# cases and 005 prints 51.
+#
+# `report_date.py` takes the data date from the page and not from the filename,
+# for reasons its own docstring sets out at length, so under the printed dates
+# these two reports land on one day -- and the panel would then carry two
+# different national cumulatives at 2026-05-19.
+#
+# Only one assignment of the four early reports yields a series in which each
+# report has its own day and the cumulative never goes backwards:
+#
+#     002 = 17 May   13 confirmed
+#     004 = 18 May   33 confirmed
+#     005 = 19 May   51 confirmed
+#     006 = 20 May   61 confirmed
+#
+# Moving 004 forward to 19 May collides it with 005; moving 005 forward to 20
+# May collides it with 006, and so on up the series. 18 May is the only
+# unoccupied day below 005, and 004 is the only report that can occupy it.
+#
+# INRB's own published series, read independently of us from the same pages,
+# dates that report 18 May
+# (`build/long/insp_sitrep__national_cumulative_confirmed_cases.csv`, row
+# `DRC,2026-05-18,33`). That is corroboration of the placement from a second
+# reader, not independent evidence about the count -- both readings come from
+# the same PDF.
+#
+# What this most likely is, on the source's side: 004 and 005 were prepared on
+# the same day and the earlier one's front-page date was never changed from the
+# later one's template. We record the printed date rather than correcting it
+# away, in `printed_data_date` below, so the discrepancy stays visible and a
+# future reader can disagree with us using the same evidence we had.
+#
+# WHY IT MATTERS ENOUGH TO OVERRIDE A PRINTED FACT. These are the first days of
+# the epidemic, where the seeding time is identified. Dropping 004 or stacking
+# it on 005 removes or corrupts one of the four observations that constrain
+# when the outbreak began.
+# ------------------------------------------------------------------------
+#
+# COLUMNS
+#   sitrep             the report number, from its own front page
+#   data_date          the day this project files the report under, and the
+#                      date its archive filename carries
+#   printed_data_date  the `Date de rapportage` the front page actually prints.
+#                      Equal to `data_date` except on 004. `report_key` checks
+#                      the page against this on every build: if a page stops
+#                      printing what this column says, the document is not the
+#                      one this row was written about and the build stops.
+#   filename           its name in `data/raw/sitrep_pdfs/`
+#   sha256             the identity of the bytes. Verified on every build.
+#   upstream_repo      where the document was obtained
+#   upstream_path      its path in that repository
+#   upstream_commit    the commit the file was read at
+#   retrieved          the date it was taken
+#   note               what this report is, and anything a reader of the
+#                      extracted series needs in order to interpret it
+sitrep	data_date	printed_data_date	filename	sha256	upstream_repo	upstream_path	upstream_commit	retrieved	note
+1	2026-05-14	2026-05-14	sitrep_001_2026-05-14.pdf	821ea26be20720b8ead7ae39f5f3b1df38970ee29198c6851d491882f39ecb39	https://github.com/INRB-UMIE/BDBV2026-Data	data/insp_sitrep/raw/SitRep_MVE_001-2026.pdf	0f56158	2026-08-24	The first report of the 17th DRC Ebola outbreak, published the day the INRB/Kinshasa results came back. Front-page banner prints 8 confirmed cases, 246 suspected, 4 confirmed deaths, 261 alerts. NARRATIVE ONLY -- it prints no table of any registered geometry, so the zone extraction records it as `no_matching_table` and it contributes no zone rows. The per-zone counts on its page 2 are inside an image the text layer does not carry.
+2	2026-05-17	2026-05-17	sitrep_002_2026-05-17.pdf	f44578a42496e5f7daa4afb206865e93fcefbe5ba108f1acf60aa2cf36074d3a	https://github.com/INRB-UMIE/BDBV2026-Data	data/insp_sitrep/raw/SitRep_MVE_002-2026.pdf	0f56158	2026-08-24	Front-page banner prints 13 confirmed cases, 246 suspected, `ND` (non disponible -- the source did not say) for confirmed deaths, 0 recovered. Its `Tableau 1` does break the counts down by health zone (Mongbwalu 0, Rwampara 13, Bunia 0), but TRANSPOSED -- indicators are rows and zones are columns -- which is not the geometry of any registered table spec, so the zone extraction records it as `no_matching_table`. The table also carries its own as-of date, `Cumul des cas en date du 15 mai 2026`, two days before the report's reporting date.
+4	2026-05-18	2026-05-19	sitrep_004_2026-05-18.pdf	202dd6db65d2d3c29aa2aecc18ce20006965fd2909f8c5b8a71759f316068e92	https://github.com/INRB-UMIE/BDBV2026-Data	data/insp_sitrep/raw/SitRep_MVE_004-2026.pdf	0f56158	2026-08-24	FILED AGAINST ITS PRINTED DATE -- see the adjudication in this file's header. Reads cleanly through the `zone_early` table spec: 7 health zones plus a Total row, cumulative confirmed 33, and the zone rows sum to the printed total exactly (identity ok, residual 0). It is the first report to place confirmed cases outside Ituri: Goma, Katwa and Butembo carry one each.

@@ -352,7 +352,14 @@ them is a change in what the comparison shows.
 is a committed SHA-256 manifest, and `make verify` proves the copy on disk is
 the copy the manifest describes — distinguishing _missing_ from _stray_ from
 _corrupt_, because a hash mismatch can mean a damaged file or a report the
-source revised in place, and the second is worth knowing about. Revision is
+source revised in place, and the second is worth knowing about. **Three of the
+ninety-four are committed**, because INSP serves neither them nor any URL they
+could be fetched from: SitReps 001, 002 and 004, the outbreak's first three
+reports, held from a secondary archive and declared in
+`registers/external_sitreps.tsv`. A report is *accounted for* if an index row
+picks it **or** that register names it; a PDF declared by neither still stops
+the build, because a stray file in that directory is globbed straight into the
+trunk. Revision is
 watched for in both directions the source can produce it: the fetcher re-checks
 every held report's pick URL against the held byte count (a re-picked correction
 usually shares the data date, so it maps to a name we already hold and a
@@ -371,7 +378,7 @@ not yet built, stops the render. There are no typed numbers to go stale.
 
 | Path          | What                                                                                                                                    |
 | ------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `data/raw/`   | fetched inputs: the PDF archive (uncommitted, manifest-pinned), the INSP index, shapefile, populations, the hand-recorded Uganda series |
+| `data/raw/`   | fetched inputs: the PDF archive (manifest-pinned; uncommitted except the three reports INSP does not serve), the INSP index, shapefile, populations, the hand-recorded Uganda series |
 | `data/build/` | derived, regenerable: per-report series, the province panel, weekly streams, figures, comparisons                                       |
 | `registers/`  | **hand-authored judgements** — the only unregenerable content. See `registers/README.md`                                                |
 | `scripts/`    | everything the Makefile calls; `scripts/lib/` is the geometry and vocabulary substrate                                                  |

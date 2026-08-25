@@ -8,6 +8,14 @@ chronologically regardless of the source filename, which is inconsistent.
 The PDFs are large (~1.5 MB each, ~110 MB total) so they are NOT committed;
 `data/raw/insp_sitrep_index.tsv` plus PROVENANCE.tsv is what pins them. Already
 downloaded files are skipped, so this is safe to re-run to pick up new reports.
+
+THREE REPORTS ARE NOT IN THE INDEX AND NEVER WILL BE. SitReps 001, 002 and 004
+are not listed by INSP's media API and are not at the bare-numbered URL either,
+so nothing here can fetch them; they are held from a secondary archive, their
+PDFs are committed, and `registers/external_sitreps.tsv` is what declares them.
+This script reads that register for one purpose only -- so the archive
+reconciliation counts them as accounted for rather than as strays -- and checks
+their committed bytes against it while it is there.
 """
 
 from __future__ import annotations
@@ -18,7 +26,8 @@ import hashlib
 import sys
 from pathlib import Path
 
-from lib.provenance import REPO_ROOT, fetch
+from lib.provenance import REPO_ROOT, fetch, record_held
+from lib.report_date import load_external_sitreps, verify_external
 
 
 def main() -> None:
@@ -26,6 +35,15 @@ def main() -> None:
     ap.add_argument("--index", required=True, type=Path)
     ap.add_argument("--out", required=True, type=Path)
     ap.add_argument("--limit", type=int, default=0, help="fetch at most N (0 = all)")
+    ap.add_argument("--no-fetch", action="store_true",
+                    help="OFFLINE. Skip every download and go straight to the "
+                         "reconciliation and the manifest. The manifest is a "
+                         "pure function of the archive, the index and the "
+                         "external register, so regenerating it must not "
+                         "require the network -- otherwise the only way to "
+                         "refresh it after a register change is to re-HEAD 91 "
+                         "URLs, and an offline repository cannot rebuild a "
+                         "committed artefact it owns.")
     ap.add_argument("--manifest", type=Path, default=None,
                     help="THE RULE'S OUTPUT, in place of the directory itself. "
                          "Declaring the 124 MB archive as a `directory()` output "
@@ -59,9 +77,34 @@ def main() -> None:
     for f in out.glob("*.pdf"):
         held[hashlib.sha256(f.read_bytes()).hexdigest()] = f
 
+    # THE COMMITTED THREE, CHECKED BEFORE THE FIRST DOWNLOAD. These have no
+    # upstream to re-fetch from, so a corrupted or substituted copy cannot be
+    # repaired by this script -- which makes the check worth doing here, where
+    # the message can still say so plainly, rather than at the manifest.
+    external = load_external_sitreps()
+    for name, reg in sorted(external.items()):
+        f = out / name
+        if not f.exists():
+            sys.exit(
+                f"registers/external_sitreps.tsv declares {name}, which the "
+                f"archive does not hold. INSP does not serve this report and "
+                f"this script cannot fetch it; it is committed, so restore it "
+                f"with `git checkout -- data/raw/sitrep_pdfs/{name}`.")
+        verify_external(f, reg)
+        # A raw artefact with no provenance row is what PROVENANCE.tsv exists
+        # to make impossible, and these arrived by no route it knows about.
+        # The URL is where the bytes were read, pinned to the commit; it is a
+        # record of origin, not a route this project can fetch from.
+        record_held(f, f"{reg.upstream_repo}/raw/{reg.upstream_commit}/"
+                       f"{reg.upstream_path}", when=reg.retrieved)
+    if external:
+        print(f"  {len(external)} report(s) held from a secondary archive, "
+              f"hash-verified against registers/external_sitreps.tsv: "
+              f"{', '.join(str(r.sitrep) for r in sorted(external.values(), key=lambda r: r.sitrep))}")
+
     got = skipped = renamed = failed = 0
     revised: list[str] = []
-    for r in rows:
+    for r in (() if args.no_fetch else rows):
         date = r["data_date"] or "undated"
         dest = out / f"sitrep_{int(r['sitrep']):03d}_{date}.pdf"
         if dest.exists():
@@ -157,18 +200,33 @@ def main() -> None:
         # named from the page and the index from the upload filename, and the
         # two disagree on eleven reports. What must hold is that we have one
         # file per picked report, not that its name matches the index's guess.
-        want_nums = {int(r["sitrep"]) for r in rows}
+        #
+        # THE EXTERNAL REGISTER IS THE SECOND SOURCE OF ACCOUNTED-FOR NUMBERS.
+        # Reports 001, 002 and 004 are held and correct, and no index row will
+        # ever name them, so without this union the reconciliation calls three
+        # committed primary documents strays and stops the build. Unioning the
+        # NUMBERS -- not waiving the check -- keeps it closed on everything
+        # else: a PDF that is in neither the index nor the register is still a
+        # file globbed straight into the trunk with nothing declaring it.
+        want_nums = ({int(r["sitrep"]) for r in rows}
+                     | {r.sitrep for r in external.values()})
         mf = (args.manifest if args.manifest.is_absolute()
               else REPO_ROOT / args.manifest)
         _write_manifest(out, want_nums, mf)
 
 
 def _write_manifest(out_dir: Path, want_nums: set[int], manifest: Path) -> None:
-    """Every PDF with its hash, and the index checked in BOTH directions.
+    """Every PDF with its hash, and the archive checked in BOTH directions.
 
     One direction alone is half a check: a missing report and a stray file are
     different failures, and testing only for the first leaves the second silent
     -- a stray PDF in this directory is globbed straight into the trunk.
+
+    `want_nums` IS THE UNION OF TWO DECLARATIONS, not the index alone: the
+    index's picks, plus the reports declared in
+    `registers/external_sitreps.tsv`, which INSP does not serve and which are
+    committed instead. A number in neither is unaccounted for and stops the
+    build, which is the property this check exists to have.
 
     RECONCILED ON THE REPORT NUMBER, not on the filename. The archive is named
     from each page's own `Date de rapportage` and the index from the upload
@@ -198,18 +256,23 @@ def _write_manifest(out_dir: Path, want_nums: set[int], manifest: Path) -> None:
     stray = sorted(n for n in by_num if n not in want_nums)
     doubled = {n: v for n, v in by_num.items() if len(v) > 1}
     if missing or stray or doubled or unnamed:
-        sys.exit(f"archive does not match the index.\n"
-                 f"  in the index, no file: {missing}\n"
-                 f"  file, not in the index: {stray}\n"
+        sys.exit(f"archive does not match what declares it.\n"
+                 f"  declared, no file: {missing}\n"
+                 f"  file, declared nowhere: {stray}\n"
                  f"  report held more than once: {doubled}\n"
-                 f"  file the naming pattern cannot place: {unnamed}")
+                 f"  file the naming pattern cannot place: {unnamed}\n"
+                 f"A report is declared by an index row with pick=yes, or by a "
+                 f"row in registers/external_sitreps.tsv for one INSP does not "
+                 f"serve. A file declared by neither has no provenance and is "
+                 f"read into the trunk unchecked.")
     manifest.parent.mkdir(parents=True, exist_ok=True)
     with manifest.open("w", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=["file", "bytes", "sha256"],
                            delimiter="\t")
         w.writeheader()
         w.writerows(rows)
-    print(f"  manifest: {len(rows)} PDFs, index reconciles in both directions")
+    print(f"  manifest: {len(rows)} PDFs; every one is declared and every "
+          f"declaration is held")
 
 
 if __name__ == "__main__":
