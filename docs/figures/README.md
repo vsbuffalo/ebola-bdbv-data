@@ -20,7 +20,9 @@ exist, so a new committed figure cannot ship uncaptioned.
 
 Numbers are deliberately scarce below. Every figure states its own current
 values, read off the current build; a caption that repeated them would go stale
-on the next report and be wrong in a way nobody would notice.
+on the next report and be wrong in a way nobody would notice. The one date
+stated outright — the last day the national ward census is published — is
+pinned by a test, so it cannot drift here without the suite saying so.
 
 ---
 
@@ -61,9 +63,10 @@ recoveries, and the census of confirmed patients in an isolation ward — and
 what none of the three accounts for is the top band. The lower panel is that
 band as a share of all confirmed cases.
 
-The decomposition is arithmetic over four numbers the reports print. Nothing is
-fitted, nothing is a rate, and no assumption about how long a patient stays in
-care enters. The four bands sum to the published cumulative case total exactly,
+The decomposition is arithmetic over four numbers the reports print — the case
+total and the three ledgers. Nothing is fitted, nothing is a rate, and no
+assumption about how long a patient stays in care enters. The four bands sum to
+the published cumulative case total exactly,
 which is the only reason the top band can be read as a count of people rather
 than as a discrepancy between two estimates.
 
@@ -81,7 +84,7 @@ recoveries land in the top band instead.
 inside the band in unknown proportion.** Nothing in these four series separates
 them, and neither the figure nor this caption asserts which it is.
 
-Three further things the figure draws but does not explain:
+Three things the figure draws that the legend can only name:
 
 - **The pale vertical spans are report days with no national cumulative, and
   they have three distinct causes** that absence alone cannot tell apart: INSP
@@ -107,7 +110,7 @@ Three further things the figure draws but does not explain:
 - **The share panel starts late, and that is deliberate.** It is drawn from the
   first day of the final unbroken run of report days carrying all four counts.
   Earlier the share falls steeply, from about two thirds to under a third, for
-  two reasons that have nothing to do with the response finding people: a case
+  two reasons unrelated to how many people the response was locating: a case
   confirmed last week has no outcome recorded yet whatever happens to it, and
   the recovery and ward ledgers themselves begin inside that window. A slope
   drawn out of that reads as improvement and is not one, so it is not drawn.
@@ -147,7 +150,7 @@ modelling side most needs.
 ## `care_ledger.png`
 
 The treatment-centre ledger the reports state in **words**: whether it can be
-believed, and what it says. Four bands — the isolation census read two ways,
+believed, and what it says. Four panels — the isolation census read two ways,
 occupancy against beds per province, admissions and exits, and the absconder
 counts.
 
@@ -204,8 +207,9 @@ begin late because the early dashboard prints its tiles above their labels
 rather than below, which the banner reader could not follow.
 
 - **This is what survives into the release, which is a smaller thing than what
-  the source states.** `availability` (built but not committed) shows the
-  latter.
+  the source states.** The `availability` figure shows the latter; it is an EDA
+  figure under `data/build/figures/` and is not committed, so it is not
+  captioned here.
 - **The rows drawn are a chosen subset, not the release.** The weekly files are
   the same quantities re-binned, and most of the care ledger is published and
   documented in `data/build/streams/README.md` but not drawn here, because
@@ -230,8 +234,8 @@ rather than below, which the banner reader could not follow.
 
 The per-province daily flows, as small multiples: confirmed cases, the source's
 own 24-hour case figure, confirmed deaths, the community and treatment-centre
-halves of the death split, and laboratory samples analysed — for the two
-provinces carrying most of the outbreak.
+halves of the death split, and laboratory samples analysed — one column each
+for Ituri and Nord-Kivu, the two provinces carrying most of the outbreak.
 
 - **Grey points are one observation per report, at its reporting date; the line
   is a centred seven-day rolling geometric mean, broken across reporting
@@ -254,16 +258,16 @@ provinces carrying most of the outbreak.
 - **The x limits are the span of the archive, not of the data drawn.** A stream
   that starts in mid-July must show the empty weeks before it, or its late
   start reads as a full history.
-- This figure and `national_detail.png` were one figure and are drawn on one
-  shared calendar, taken from the report index rather than from either
-  figure's own data, so the two can still be read side by side.
+- This figure and `national_detail.png` share one calendar, taken from the
+  report index rather than from either figure's own data, so the two can be
+  held side by side without silently comparing different spans.
 
 ## `national_detail.png`
 
-The four series the reports print for the country and for no smaller area:
-cumulative confirmed cases and deaths, cumulative suspected cases, the
-isolation census, and cumulative recoveries. Drawn on the same archive calendar
-as `streams_detail.png`.
+The series the reports print for the country and for no smaller area, in four
+panels: cumulative confirmed cases with cumulative confirmed deaths;
+cumulative suspected cases; the isolation census; and cumulative recoveries.
+Drawn on the same archive calendar as `streams_detail.png`.
 
 - **Two of the four are stocks — a reading at an instant, not a flow over a
   day — so they are drawn as levels and never smoothed.** Differencing them
@@ -339,9 +343,11 @@ the comparison.
 
 ## `comparison_series.png`
 
-The same three lineages as time series rather than as a scatter: our summed
-zone rows, INSP's own printed provincial and national rows, and INRB-UMIE's
-transcription, for two provinces and the country, with the differences beneath.
+The same three lineages as time series rather than as a scatter, for Ituri,
+Nord-Kivu and the country, with the differences beneath. The line is our summed
+zone rows; the rings are INSP's own printed provincial row in the two province
+panels and the epiforecasts scan in the national one; the dashed line is
+INRB-UMIE's transcription.
 
 - **The two difference rows do not mean the same thing.** *Ours − INRB* mixes
   value disagreements with row-coverage differences: a zone-day absent from

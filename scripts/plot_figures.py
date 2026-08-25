@@ -1474,10 +1474,11 @@ def draw_outcomes(inputs: dict[str, Path], out: Path) -> None:
                             linewidth=0)
         ax.plot(xs, cases, color="#3d3d3d", linewidth=1.0)
 
-    # GAPS ARE HOLES, never a band drawn through them -- but they are no
-    # longer labelled one by one. Eight rotated captions at slide size are
-    # eight things nobody reads; the legend says what a pale span means, and
-    # the three distinct causes are named in `docs/figures/README.md`.
+    # GAPS ARE HOLES, never a band drawn through them, and they are marked
+    # rather than captioned. A rotated label in each span is a row of small
+    # rotated text at slide size, which nobody reads; the legend says what a
+    # pale span means, and `docs/figures/README.md` names the three causes
+    # `outcome_gaps` distinguishes.
     for g in gaps:
         lo_x = mdates.date2num(g["lo"]) - (1 - OUTCOME_PAD)
         hi_x = mdates.date2num(g["hi"]) + (1 - OUTCOME_PAD)
@@ -1486,12 +1487,12 @@ def draw_outcomes(inputs: dict[str, Path], out: Path) -> None:
     ax.axvline(census_x, color="#3d3d3d", linewidth=1.0, linestyle=(0, (4, 3)),
                zorder=5)
 
-    # A LEGEND, NOT DIRECT LABELS. Four bands, a hatch and a pale span are six
-    # marks, and four of the six were previously named by text sitting inside
-    # the composition while the other two were explained in a panel header
-    # nobody had time to read. The legend lives in the header band rather than
-    # over the data, because the band it would have to cover is the one the
-    # figure is about.
+    # A LEGEND, NOT DIRECT LABELS. Six marks carry meaning here -- four bands,
+    # the hatch, and the pale span -- and two of the six stand for an ABSENCE,
+    # which no label placed inside the composition can name because there is
+    # nothing there to place it on. One legend names all six in one place. It
+    # lives in the header band rather than over the data, because the region it
+    # would otherwise have to cover is the band the figure is about.
     marks = [
         Patch(facecolor=dead_c, alpha=dead_a, linewidth=0,
               label="recorded dead"),
@@ -1550,12 +1551,12 @@ def draw_outcomes(inputs: dict[str, Path], out: Path) -> None:
     #
     # DRAWN FROM `run_start` ONLY, on the shared calendar rather than on a
     # calendar of its own. Before that day the share falls from two thirds to
-    # under a third for reasons that are not the response finding people --
-    # recent cases have no outcome recorded yet, and the recovery and ward
-    # ledgers begin inside that window -- so the slope reads as an improvement
-    # it is not. Cutting it out states nothing; explaining it took two lines
-    # of prose on a slide. The axis is still panel A's, so the rule at the
-    # census's last day stands in the same place on both.
+    # under a third for reasons unrelated to how many people the response was
+    # locating -- recent cases have no outcome recorded yet, and the recovery
+    # and ward ledgers begin inside that window -- so a slope drawn there
+    # reads as an improvement it is not. Not drawing it asserts nothing, which
+    # is the cheapest way to be right. The axis is still panel A's, so the
+    # rule at the census's last day stands in the same place on both.
     shown = led.filter(pl.col("date") >= pl.lit(h["run_start"]))
     for seg in _outcome_segments(shown):
         c = seg.drop_nulls("unaccounted_share")
@@ -1608,8 +1609,8 @@ def draw_outcomes(inputs: dict[str, Path], out: Path) -> None:
                 fontsize=8.5, color="#8a3b00")
 
     # The y range is read off what is actually drawn, so the flat stretch is
-    # not squashed against the axis by an early value the panel no longer
-    # shows.
+    # not squashed against the axis by an early value this panel does not
+    # show.
     sh_max = max(shown["unaccounted_share"].max(),
                  tail["residual_share"].max())
     sh_top = math.ceil(sh_max * 1.1 * 10) / 10
