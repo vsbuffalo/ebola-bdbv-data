@@ -261,14 +261,30 @@ figures:
 		--out data/build/figures/ascertainment.png
 	uv run python scripts/plot_figures.py --figure province_series \
 		--out data/build/figures/province_series.png
+	# THE PROVINCE FLOWS AND THE NATIONAL-ONLY SERIES ARE TWO FIGURES, not
+	# one. They were one, at 11 x 25.6 inches, which is not a readable aspect
+	# for either half; they still share a calendar so the two can be read
+	# against each other.
 	uv run python scripts/plot_figures.py --figure streams_detail \
 		--out data/build/figures/streams_detail.png
+	uv run python scripts/plot_figures.py --figure national_detail \
+		--out data/build/figures/national_detail.png
+	# The care ledger the reports state in words: what validates the prose
+	# census against the front-page tile, occupancy against capacity per
+	# province, and the ledger flows with the absconder counts drawn as the
+	# isolated marks they are.
+	uv run python scripts/plot_figures.py --figure care_ledger \
+		--out data/build/figures/care_ledger.png
 	uv run python scripts/plot_figures.py --figure residuals \
 		--out data/build/figures/residuals.png
-	# COMMITTED COPY of the streams panel, so the README and the cross-repo
-	# channel can link to a figure that survives (data/build is gitignored).
+	# COMMITTED COPIES, so the README, the data document and the cross-repo
+	# channel can link to figures that survive (data/build is gitignored).
+	# Everything copied here is gated by `release-check`: it must rebuild
+	# byte-identically from a fresh clone of the committed state.
 	mkdir -p docs/figures
 	cp data/build/figures/streams_detail.png docs/figures/
+	cp data/build/figures/national_detail.png docs/figures/
+	cp data/build/figures/care_ledger.png docs/figures/
 	cp data/build/figures/release_grid.png docs/figures/
 	cp data/build/figures/ascertainment.png docs/figures/
 	cp data/build/figures/epi_curve.png docs/figures/

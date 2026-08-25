@@ -2399,3 +2399,175 @@ def test_care_a_subset_admissions_figure_is_refused_not_guessed():
     assert any(r["why"] == "ambiguous_admissions" for r in refused)
     itu = {r["province"]: r for r in got}.get("Ituri")
     assert itu is None or itu["admissions"] is None
+
+
+# --------------------------------------------------------------------------
+# What the care figure ASSERTS
+# --------------------------------------------------------------------------
+#
+# `care_ledger.png` states numbers in words -- how often two independent
+# readings of the isolation census agree, how far a sum of province bullets
+# falls short of a national total, how thin the absconder series is. Those are
+# claims about the source, so they are pinned here rather than left to be
+# re-read off a figure. Nothing below tests pixels.
+
+BUILD = ROOT / "data" / "build" / "series"
+needs_build = pytest.mark.skipif(
+    not (BUILD / "care_prose.csv").exists()
+    or not (BUILD / "banner.csv").exists(),
+    reason="the series are not built; run `make build`")
+
+
+def _built():
+    import polars as pl
+    return (pl.read_csv(BUILD / "care_prose.csv", infer_schema_length=None),
+            pl.read_csv(BUILD / "banner.csv", infer_schema_length=None))
+
+
+def test_care_row_state_separates_a_contradiction_from_an_unchecked_row():
+    """`licensed` is one boolean over two different situations. A row whose
+    printed occupancy disagrees with its own census over its own beds is the
+    SOURCE contradicting itself; a row that prints a census with nothing beside
+    it to check against is unverified, not wrong. The figure draws them
+    differently, so the classification is pinned."""
+    import plot_figures as P
+    assert P.care_row_state({"licensed": True, "checks": ""}) == "clean"
+    assert P.care_row_state(
+        {"licensed": False, "checks": "occupancy=fail"}) == "contradicted"
+    assert P.care_row_state({"licensed": False, "checks": ""}) == "unchecked"
+    # SCOPED TO THE QUANTITY. A row whose exit decomposition fails but whose
+    # census closes twice over is not a contradicted census.
+    row = {"licensed": False, "census_licensed": False,
+           "checks": "exits_split=fail;contacts_rate=pass"}
+    assert P.care_row_state(row, "licensed") == "contradicted"
+    assert P.care_row_state(row, "census_licensed") == "unchecked"
+
+
+@needs_build
+def test_the_tile_and_the_prose_give_the_same_confirmed_census():
+    """PANEL A'S ARGUMENT, as a number. Two readers -- `extract_banner` on the
+    front-page ISOLEMENT/CTE tile and `extract_care_prose` on the care
+    pillar's whole-response sentence -- read the same page. On every report day
+    both print a confirmed isolation census, they agree exactly. Agreement is
+    evidence about transcription rather than about the counts, but a misreading
+    could not produce it, and that is the failure this route is exposed to."""
+    import plot_figures as P
+    care, banner = _built()
+    a = P.census_agreement(care, banner)
+    assert a["n_confirmed_both"] == 24
+    assert a["n_confirmed_agree"] == a["n_confirmed_both"]
+    assert (a["n_total_both"], a["n_total_agree"]) == (27, 25)
+
+
+@needs_build
+def test_both_census_disagreements_are_the_source_contradicting_itself():
+    """And the check says WHICH HALF is wrong. On both days the sentence's
+    stated total differs from its own confirmed + suspected split, and the tile
+    agrees with the split -- so it is the stated total that is the bad number.
+    2026-07-07 states 694 against its own 232 + 518 = 750, and the tile says
+    750; 2026-07-14 states 753 against 270 + 466 = 736, and the tile says 736.
+    Both were already flagged `census_split=fail` by the extraction."""
+    import plot_figures as P
+    care, banner = _built()
+    dis = P.census_agreement(care, banner)["disagreements"]
+    assert len(dis) == 2
+    for d in dis:
+        assert d["tile_matches_split"], d
+        assert d["state"] == "contradicted", d
+    assert {d["date"]: (d["prose_total"], d["prose_split_sum"], d["tile_total"])
+            for d in dis} == {"2026-07-07": (694, 750, 750),
+                              "2026-07-14": (753, 736, 736)}
+
+
+@needs_build
+def test_the_confirmed_tile_and_the_national_sentence_stop_on_the_same_day():
+    """The reason the figure exists. The tile keeps printing a TOTAL isolation
+    census to the end of the archive; it is the CONFIRMED half -- the only half
+    that observes a confirmed-case compartment -- that stops, and the care
+    section's whole-response sentence stops on the very same report. What
+    carries the confirmed census onward is the per-province bullets alone."""
+    import plot_figures as P
+    care, banner = _built()
+    a = P.census_agreement(care, banner)
+    assert a["tile_confirmed_last"] == a["prose_national_last"] == "2026-08-02"
+    assert a["tile_total_last"] > a["tile_confirmed_last"]
+    assert a["prose_province_last"] > a["tile_confirmed_last"]
+
+
+@needs_build
+def test_province_bullets_do_not_sum_to_a_national_census():
+    """The obvious move once the whole-response sentence stops is to add the
+    province bullets up, and it does not work: on most report days only one to
+    three of the six affected provinces print a bullet at all. Where the
+    sentence is also printed the sum falls short of it on all but two days, by
+    as much as 279 patients -- which would read as a collapse in the census
+    rather than as missing bullets."""
+    import plot_figures as P
+    care, _ = _built()
+    p = P.province_census_is_not_national(care)
+    assert p["max_provinces_per_day"] == 3
+    assert p["median_provinces_per_day"] == 1
+    assert (p["n_short"], p["n_compared"]) == (15, 17)
+    assert p["worst_shortfall"] == -279
+
+
+@needs_build
+def test_province_occupancy_cannot_see_a_saturated_centre():
+    """PANEL B'S CAVEAT, as numbers. Occupancy at province grain is a ratio of
+    sums and stays below capacity almost everywhere -- one province-day exceeds
+    it. The reports meanwhile name individual treatment centres above capacity
+    in a prose subsection the care extraction does not read, so the slack this
+    panel shows is not evidence of free beds where the patients are."""
+    import plot_figures as P
+    care, _ = _built()
+    o = P.occupancy_at_province_grain(care)
+    assert o["n"] == 68
+    assert o["n_over_100"] == 1
+    assert o["over_100"][0]["province"] == "Nord-Kivu"
+    assert round(o["over_100"][0]["occ"]) == 139
+    assert o["min"] < 20 and 50 < o["median"] < 70
+
+
+@needs_build
+def test_the_absconder_series_is_thin_and_the_figure_must_not_join_it():
+    """An absconder is a confirmed patient who leaves care still infectious --
+    the complement of the isolation census, and the two are halves of one
+    transition. The count is printed on 24 province-days in the whole archive,
+    only 5 of them after the tile's confirmed half stops, and 14 of the 24 are
+    the whole-response figure rather than a province's. One is a printed zero,
+    which is an observation and not an absence."""
+    import plot_figures as P
+    care, banner = _built()
+    last = P.census_agreement(care, banner)["tile_confirmed_last"]
+    a = P.absconder_coverage(care, last)
+    assert a["n"] == 24
+    assert a["n_after"] == 5
+    assert a["n_national"] == 14
+    assert a["n_zero"] == 1
+
+
+@needs_build
+def test_the_two_care_grains_overlap_so_the_ledger_is_faceted_not_stacked():
+    """Panel C facets the whole-response sentence apart from the province
+    bullets because on eleven report days both print an exit count, covering
+    the same discharges. Stacking them would double count those days."""
+    import plot_figures as P
+    care, _ = _built()
+    assert P.exits_double_counted_if_summed(care) == 11
+
+
+@needs_build
+def test_the_figure_registry_declares_every_input_each_figure_reads():
+    """The declared inputs ARE the dependency set -- the data document's guard
+    and the Makefile both read them -- so a figure that opens a file it did not
+    declare would be rebuilt from an undeclared input. Splitting one figure in
+    two is exactly when that goes wrong, because the inputs move with the
+    panels."""
+    import plot_figures as P
+    for name in ("streams_detail", "national_detail", "care_ledger"):
+        _, inputs = P.FIGURES[name]
+        for rel in inputs.values():
+            assert (ROOT / rel).exists(), f"{name} declares missing {rel}"
+    assert "banner" not in P.FIGURES["streams_detail"][1], \
+        "the banner moved to national_detail with the panels that read it"
+    assert "banner" in P.FIGURES["national_detail"][1]

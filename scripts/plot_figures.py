@@ -4,7 +4,7 @@ ONE DRAWING FUNCTION PER FIGURE, and a registry mapping name -> function, so the
 Makefile and any document share one source of truth about which figures exist.
 Every figure is a build target; nothing here is run ad hoc.
 
-WHAT THE TWO FIGURES ARGUE
+WHAT THE FIGURES ARGUE
 `availability` answers: which quantities exist, at what geographic level, over
 which spans -- and through which route each report was read. The point it must
 carry is that coverage is not a rectangle: streams start and stop, the zone
@@ -18,6 +18,26 @@ like, per province -- with the zone-DERIVED sums as the line (they are the
 trunk) and the printed provincial-summary values overlaid as open rings. Where
 ring and line coincide the two routes agree; a visible gap IS a finding, and the
 known ones are in the exception register.
+
+`streams_detail` and `national_detail` are two halves of what was one figure.
+The per-province flows and the four series the source prints only for the
+country answer different questions and neither was readable at the aspect the
+concatenation forced. They share one calendar, taken from the report index
+rather than from either figure's own data, so a reader can still hold them side
+by side.
+
+`care_ledger` answers: can the treatment-centre ledger the reports state in
+WORDS be believed, and what does it say. Its leading panel is the argument
+rather than the payload -- two readers in this repository take the isolation
+census off different parts of the same page and agree -- because everything
+below it depends on that, and because the front-page tile stops printing the
+confirmed half of the census partway through the archive while the prose does
+not.
+
+A FIGURE MAY NOT STATE A NUMBER IT DID NOT COMPUTE. Every count `care_ledger`
+asserts in words comes from one of the small pure functions above its drawing
+code, and each of those is pinned by a test, so the claim in the caption and
+the claim in the test suite cannot drift apart.
 
 COLOUR
 Provinces are identities, so they take a fixed categorical assignment in
@@ -35,6 +55,7 @@ import datetime as dt
 import json
 import math
 import sys
+import textwrap
 from pathlib import Path
 
 import matplotlib
@@ -61,9 +82,50 @@ LEVEL_COLOR = {"zone": "#1a4f72", "province": "#4d94c4", "national": "#a8cbe0"}
 
 GRID = dict(color="#dddddd", linewidth=0.6)
 
+#: Inches reserved at the top of a figure for the left-aligned bold title and
+#: the subtitle beneath it. Held in INCHES rather than as a figure fraction
+#: because the figures that use it differ by a factor of three in height, and
+#: one fraction cannot clear the same two lines of text on both.
+HEADER_IN = 0.95
+
 
 def _dates(col: pl.Series) -> list:
     return [mdates.datestr2num(d) for d in col.to_list()]
+
+
+def _header(fig, title: str, subtitle: str, *, title_size: float = 12,
+            sub_size: float = 8.5) -> None:
+    """Left-aligned bold title with the subtitle as a second block beneath it,
+    and the axes area constrained to end below both.
+
+    `rect` IS (left, bottom, WIDTH, HEIGHT), not (left, bottom, right, top).
+    Read as the latter, a call meaning "stop the axes at 0.96" asks instead for
+    a top edge at bottom + 0.96, leaves the top unconstrained, and lets the
+    topmost panel's ticks print through this band. Both coordinates below are
+    therefore derived from the figure's own height in inches.
+    """
+    h = fig.get_figheight()
+    fig.get_layout_engine().set(rect=(0, 0, 1, 1 - HEADER_IN / h))
+    fig.suptitle(title, x=0.01, y=1 - 0.10 / h, ha="left", va="top",
+                 fontsize=title_size, fontweight="bold")
+    fig.text(0.01, 1 - 0.42 / h, subtitle, ha="left", va="top",
+             fontsize=sub_size, color="#444444")
+
+
+def _report_calendar(caveat: pl.DataFrame) -> tuple[float, float]:
+    """The x limits every report-day figure shares: the span of the ARCHIVE,
+    not of whichever series a panel happens to hold.
+
+    The caveat file carries one row per report whether or not that report said
+    anything, so it is the calendar itself. A stream that starts on 13 July
+    must show the ten empty weeks before it, or its late start reads as a full
+    history -- and two figures split apart from one must keep the same axis,
+    or a reader comparing them silently compares different spans.
+    """
+    xs = _dates(caveat["date"])
+    lo, hi = min(xs), max(xs)
+    pad = 0.02 * (hi - lo)
+    return lo - pad, hi + pad
 
 
 def draw_availability(inputs: dict[str, Path], out: Path) -> None:
@@ -1130,25 +1192,41 @@ def _roll_geomean(xs, ys, window=7, max_gap=4.0):
     return out
 
 
-def draw_streams_detail(inputs: dict[str, Path], out: Path) -> None:
-    """Every flow we extract, by province -- and the national-only series,
-    separated. Grey points are observations as published, one per report at its
-    own reporting date; the line is a centred seven-day rolling geometric mean.
-    The pink strip marks reports whose source cautions its own recent data are
-    still consolidating; a gap in the strip is a report that did not say it.
+def _load_panel(inputs: dict[str, Path]):
+    """The forward-filled health-zone panel, shared by the two figures below.
+
+    `carry_province` is the same carry the province aggregation applies, so a
+    figure never shows a province recovering a zone the pipeline had already
+    decided was carried forward.
     """
     import sys as _sys
     _sys.path.insert(0, str(Path(__file__).resolve().parent))
     from aggregate_provinces import carry_province
-    from build_streams import daily_cumulative, ALIASES, load_aliases
+    from build_streams import ALIASES, load_aliases
 
     ALIASES.update(load_aliases(Path("data/raw/zone_aliases.csv"),
                                 Path("registers/zone_aliases_local.csv")))
-    panel = carry_province(pl.read_csv(inputs["zone_table"],
-                                       infer_schema_length=None))
+    return carry_province(pl.read_csv(inputs["zone_table"],
+                                      infer_schema_length=None))
+
+
+def draw_streams_detail(inputs: dict[str, Path], out: Path) -> None:
+    """Every flow we extract, by province. Grey points are observations as
+    published, one per report at its own reporting date; the line is a centred
+    seven-day rolling geometric mean. The pink strip marks reports whose source
+    cautions its own recent data are still consolidating; a gap in the strip is
+    a report that did not say it.
+
+    The four series the source publishes for the country and nowhere else are
+    in `national_detail`, on the same calendar. They were once concatenated
+    below these rows, which made one figure eleven inches wide and twenty-six
+    long: the province rows and the national stocks answer different questions
+    and neither was readable at that aspect.
+    """
+    from build_streams import daily_cumulative
+
+    panel = _load_panel(inputs)
     caveat = pl.read_csv(inputs["caveat"], infer_schema_length=None)
-    summary = pl.read_csv(inputs["summary"], infer_schema_length=None)
-    prose = pl.read_csv(inputs["prose"], infer_schema_length=None)
     lab = pl.read_csv(inputs["lab"], infer_schema_length=None)
 
     provinces = ["Ituri", "Nord-Kivu"]
@@ -1159,16 +1237,18 @@ def draw_streams_detail(inputs: dict[str, Path], out: Path) -> None:
         ("deaths_community", "Community deaths / day\npost-mortem swab"),
         ("deaths_treatment_centre",
          "Treatment-centre deaths / day\nthe other half of the split"),
-        ("lab_tests", "Samples analysed / day\nlaboratory prose, licensed by "
-         "its own printed positivity"),
+        # WRAPPED, not shortened. The row labels are drawn to the left of the
+        # first column and constrained_layout reserves the width of the widest
+        # of them, so one long line steals a quarter of the canvas from the
+        # panels.
+        ("lab_tests", "Samples analysed / day\nlaboratory prose, licensed\n"
+         "by its own printed positivity"),
     ]
 
-    fig = plt.figure(figsize=(11, 3.1 * len(rows) + 7.0),
+    fig = plt.figure(figsize=(11, 3.1 * len(rows) + HEADER_IN),
                      constrained_layout=True)
-    fig.get_layout_engine().set(rect=(0, 0, 1, 0.965))
     all_axes: list = []
-    gs = fig.add_gridspec(len(rows) + 2, 2,
-                          height_ratios=[1.0] * len(rows) + [1.25, 1.25])
+    gs = fig.add_gridspec(len(rows), 2)
 
     for ri, (kind, label) in enumerate(rows):
         axs = []
@@ -1245,9 +1325,51 @@ def draw_streams_detail(inputs: dict[str, Path], out: Path) -> None:
                 a.set_ylim(lo, hi)
         all_axes.extend(axs)
 
-    # ---- The national-only section, deliberately separated. --------------
-    axn = fig.add_subplot(gs[len(rows), 0])
-    axs2 = fig.add_subplot(gs[len(rows), 1])
+    # ONE CALENDAR FOR EVERY PANEL, AND FOR THE SIBLING FIGURE. The span comes
+    # from the archive rather than from the panels' own data, so that a stream
+    # starting on 13 July shows the ten empty weeks before it, and so that this
+    # figure and `national_detail` -- which were one figure until they became
+    # unreadable at that length -- can still be read against each other.
+    xlim = _report_calendar(caveat)
+    for a in all_axes:
+        a.set_xlim(xlim)
+
+    _header(fig, "Every extracted flow, by province",
+            "Grey points: one observation per report, at its reporting date. "
+            "Line: centred 7-day rolling geometric mean, broken across "
+            "reporting gaps.\nPink strip: reports whose source cautions its "
+            "recent data are still consolidating — one bar per report, so a "
+            "gap is a report that did not say it.\nThe national-only series "
+            "are in national_detail.png, on this calendar.")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out, dpi=150)
+    plt.close(fig)
+
+
+def draw_national_detail(inputs: dict[str, Path], out: Path) -> None:
+    """The four series the reports publish for the country and nowhere else.
+
+    Split out of `streams_detail`, where they sat concatenated beneath six
+    province rows at eleven by twenty-six inches. Two of them are STOCKS -- a
+    reading at an instant rather than a flow over a day -- so they are drawn as
+    levels and never smoothed, and the panel titles keep every caveat they
+    carried before: the cumulative suspected series is a stock the source
+    stopped printing early and is comparable to no flow, and the isolation
+    census in its headline form counts suspected cases as well as confirmed
+    ones. The one thing dropped in the move is the words "NATIONAL ONLY" from
+    each of the four titles, because the figure is national throughout and now
+    says so once, in its own; the dates those titles stated in words are now
+    read off the series instead of written in.
+    """
+    panel = _load_panel(inputs)
+    caveat = pl.read_csv(inputs["caveat"], infer_schema_length=None)
+    summary = pl.read_csv(inputs["summary"], infer_schema_length=None)
+    prose = pl.read_csv(inputs["prose"], infer_schema_length=None)
+
+    fig = plt.figure(figsize=(11, 7.2 + HEADER_IN), constrained_layout=True)
+    gs = fig.add_gridspec(2, 2)
+    axn = fig.add_subplot(gs[0, 0])
+    axs2 = fig.add_subplot(gs[0, 1])
 
     nat = (panel.filter((pl.col("level") == "national")
                         & pl.col("cum_cases").is_not_null())
@@ -1270,8 +1392,8 @@ def draw_streams_detail(inputs: dict[str, Path], out: Path) -> None:
     axn.annotate("deaths", xy=(0.99, 0.60), xycoords="axes fraction",
                  ha="right", fontsize=8, color="#888888")
     axn.set_yscale("log")
-    axn.set_title("NATIONAL ONLY — cumulative confirmed",
-                  loc="left", fontsize=10, fontweight="bold")
+    axn.set_title("Cumulative confirmed", loc="left", fontsize=10,
+                  fontweight="bold")
     _caveat_rug(axn, caveat)
 
     susp = (panel.filter((pl.col("level") == "national")
@@ -1280,11 +1402,17 @@ def draw_streams_detail(inputs: dict[str, Path], out: Path) -> None:
     if susp.height:
         axs2.plot(_dates(susp["date"]), susp["suspected"].to_list(),
                   color="#333333", linewidth=1.7, marker="o", markersize=3)
-    axs2.set_title("NATIONAL ONLY — cumulative suspected, a stock\n"
-                   "(printed to 1 June only; not comparable to any flow)",
+    # THE DATE IS READ OFF THE SERIES, not written into the caption. It was
+    # written in ("printed to 1 June only"), which is a claim that goes stale
+    # the moment the source prints one more.
+    susp_last = (dt.date.fromisoformat(susp["date"].max()) if susp.height
+                 else None)
+    axs2.set_title("Cumulative suspected, a stock\n"
+                   + (f"(printed to {susp_last:%b %-d} only; " if susp_last
+                      else "(")
+                   + "not comparable to any flow)",
                    loc="left", fontsize=9.5, fontweight="bold")
     axs2.margins(x=0.05)
-    axs2.set_xlim(axn.get_xlim())
     _caveat_rug(axs2, caveat)
     for a in (axn, axs2):
         a.grid(True, **GRID)
@@ -1297,8 +1425,8 @@ def draw_streams_detail(inputs: dict[str, Path], out: Path) -> None:
     # rates -- and the isolation census is split, because the banner's
     # headline counts SUSPECTS TOO (a median 61% of it), so only the
     # confirmed part observes a confirmed-case compartment.
-    axi = fig.add_subplot(gs[len(rows) + 1, 0])
-    axr = fig.add_subplot(gs[len(rows) + 1, 1])
+    axi = fig.add_subplot(gs[1, 0])
+    axr = fig.add_subplot(gs[1, 1])
     bn = pl.read_csv(inputs["banner"], infer_schema_length=None)
     tot = bn.filter(pl.col("patients_isolated").is_not_null()).sort("date")
     cnf = bn.filter(pl.col("patients_isolated_confirmed").is_not_null()).sort("date")
@@ -1312,15 +1440,35 @@ def draw_streams_detail(inputs: dict[str, Path], out: Path) -> None:
                  color="#0072B2", linewidth=1.9, marker="o", markersize=3,
                  label="of those, confirmed")
     axi.legend(frameon=False, fontsize=7.5, loc="upper left")
-    axi.set_title("NATIONAL ONLY — patients in isolation, a stock\n"
+    # THE CONFIRMED HALF STOPS FIRST, and the split is the only half that
+    # observes a confirmed-case compartment, so the date it stops is the one
+    # a reader needs. It is read off the series; `care_ledger` argues from the
+    # same date, derived the same way, that the care prose carries the
+    # quantity onward.
+    cnf_last = (dt.date.fromisoformat(cnf["date"].max()) if cnf.height
+                else None)
+    axi.set_title("Patients in isolation, a stock\n"
                   "the headline census counts suspects too",
                   loc="left", fontsize=9.5, fontweight="bold")
+    if cnf_last:
+        # The date goes INSIDE the panel, not into the title: at this width a
+        # title long enough to carry it runs into the panel beside it.
+        axi.axvline(mdates.date2num(cnf_last), color="#D55E00",
+                    linewidth=1.0, linestyle=(0, (3, 2)), zorder=1)
+        axi.annotate(f"confirmed half\nlast printed {cnf_last:%b %-d}",
+                     xy=(mdates.date2num(cnf_last), 0.98),
+                     xycoords=("data", "axes fraction"), xytext=(-5, 0),
+                     textcoords="offset points", ha="right", va="top",
+                     fontsize=7.5, color="#D55E00", linespacing=1.4)
     rec = bn.filter(pl.col("cumul_recovered").is_not_null()).sort("date")
     if rec.height:
         axr.plot(_dates(rec["date"]), rec["cumul_recovered"].to_list(),
                  color="#009E73", linewidth=1.9, marker="o", markersize=3)
-    axr.set_title("NATIONAL ONLY — cumulative recoveries\n"
-                  "a running total, printed from the first report",
+    rec_first = (dt.date.fromisoformat(rec["date"].min()) if rec.height
+                 else None)
+    axr.set_title("Cumulative recoveries\n"
+                  + (f"a running total, printed from {rec_first:%b %-d}"
+                     if rec_first else "a running total"),
                   loc="left", fontsize=9.5, fontweight="bold")
     for a in (axi, axr):
         a.grid(True, **GRID)
@@ -1330,23 +1478,684 @@ def draw_streams_detail(inputs: dict[str, Path], out: Path) -> None:
         a.xaxis.set_major_formatter(mdates.DateFormatter("%b %-d"))
         _caveat_rug(a, caveat)
 
-    # ONE CALENDAR FOR EVERY PANEL. A stream that starts on 13 July must show
-    # ten empty weeks before it, or its late start reads as a full history.
-    xlim = (min(a.get_xlim()[0] for a in all_axes + [axn]),
-            max(a.get_xlim()[1] for a in all_axes + [axn]))
-    for a in all_axes + [axn, axs2, axi, axr]:
-        a.set_xlim(xlim)
+    # THE SAME CALENDAR `streams_detail` USES, so the two halves of what was
+    # one figure stay readable against each other.
+    for a in (axn, axs2, axi, axr):
+        a.set_xlim(_report_calendar(caveat))
 
-    fig.suptitle(
-        "Every extracted flow by province, and the national-only series",
-        x=0.01, y=0.997, ha="left", fontsize=12, fontweight="bold")
-    fig.text(0.01, 0.985,
-             "Grey points: one observation per report, at its reporting date. "
-             "Line: centred 7-day rolling geometric mean, broken across "
-             "reporting gaps.\nPink strip: reports whose source cautions its "
-             "recent data are still consolidating — one bar per report, so a "
-             "gap is a report that did not say it.",
-             ha="left", va="top", fontsize=8.5, color="#444444")
+    _header(fig, "The national-only series: what the source prints for the "
+                 "country and nowhere else",
+            "Two of the four are STOCKS — a reading at an instant, not a flow "
+            "over a day — so they are drawn as levels and never smoothed.\n"
+            "Pink strip: reports whose source cautions its recent data are "
+            "still consolidating. The per-province flows are in "
+            "streams_detail.png, on this calendar.")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out, dpi=150)
+    plt.close(fig)
+
+
+# --------------------------------------------------------------------------
+# The care ledger: pure summaries first, then the figure that draws them.
+# Everything the figure ASSERTS in words is computed here, so a test can pin
+# the number rather than the pixels.
+# --------------------------------------------------------------------------
+
+#: Which of the care extraction's closures bear on the CENSUS specifically.
+#: `census_licensed` is a single boolean and a figure that drew every false as
+#: "the source contradicts itself" would accuse the reports of errors they did
+#: not make: most false values are rows that print a census with nothing beside
+#: it to check the census against.
+CENSUS_CHECKS = ("census_split", "occupancy", "occupancy_confirmed",
+                 "occupancy_suspect", "confirmed_le_census")
+
+#: clean / contradicted / unchecked, and how each is drawn wherever a care row
+#: appears. Three states, not two -- see `care_row_state`.
+STATE_COLOR = {"clean": "#009E73", "contradicted": "#D55E00",
+               "unchecked": "#bbbbbb"}
+STATE_LABEL = {
+    "clean": "the row's own arithmetic closes",
+    "contradicted": "the REPORT's numbers disagree with each other (kept, flagged)",
+    "unchecked": "the report printed nothing to check this row against",
+}
+
+#: The four ways out of a treatment centre, in the order the reports list them.
+#: Absconders take the one hue no other series in this repository uses, because
+#: they are the scarce quantity the modelling turns on.
+EXIT_KIND = [
+    ("exits_recovered", "recovered", "#009E73"),
+    ("exits_noncase", "discharged, not a case", "#56B4E9"),
+    ("exits_absconded", "absconded", "#CC79A7"),
+    ("exits_deaths", "died", "#333333"),
+]
+
+
+def care_row_state(row: dict, flag: str = "licensed") -> str:
+    """`clean`, `contradicted` or `unchecked` for one care-prose row.
+
+    `licensed` conflates two rows that are not alike. One prints an occupancy
+    percentage that disagrees with its own census over its own beds -- that is
+    the SOURCE contradicting itself, and the value is suspect. The other prints
+    a census and nothing at all to check it against -- unverified, not wrong.
+    Drawing both the same way either accuses the reports of an error or hides
+    one, so the figure separates them and shows all three states.
+    """
+    if row[flag]:
+        return "clean"
+    failed = {name for name, _, verdict in
+              ((c.partition("=")) for c in (row["checks"] or "").split(";") if c)
+              if verdict == "fail"}
+    if flag == "census_licensed":
+        failed &= set(CENSUS_CHECKS)
+    return "contradicted" if failed else "unchecked"
+
+
+def census_agreement(care: pl.DataFrame, banner: pl.DataFrame) -> dict:
+    """The tile-versus-prose comparison the care figure leads with.
+
+    Two routes read the isolation census off the same reports by different
+    code: the front-page ISOLEMENT/CTE tile (`extract_banner`) and the care
+    pillar's whole-response summary sentence, which the reports file under the
+    word `Ensemble` (`extract_care_prose`). Where both print a figure they can
+    be compared, and the comparison is the licence for believing the prose
+    route where the tile has stopped.
+
+    AGREEMENT HERE IS EVIDENCE ABOUT TRANSCRIPTION, NOT ABOUT THE COUNTS. It is
+    one organisation's numbers on one page, read twice. What it rules out is a
+    misreading, which is the failure this route is actually exposed to.
+
+    Returns the counts, every disagreement in full, and the three dates that
+    say where each route stops -- so nothing downstream has to write a date in.
+    """
+    ens = care.filter(pl.col("province") == "Ensemble")
+    tile = banner.select("date", "patients_isolated",
+                         "patients_isolated_confirmed")
+    j = ens.join(tile, on="date", how="inner").sort("date")
+    tot = j.filter(pl.col("census").is_not_null()
+                   & pl.col("patients_isolated").is_not_null())
+    cnf = j.filter(pl.col("census_confirmed").is_not_null()
+                   & pl.col("patients_isolated_confirmed").is_not_null())
+
+    dis = []
+    for r in tot.filter(pl.col("census") != pl.col("patients_isolated")) \
+                .iter_rows(named=True):
+        half = (None if r["census_confirmed"] is None
+                or r["census_suspect"] is None
+                else r["census_confirmed"] + r["census_suspect"])
+        dis.append({
+            "date": r["date"], "sitrep": r["sitrep"],
+            "prose_total": r["census"], "prose_split_sum": half,
+            "tile_total": r["patients_isolated"],
+            # WHICH HALF IS WRONG, not merely that the two disagree. Where the
+            # sentence's own confirmed + suspected sums to what the tile says,
+            # it is the sentence's stated TOTAL that is the bad number and the
+            # split that is right -- a conclusion the tile alone cannot reach.
+            "tile_matches_split": half is not None
+                                  and half == r["patients_isolated"],
+            "state": care_row_state(r, "census_licensed")})
+
+    prov = care.filter(pl.col("province") != "Ensemble")
+    return {
+        "n_total_both": tot.height,
+        "n_total_agree": tot.filter(
+            pl.col("census") == pl.col("patients_isolated")).height,
+        "n_confirmed_both": cnf.height,
+        "n_confirmed_agree": cnf.filter(
+            pl.col("census_confirmed")
+            == pl.col("patients_isolated_confirmed")).height,
+        "disagreements": dis,
+        # The tile keeps printing a TOTAL census to the end of the archive; it
+        # is only the confirmed half -- the half that observes a confirmed-case
+        # compartment -- that stops. Naming the wrong one of these two would
+        # misstate what was lost.
+        "tile_total_last": banner.filter(
+            pl.col("patients_isolated").is_not_null())["date"].max(),
+        "tile_confirmed_last": banner.filter(
+            pl.col("patients_isolated_confirmed").is_not_null())["date"].max(),
+        "prose_national_last": ens.filter(
+            pl.col("census").is_not_null())["date"].max(),
+        "prose_province_last": prov.filter(
+            pl.col("census_confirmed").is_not_null())["date"].max(),
+    }
+
+
+def province_census_is_not_national(care: pl.DataFrame) -> dict:
+    """How far short of the country a day's province bullets fall.
+
+    The obvious move once the whole-response sentence stops is to add the
+    province bullets up. It does not work and this quantifies why: on most
+    report days only one to three of the affected provinces print a care
+    bullet at all, so the sum is a partial total that would read as a collapse
+    in the census. Where both a whole-response sentence and province bullets
+    exist, the shortfall is measured directly.
+    """
+    prov = care.filter(pl.col("province") != "Ensemble")
+    ens = care.filter(pl.col("province") == "Ensemble")
+    per_day = (prov.filter(pl.col("census_confirmed").is_not_null())
+               .group_by("date").agg(pl.len().alias("n_prov")).sort("date"))
+    both = (per_day.join(
+        prov.filter(pl.col("census_confirmed").is_not_null())
+            .group_by("date").agg(pl.col("census_confirmed").sum()
+                                  .alias("sum_conf")), on="date")
+        .join(ens.filter(pl.col("census_confirmed").is_not_null())
+              .select("date", pl.col("census_confirmed").alias("national")),
+              on="date", how="inner")
+        .with_columns((pl.col("sum_conf") - pl.col("national")).alias("short")))
+    return {
+        "n_days": per_day.height,
+        "median_provinces_per_day": (per_day["n_prov"].median()
+                                     if per_day.height else None),
+        "max_provinces_per_day": (per_day["n_prov"].max()
+                                  if per_day.height else None),
+        "n_compared": both.height,
+        "n_short": both.filter(pl.col("short") < 0).height,
+        "worst_shortfall": (both["short"].min() if both.height else None),
+    }
+
+
+def exits_double_counted_if_summed(care: pl.DataFrame) -> int:
+    """Report days on which BOTH the whole-response sentence and at least one
+    province bullet print an exit count.
+
+    The two passages cover the same patients at different levels of geographic
+    detail, so on these days a figure that added the facets together would
+    count the same discharges twice. It is the reason panel C is faceted rather
+    than stacked, and the number is stated in the panel so the choice is
+    visible rather than asserted.
+    """
+    ens = set(care.filter((pl.col("province") == "Ensemble")
+                          & pl.col("exits").is_not_null())["date"].to_list())
+    prov = set(care.filter((pl.col("province") != "Ensemble")
+                           & pl.col("exits").is_not_null())["date"].to_list())
+    return len(ens & prov)
+
+
+def occupancy_at_province_grain(care: pl.DataFrame) -> dict:
+    """Census over beds, summed within a province.
+
+    A RATIO OF SUMS IS NOT A MAXIMUM. A province can hold two centres, one
+    empty and one turning people away, and report comfortable slack. The
+    reports name saturated centres in their `Défis` prose, which the care
+    extraction deliberately does not read, so nothing below can be read as
+    evidence that no centre in a province is full.
+    """
+    d = (care.filter((pl.col("province") != "Ensemble")
+                     & pl.col("census").is_not_null()
+                     & pl.col("beds").is_not_null() & (pl.col("beds") > 0))
+         .with_columns((100 * pl.col("census") / pl.col("beds")).alias("occ")))
+    over = d.filter(pl.col("occ") > 100).sort("date")
+    return {
+        "n": d.height,
+        "min": (d["occ"].min() if d.height else None),
+        "median": (d["occ"].median() if d.height else None),
+        "max": (d["occ"].max() if d.height else None),
+        "n_over_100": over.height,
+        "over_100": [{"date": r["date"], "province": r["province"],
+                      "census": r["census"], "beds": r["beds"],
+                      "occ": r["occ"]} for r in over.iter_rows(named=True)],
+    }
+
+
+def absconder_coverage(care: pl.DataFrame, after: str) -> dict:
+    """How thin the absconder series is, on either side of `after`.
+
+    An absconder is a confirmed patient who leaves care still infectious, so
+    the count is the complement of the isolation census: together they measure
+    one transition, and neither alone identifies it. That makes its sparsity a
+    result, not a nuisance -- and the reason the figure draws one mark per
+    printed value and never joins them.
+    """
+    a = care.filter(pl.col("exits_absconded").is_not_null())
+    return {
+        "n": a.height,
+        "n_after": a.filter(pl.col("date") > after).height,
+        "n_national": a.filter(pl.col("province") == "Ensemble").height,
+        "n_zero": a.filter(pl.col("exits_absconded") == 0).height,
+        "first": (a["date"].min() if a.height else None),
+        "last": (a["date"].max() if a.height else None),
+    }
+
+
+def care_columns(care: pl.DataFrame) -> list[str]:
+    """The small-multiple column order: every province the care prose ever
+    carries a drawn quantity for, in outbreak-size order, with the
+    whole-response `Ensemble` sentence last. Derived, and sorted, so the draw
+    order cannot vary between runs.
+    """
+    drawn = ["census", "census_confirmed", "census_suspect", "beds",
+             "admissions", "exits", *[c for c, _, _ in EXIT_KIND]]
+    have = care.filter(
+        pl.any_horizontal([pl.col(c).is_not_null() for c in drawn]))
+    seen = set(have["province"].to_list())
+    return [p for p in PROVINCE_COLOR if p in seen] + (
+        ["Ensemble"] if "Ensemble" in seen else [])
+
+
+def _state_rug(ax, rows: list[dict], flag: str) -> None:
+    """One tick per drawn row, at the panel's head, saying what is known about
+    that row's arithmetic. Placed above the data rather than on it, so the
+    value and the confidence in the value never overplot.
+    """
+    for r in rows:
+        x = mdates.datestr2num(r["date"])
+        ax.axvspan(x - 0.45, x + 0.45, ymin=0.955, ymax=1.0,
+                   color=STATE_COLOR[care_row_state(r, flag)],
+                   linewidth=0, zorder=4)
+
+
+def draw_care_ledger(inputs: dict[str, Path], out: Path) -> None:
+    """The treatment-centre ledger the reports state in words, and the argument
+    that it can be believed.
+
+    PANEL A IS THE FIGURE'S POINT. The front-page tile and the care pillar's
+    whole-response sentence are two readings of the same page by two different
+    readers in this repository, and where both print a confirmed isolation
+    census they agree exactly. That agreement is what licenses the prose route
+    after the tile's confirmed half stops -- which is the same report on which
+    the whole-response sentence itself stops, so what carries the confirmed
+    census onward is the per-province bullets alone. The panel also shows why
+    those bullets cannot simply be added up.
+
+    PANEL B is occupancy against installed capacity, per province. It is a
+    ratio of sums and it cannot see a full centre inside a half-full province;
+    the panel says so rather than letting the slack be read as spare beds.
+
+    PANEL C is the ledger itself -- admissions in, exits out, decomposed into
+    the four ways a patient leaves a centre. Province bullets and the
+    whole-response sentence are faceted apart and never added together: on
+    eleven report days both print an exit count, and stacking them would
+    double count.
+
+    THE ABSCONDER STRIP at the foot is drawn as isolated marks because that is
+    what the data are. An absconder is a confirmed patient who leaves care
+    still infectious, so the count is the complement of the census: the two
+    are halves of one transition and neither identifies it alone. Joining the
+    marks into a line would assert values on days no report printed one.
+
+    NOTHING IS DROPPED FOR FAILING A CHECK. Every row is drawn, and a rug at
+    the head of each panel says whether the row's own arithmetic closed, failed
+    to close, or had nothing to close against.
+    """
+    care = pl.read_csv(inputs["care"], infer_schema_length=None)
+    banner = pl.read_csv(inputs["banner"], infer_schema_length=None)
+    caveat = pl.read_csv(inputs["caveat"], infer_schema_length=None)
+
+    agree = census_agreement(care, banner)
+    partial = province_census_is_not_national(care)
+    occ = occupancy_at_province_grain(care)
+    absc = absconder_coverage(care, agree["tile_confirmed_last"])
+    both_grains = exits_double_counted_if_summed(care)
+    cols = care_columns(care)
+    n_prov = len([c for c in cols if c != "Ensemble"])
+    xlim = _report_calendar(caveat)
+    handover = mdates.datestr2num(agree["tile_confirmed_last"])
+
+    CONF, SUSP, BEDS, FLAG = "#0072B2", "#a8cbe0", "#444444", "#D55E00"
+    TOTAL = "#777777"
+
+    # Four bands, each with a caption row of its own beneath it. The captions
+    # are ordinary axes with the frame switched off rather than `fig.text`,
+    # because a figure-coordinate caption has to be positioned by hand and
+    # goes wrong the moment a band changes height.
+    fig = plt.figure(figsize=(14.0, 14.6 + HEADER_IN), constrained_layout=True)
+    gs = fig.add_gridspec(7, len(cols),
+                          height_ratios=[3.3, 0.62, 2.2, 0.62, 2.4, 1.15, 1.5])
+
+    def caption(row: int, *paras: str) -> None:
+        ax = fig.add_subplot(gs[row, :])
+        ax.axis("off")
+        # WRAPPED AT A FIXED COLUMN, not left to run off the canvas. The
+        # caption axes is about thirteen inches wide and 8.5-point text runs
+        # roughly 17 characters to the inch.
+        text = "\n".join(textwrap.fill(x, 215) for x in paras)
+        ax.text(0, 1.0, text, transform=ax.transAxes, ha="left", va="top",
+                fontsize=8.5, color="#444444", linespacing=1.5)
+        return ax
+
+    # ---- A. the census, and that it can be believed -----------------------
+    axa = fig.add_subplot(gs[0, :])
+    tile_t = banner.filter(pl.col("patients_isolated").is_not_null()).sort("date")
+    tile_c = banner.filter(
+        pl.col("patients_isolated_confirmed").is_not_null()).sort("date")
+    axa.plot(_dates(tile_t["date"]), tile_t["patients_isolated"].to_list(),
+             color=TOTAL, linewidth=1.6, marker="o", markersize=3.2, zorder=2,
+             label="front-page tile — everyone in isolation")
+    axa.plot(_dates(tile_c["date"]),
+             tile_c["patients_isolated_confirmed"].to_list(),
+             color=CONF, linewidth=1.9, marker="o", markersize=3.4, zorder=3,
+             label="front-page tile — of those, confirmed")
+
+    ens = care.filter(pl.col("province") == "Ensemble").sort("date")
+    et = ens.filter(pl.col("census").is_not_null())
+    ec = ens.filter(pl.col("census_confirmed").is_not_null())
+    axa.scatter(_dates(et["date"]), et["census"].to_list(), s=64,
+                facecolors="none", edgecolors=TOTAL, linewidths=1.3, zorder=4,
+                label="care prose, whole-response sentence — everyone")
+    axa.scatter(_dates(ec["date"]), ec["census_confirmed"].to_list(), s=64,
+                facecolors="none", edgecolors=CONF, linewidths=1.5, zorder=5,
+                label="care prose, whole-response sentence — confirmed")
+
+    # The province bullets, which are what survives the handover -- drawn in
+    # their own colours and NEVER summed. ONE legend entry between them: the
+    # colours are keyed by the province panels below, and six more entries
+    # here would push the key over the data it is explaining.
+    prov = care.filter(pl.col("province") != "Ensemble")
+    first_triangle = True
+    for p in [c for c in cols if c != "Ensemble"]:
+        d = prov.filter((pl.col("province") == p)
+                        & pl.col("census_confirmed").is_not_null()).sort("date")
+        if not d.height:
+            continue
+        axa.scatter(_dates(d["date"]), d["census_confirmed"].to_list(), s=24,
+                    marker="^", color=PROVINCE_COLOR[p], zorder=6,
+                    label=("care prose, one province's bullet — confirmed "
+                           "(colour keys the province panels below)"
+                           if first_triangle else "_"))
+        first_triangle = False
+
+    for i, bad in enumerate(agree["disagreements"]):
+        x = mdates.datestr2num(bad["date"])
+        axa.scatter([x], [bad["prose_total"]], s=170, facecolors="none",
+                    edgecolors=FLAG, linewidths=1.6, zorder=7,
+                    label=("the sentence contradicts its own confirmed + "
+                           "suspected split" if i == 0 else "_"))
+        # SHORT, because two of these fall a week apart and any sentence long
+        # enough to explain them would overlap the other. The caption below
+        # carries the explanation; the label carries only which two numbers
+        # are in conflict.
+        axa.annotate(f"{bad['prose_total']} stated\n{bad['prose_split_sum']} "
+                     "by its own split",
+                     xy=(x, bad["prose_total"]),
+                     xytext=(x, 0.44 - 0.13 * i),
+                     textcoords=("data", "axes fraction"),
+                     ha="right" if i % 2 == 0 else "left",
+                     va="center", fontsize=7.5, color=FLAG, linespacing=1.4,
+                     arrowprops=dict(arrowstyle="-", color=FLAG,
+                                     linewidth=0.8, shrinkA=3, shrinkB=6))
+
+    axa.axvline(handover, color=FLAG, linewidth=1.2, linestyle=(0, (4, 3)),
+                zorder=1)
+    hand = dt.date.fromisoformat(agree["tile_confirmed_last"])
+    axa.axvspan(handover, xlim[1], color="#f4f4f4", zorder=0)
+    axa.annotate(
+        f"after {hand:%b %-d} the tile prints no confirmed split,\n"
+        "and the whole-response sentence stops on the same report;\n"
+        "the province bullets carry the confirmed census on alone",
+        xy=(handover, 0.50), xycoords=("data", "axes fraction"),
+        xytext=(7, 0), textcoords="offset points", ha="left", va="top",
+        fontsize=8, color=FLAG, linespacing=1.5)
+    axa.set_ylabel("patients in isolation", fontsize=9.5)
+    # HEADROOM FOR THE KEY. The key names six things and there is no empty
+    # quarter of this panel to hide it in, so the panel is given a third again
+    # of its data range and the key sits above every series.
+    axa.set_ylim(0, max(tile_t["patients_isolated"].max(),
+                        et["census"].max()) * 1.42)
+    axa.set_xlim(xlim)
+    axa.grid(axis="y", **GRID)
+    axa.set_axisbelow(True)
+    axa.legend(frameon=False, fontsize=8, loc="upper left", ncol=3,
+               labelspacing=0.4, columnspacing=1.6, handletextpad=0.6)
+    axa.set_title(
+        "A · Two readers, one page: the front-page tile and the care prose "
+        "give the same isolation census",
+        loc="left", fontsize=11, fontweight="bold")
+    axa.xaxis.set_major_locator(mdates.WeekdayLocator(byweekday=mdates.MO))
+    axa.xaxis.set_major_formatter(mdates.DateFormatter("%b %-d"))
+    for sp in ("top", "right"):
+        axa.spines[sp].set_visible(False)
+
+    med_p = partial["median_provinces_per_day"]
+    caption(
+        1,
+        f"Confirmed census: both routes print one on "
+        f"{agree['n_confirmed_both']} report days and agree on "
+        f"{agree['n_confirmed_agree']}. Everyone in isolation: both print one "
+        f"on {agree['n_total_both']} days and agree on "
+        f"{agree['n_total_agree']}; on the {len(agree['disagreements'])} that "
+        "differ the sentence contradicts its own confirmed + suspected split "
+        "and the tile agrees with the split, so it is the sentence's stated "
+        "total that is wrong and not its halves. Agreement is evidence about "
+        "transcription, not about the counts — one organisation's figures on "
+        "one page, read twice.",
+        f"The province bullets (triangles) are NOT summable to a national "
+        f"total: a median of {med_p:.0f} of the {n_prov} affected provinces "
+        f"prints a care bullet on a given day, at most "
+        f"{partial['max_provinces_per_day']}, and on {partial['n_short']} of "
+        f"{partial['n_compared']} days where the whole-response sentence is "
+        f"also printed the sum falls short of it — by up to "
+        f"{abs(partial['worst_shortfall'])} patients.")
+
+    # ---- B. occupancy against capacity, per province ----------------------
+    axb0 = None
+    for ci, p in enumerate(cols):
+        ax = fig.add_subplot(gs[2, ci])
+        axb0 = axb0 or ax
+        d = care.filter(pl.col("province") == p).sort("date")
+        # A ROW WITH ONLY ONE HALF OF THE SPLIT IS STILL A CENSUS. Sud-Kivu is
+        # only ever reported as a count of suspected cases in isolation, and a
+        # filter on the total would drop the province entirely.
+        split = d.filter(pl.col("census_confirmed").is_not_null()
+                         | pl.col("census_suspect").is_not_null())
+        whole = d.filter(pl.col("census_confirmed").is_null()
+                         & pl.col("census_suspect").is_null()
+                         & pl.col("census").is_not_null())
+        drawn = split.height + whole.height
+        if whole.height:
+            ax.bar(_dates(whole["date"]), whole["census"].to_list(), width=1.0,
+                   color="#c9c9c9", zorder=2)
+        if split.height:
+            conf = [v or 0 for v in split["census_confirmed"].to_list()]
+            susp = [v or 0 for v in split["census_suspect"].to_list()]
+            xs = _dates(split["date"])
+            ax.bar(xs, conf, width=1.0, color=CONF, zorder=2)
+            ax.bar(xs, susp, width=1.0, bottom=conf, color=SUSP, zorder=2)
+        beds = d.filter(pl.col("beds").is_not_null())
+        if beds.height:
+            ax.step(_dates(beds["date"]), beds["beds"].to_list(), where="mid",
+                    color=BEDS, linewidth=1.3, zorder=3)
+            ax.scatter(_dates(beds["date"]), beds["beds"].to_list(), s=6,
+                       color=BEDS, zorder=3)
+        _state_rug(ax, d.filter(pl.col("census").is_not_null()
+                                | pl.col("census_suspect").is_not_null())
+                   .iter_rows(named=True), "census_licensed")
+
+        rate = (d.filter(pl.col("census").is_not_null()
+                         & pl.col("beds").is_not_null() & (pl.col("beds") > 0))
+                .with_columns((100 * pl.col("census") / pl.col("beds"))
+                              .alias("occ")))
+        sub = (f"median {rate['occ'].median():.0f}% of beds" if rate.height
+               else "no bed count printed")
+        ax.set_title(f"{p}\n{sub}", loc="left", fontsize=9,
+                     fontweight="bold",
+                     color=PROVINCE_COLOR.get(p, "#333333"))
+        if not drawn:
+            ax.text(0.5, 0.5, "no census\nprinted", transform=ax.transAxes,
+                    ha="center", va="center", fontsize=8, color="#999999")
+            ax.set_yticks([])
+        else:
+            top = max([*[v for v in d["census"].to_list() if v is not None],
+                       *[v for v in d["census_suspect"].to_list()
+                         if v is not None],
+                       *[v for v in beds["beds"].to_list()], 1]) * 1.28
+            ax.set_ylim(0, top)
+            ax.yaxis.set_major_locator(MaxNLocator(4))
+        for r in occ["over_100"]:
+            if r["province"] != p:
+                continue
+            ax.annotate(f"{r['occ']:.0f}%",
+                        xy=(mdates.datestr2num(r["date"]), r["census"]),
+                        xytext=(0, 9), textcoords="offset points",
+                        ha="center", va="bottom", fontsize=7.5, color=FLAG,
+                        arrowprops=dict(arrowstyle="-", color=FLAG,
+                                        linewidth=0.8, shrinkA=1, shrinkB=2))
+        ax.set_xlim(xlim)
+        ax.grid(axis="y", **GRID)
+        ax.set_axisbelow(True)
+        ax.tick_params(labelsize=7.5)
+        ax.xaxis.set_major_locator(mdates.MonthLocator())
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %-d"))
+        for sp in ("top", "right"):
+            ax.spines[sp].set_visible(False)
+    axb0.set_ylabel("patients / beds", fontsize=8.5)
+
+    caption(
+        3,
+        "B · Care occupancy against installed capacity. Bars are the "
+        "end-of-day census — confirmed (dark) below suspected (light) where "
+        "the report prints the split, one grey bar where it prints only the "
+        "total; the step line is beds.",
+        f"Province occupancy runs {occ['min']:.0f}% to {occ['max']:.0f}% over "
+        f"{occ['n']} province-days and exceeds capacity on "
+        f"{occ['n_over_100']}. IT CANNOT SEE A FULL CENTRE INSIDE A HALF-FULL "
+        "PROVINCE: this is a ratio of sums over a whole province, and the "
+        "reports name saturated individual treatment centres in a prose "
+        "subsection the care extraction deliberately does not read. Slack "
+        "here is not evidence of free beds where the patients are.")
+
+    # ---- C. the ledger flows ---------------------------------------------
+    axc0, cover = None, []
+    for ci, p in enumerate(cols):
+        ax = fig.add_subplot(gs[4, ci])
+        axc0 = axc0 or ax
+        d = care.filter(pl.col("province") == p).sort("date")
+        adm = d.filter(pl.col("admissions").is_not_null())
+        if adm.height:
+            ax.bar(_dates(adm["date"]), adm["admissions"].to_list(), width=1.0,
+                   color=PROVINCE_COLOR.get(p, "#666666"), alpha=0.85,
+                   zorder=2)
+        # Exits go DOWNWARD, decomposed where the report enumerates the ways
+        # out and as a hollow outline where it prints only the total: the
+        # difference between "no exits" and "exits, not broken down" is a fact
+        # about the report and has to stay visible.
+        ex = d.filter(pl.col("exits").is_not_null()
+                      | pl.any_horizontal(
+                          [pl.col(c).is_not_null() for c, _, _ in EXIT_KIND]))
+        bottom = {r["date"]: 0.0 for r in ex.iter_rows(named=True)}
+        for col, _, colour in EXIT_KIND:
+            part = ex.filter(pl.col(col).is_not_null())
+            if not part.height:
+                continue
+            xs = _dates(part["date"])
+            vals = [-v for v in part[col].to_list()]
+            base = [bottom[dd] for dd in part["date"].to_list()]
+            ax.bar(xs, vals, width=1.0, bottom=base, color=colour, zorder=2)
+            for dd, v in zip(part["date"].to_list(), vals):
+                bottom[dd] += v
+        undec = ex.filter(pl.col("exits").is_not_null())
+        if undec.height:
+            ax.bar(_dates(undec["date"]),
+                   [-v for v in undec["exits"].to_list()], width=1.0,
+                   facecolor="none", edgecolor="#8a8a8a", linewidth=0.8,
+                   zorder=3)
+        ax.axhline(0, color="#999999", linewidth=0.8, zorder=1)
+        # THE RUG COVERS THE ROWS THIS PANEL DRAWS, not every row the province
+        # has. Several rows carry only a contact-follow-up proportion, and a
+        # tick for one of those would claim a ledger entry was checked when no
+        # ledger entry was printed.
+        ledger_dates = sorted(set(adm["date"].to_list()) | set(ex["date"].to_list()))
+        _state_rug(ax, d.filter(pl.col("date").is_in(ledger_dates))
+                   .iter_rows(named=True), "licensed")
+        cover.append(f"{p} {adm.height}/{ex.height}")
+        ax.set_title(p, loc="left", fontsize=9, fontweight="bold",
+                     color=PROVINCE_COLOR.get(p, "#333333"))
+        if not (adm.height or ex.height):
+            ax.text(0.5, 0.5, "no ledger\nprinted", transform=ax.transAxes,
+                    ha="center", va="center", fontsize=8, color="#999999")
+            ax.set_yticks([])
+        else:
+            ax.yaxis.set_major_locator(MaxNLocator(5))
+        ax.set_xlim(xlim)
+        ax.grid(axis="y", **GRID)
+        ax.set_axisbelow(True)
+        ax.tick_params(labelsize=7.5)
+        ax.xaxis.set_major_locator(mdates.MonthLocator())
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %-d"))
+        for sp in ("top", "right"):
+            ax.spines[sp].set_visible(False)
+    axc0.set_ylabel("admissions  ↑ / ↓  exits", fontsize=8.5)
+
+    capc = caption(
+        5,
+        "C · The ledger, faceted by the passage that printed it and never "
+        "summed across facets: the whole-response sentence and a province "
+        f"bullet cover the same patients, and on {both_grains} report days "
+        "both print an exit count, so adding them would double count. "
+        "Admissions are "
+        "always above the line and exits always below it, so which a bar is "
+        "never depends on its colour. Report-days with an admissions figure / "
+        "with any exit figure: " + " · ".join(cover) + ".")
+    handles = [plt.Rectangle((0, 0), 1, 1, facecolor=c, label=lab)
+               for _, lab, c in EXIT_KIND]
+    handles.append(plt.Rectangle((0, 0), 1, 1, facecolor="none",
+                                 edgecolor="#8a8a8a", linewidth=0.8,
+                                 label="exits printed, not broken down"))
+    handles += [plt.Rectangle((0, 0), 1, 1, facecolor=STATE_COLOR[s],
+                              label="head rug — " + STATE_LABEL[s])
+                for s in ("clean", "contradicted", "unchecked")]
+    capc.legend(handles=handles, frameon=False, fontsize=8, loc="lower left",
+                bbox_to_anchor=(0, 0.0), ncol=4, handlelength=1.1,
+                handleheight=1.1, labelspacing=0.45, columnspacing=1.8)
+
+    # ---- D. the absconder counts, as marks ---------------------------------
+    axd = fig.add_subplot(gs[6, :])
+    axd.axvspan(handover, xlim[1], color="#f4f4f4", zorder=0)
+    for p in cols:
+        d = care.filter((pl.col("province") == p)
+                        & pl.col("exits_absconded").is_not_null()).sort("date")
+        if not d.height:
+            continue
+        colour = PROVINCE_COLOR.get(p, "#333333")
+        for x, v in zip(_dates(d["date"]), d["exits_absconded"].to_list()):
+            if v > 0:
+                axd.plot([x, x], [0, v], color=colour, linewidth=1.4, zorder=2)
+                axd.scatter([x], [v], s=26, color=colour, zorder=3)
+            else:
+                # A PRINTED ZERO IS AN OBSERVATION. "aucun évadé" is the report
+                # saying nobody absconded, which is not the report saying
+                # nothing, and showing only the positives would bias the
+                # series upward.
+                axd.scatter([x], [0], s=34, facecolors="none",
+                            edgecolors=colour, linewidths=1.2, zorder=3)
+        axd.scatter([], [], s=26, color=colour, label=p)
+    axd.axvline(handover, color=FLAG, linewidth=1.2, linestyle=(0, (4, 3)),
+                zorder=1)
+    axd.axhline(0, color="#999999", linewidth=0.8, zorder=1)
+    axd.set_xlim(xlim)
+    peak = care["exits_absconded"].max() or 1
+    axd.set_ylim(-1.2, peak * 1.30)
+    axd.set_ylabel("absconded that day", fontsize=8.5)
+    axd.grid(axis="y", **GRID)
+    axd.set_axisbelow(True)
+    axd.legend(frameon=False, fontsize=8, loc="upper left", ncol=6,
+               labelspacing=0.3, columnspacing=1.4, handletextpad=0.4)
+    axd.xaxis.set_major_locator(mdates.WeekdayLocator(byweekday=mdates.MO))
+    axd.xaxis.set_major_formatter(mdates.DateFormatter("%b %-d"))
+    axd.tick_params(labelsize=8)
+    for sp in ("top", "right"):
+        axd.spines[sp].set_visible(False)
+    axd.set_title(
+        textwrap.fill(
+            f"D · Every absconder count the reports print — {absc['n']} "
+            f"province-days in all, {absc['n_after']} of them after the "
+            f"handover, {absc['n_national']} the whole-response figure rather "
+            f"than a province's; printed zeroes, drawn as open rings, the "
+            f"report saying nobody absconded rather than saying nothing: "
+            f"{absc['n_zero']}. "
+            "Marks and stems, never a line: an absconder is a confirmed "
+            "patient who leaves care still infectious, the complement of the "
+            "census, and there is nothing between these days to draw.", 150),
+        loc="left", fontsize=9.5, fontweight="bold")
+
+    _header(fig,
+            "The care ledger the reports state in words",
+            "One row per report and province from the care pillar's prose — "
+            "admissions, exits and the four ways out, the end-of-day census "
+            "with its confirmed and suspected halves, and the beds.\n"
+            "Nothing is published as an observation stream. No row is dropped "
+            "for failing a check: where a report's own numbers disagree the "
+            "row is drawn and flagged, because the disagreement is the "
+            "source's, not the reader's.",
+            title_size=15)
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, dpi=150)
     plt.close(fig)
@@ -1466,10 +2275,17 @@ FIGURES = {
     "streams_detail": (draw_streams_detail,
                        {"zone_table": "data/build/series/zone_table.csv",
                         "caveat": "data/build/series/provisional_caveat.csv",
-                        "summary": "data/build/series/province_summary.csv",
-                        "prose": "data/build/series/prose_provinces.csv",
-                        "lab": "data/build/series/lab_prose.csv",
-                        "banner": "data/build/series/banner.csv"}),
+                        "lab": "data/build/series/lab_prose.csv"}),
+    "national_detail": (draw_national_detail,
+                        {"zone_table": "data/build/series/zone_table.csv",
+                         "caveat": "data/build/series/provisional_caveat.csv",
+                         "summary": "data/build/series/province_summary.csv",
+                         "prose": "data/build/series/prose_provinces.csv",
+                         "banner": "data/build/series/banner.csv"}),
+    "care_ledger": (draw_care_ledger,
+                    {"care": "data/build/series/care_prose.csv",
+                     "banner": "data/build/series/banner.csv",
+                     "caveat": "data/build/series/provisional_caveat.csv"}),
     "availability": (draw_availability,
                      {"zone_table": "data/build/series/zone_table.csv",
                       "zone_status": "data/build/series/zone_table_status.csv",

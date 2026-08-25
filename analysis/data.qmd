@@ -215,8 +215,16 @@ sentences.](../data/build/figures/province_series.png)
 figure("data/build/figures/streams_detail.png")
 ```
 ![Every extracted daily flow by province, with the source's own consolidation
-caveat as the pink rug; national-only series
-separated.](../data/build/figures/streams_detail.png)
+caveat as the pink
+rug.](../data/build/figures/streams_detail.png)
+
+```{python}
+figure("data/build/figures/national_detail.png")
+```
+![The four series the source prints for the country and nowhere else. Two are
+stocks — a reading at an instant, not a flow over a day — so they are drawn as
+levels and never smoothed. Same calendar as the panel
+above.](../data/build/figures/national_detail.png)
 
 The fitted streams are weekly incidence per province, differenced from the
 forward-filled cumulative and binned from day 0
@@ -301,10 +309,36 @@ Markdown(f"""
 """)
 ```
 
+## The care ledger, which is extracted but not published
+
+The reports state a treatment-centre ledger in words, per province, in the
+care pillar's prose: admissions, exits and the four ways out of a centre, the
+end-of-day census with its confirmed and suspected halves, and the installed
+beds. `extract_care_prose.py` reads it into `data/build/series/care_prose.csv`.
+Nothing here is published as an observation stream — that is a contract change
+and a separate decision — but the confirmed census is the quantity a fit would
+want, because it reads a state where every fitted stream reads a flow.
+
+```{python}
+figure("data/build/figures/care_ledger.png")
+```
+![The care ledger the reports state in words. Panel A is the argument: the
+front-page tile and the care pillar's whole-response sentence are two readings
+of the same page by two different readers here, and where both print a
+confirmed isolation census they agree exactly. Panel B is occupancy against
+capacity per province — a ratio of sums, which cannot see a full centre inside
+a half-full province. Panel C is the ledger itself, faceted by the passage that
+printed it and never summed across facets. Panel D is every absconder count the
+reports print, drawn as isolated marks because that is what the data
+are.](../data/build/figures/care_ledger.png)
+
 ## What is not here
 
-The laboratory, alerts, contact-tracing and care-occupancy tables are not yet
-extracted; the reference pipeline reads them and this one will. The front-page
+The laboratory, alerts and contact-tracing tables are not yet extracted; the
+reference pipeline reads them and this one will. The care ledger is read from
+prose only: the patient-movement TABLE the reports also print carries the same
+quantities per province, including absconders, and reading it would roughly
+triple the absconder coverage panel D shows. The front-page
 national dashboard (daily suspected inflow after 12 July) is unread, so the
 national suspected series ends where the early layout stops printing it. The
 {stat(dis.height)} INRB disagreements await adjudication — page reads, then a
