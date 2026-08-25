@@ -260,6 +260,46 @@ def spans(times, left) -> list[int]:
     return out
 
 
+def silent_report_days(times, contributed: list[int], report_days, left) -> list[int]:
+    """Per row, how many report days in its window said NOTHING of this
+    quantity for this place.
+
+    THE COVERAGE STATEMENT FOR A PROSE-DERIVED STREAM. A table prints every
+    province every day or does not exist; a paragraph writes out whichever
+    provinces its author wrote out, and a stream built from one therefore has
+    two different kinds of hole in it -- days on which nobody reported, and
+    days on which somebody reported and did not mention this. A file holding
+    only the rows that exist cannot tell the two apart, so nine observations
+    in three weeks reads the same whether the source published nine times or
+    twenty. Stating the silence per row makes the difference legible without
+    the reader needing the archive: 0 means the previous observation was the
+    previous report day, and anything larger counts the report days in between
+    that passed this quantity over.
+
+    The window is the one `spans` uses -- `(previous time, this time]`, with
+    `left` standing in before the first row -- so the two columns describe the
+    same interval and a consumer can read them together. `contributed` is how
+    many report days fed the row: 1 for a daily or stock row, the bin's
+    `n_report_days` for a weekly one.
+
+    A negative would mean the row rests on report days the calendar does not
+    hold, which is a defect in the calendar rather than a small number, so it
+    raises instead of being clamped.
+    """
+    held = sorted(report_days)
+    out, prev = [], left
+    for t, n in zip(times, contributed):
+        seen = sum(1 for d in held if prev < d <= t)
+        if seen < n:
+            raise SystemExit(
+                f"the report-day calendar holds {seen} day(s) in "
+                f"({prev}, {t}] but a stream row rests on {n}: the calendar "
+                "is missing report days this build read.")
+        out.append(seen - int(n))
+        prev = t
+    return out
+
+
 # ---- THE VOCABULARY THE PUBLISHED FILES ARE DOCUMENTED IN ----------------
 # `data/build/streams/README.md` travels with the vendored data and answers
 # the question `meta.json` cannot: what is `community_deaths_daily_ituri`, and
@@ -269,9 +309,19 @@ def spans(times, left) -> list[int]:
 
 #: `time` aside, these columns describe the ROW rather than observing
 #: anything: how wide its window is, how much of that window the source
-#: reported on, what the page said about that day, and how many provinces fed
-#: it. Every other column in a stream file is an observation.
-METADATA_COLUMNS = ("days_covered", "n_report_days", "flags", "n_provinces")
+#: reported on, what the page said about that day, how many provinces fed it,
+#: and whether the passage it came from closed its own arithmetic. Every other
+#: column in a stream file is an observation.
+#:
+#: THE COVERAGE COLUMNS ARE `n_provinces`, `n_province_days` AND
+#: `n_report_days_silent`, and they exist because a stream that aggregates
+#: over a population must say how much of that population it saw. Reading a
+#: prose-derived total without them turns a coverage deficit into an apparent
+#: reporting deficit -- which is exactly what happened downstream to the
+#: laboratory stream, where a fitted "probability of publication" of ~0.77 was
+#: measuring how much of the country the paragraph had been written out for.
+METADATA_COLUMNS = ("days_covered", "n_report_days", "flags", "n_provinces",
+                    "n_province_days", "n_report_days_silent", "checks")
 
 #: How a row's `time` relates to the count beside it. Passed at every write
 #: site rather than inferred from the filename, because it is a property of
@@ -438,6 +488,7 @@ def stream_facts(path: Path) -> dict:
     return {"n_obs": t.height,
             "first": times[0] if times else "-",
             "last": times[-1] if times else "-",
+            "times": times,
             "all_columns": list(t.columns),
             "columns": [c for c in t.columns
                         if c != "time" and c not in METADATA_COLUMNS]}
@@ -461,7 +512,8 @@ def _aside(path: Path, entry: dict[str, str], shape: str) -> list[str]:
             f"`{path.name}` — {entry['measures']}", "",
             shape, "",
             "Columns: " + ", ".join(f"`{c}`" for c in f["all_columns"])
-            + f". {span}.", ""]
+            + f". {span}.", "",
+            "**How to read it.** " + entry["interpretation"], ""]
 
 
 def data_dictionary(written: list[Written], register: Path, *,
@@ -500,6 +552,22 @@ def data_dictionary(written: list[Written], register: Path, *,
                  "are published: every section of the data dictionary is "
                  "written from the register or not at all.")
 
+    # SAYING WHAT A STREAM MEASURES IS NOT SAYING HOW TO READ IT. The second
+    # sentence is the one that stops a consumer misusing the file -- which
+    # `days_covered` means here, what the coverage column changes, what the
+    # quantity is NOT -- so it is required exactly as the first is, and a
+    # family whose reading is blank stops the build rather than shipping a
+    # stream whose limits nobody wrote down.
+    for key in ("measures", "interpretation"):
+        blank = sorted(f for f, e in families.items()
+                       if not (e.get(key) or "").strip())
+        if blank:
+            sys.exit(
+                f"{FAMILY_REGISTER} has no `{key}` for {blank}. Every family "
+                "needs both: `measures` says what the quantity is, "
+                "`interpretation` says how to read it and where it misleads. "
+                "A stream must not ship with either one missing.")
+
     places = stream_places()
     order = {slug: i for i, slug in enumerate(places)}
     rank = {WEEKLY: 0, DAILY: 1, STOCK: 2}
@@ -534,7 +602,28 @@ def data_dictionary(written: list[Written], register: Path, *,
         "always `time`. "
         + ", ".join(f"`{c}`" for c in METADATA_COLUMNS)
         + " describe the row rather than the epidemic; every other column is "
-        "an observation, and each is named below.", "",
+        "an observation, and each is named below.",
+        "- **A STREAM STATES HOW MUCH OF ITS POPULATION IT SAW, and that is "
+        "part of the contract, not a convention.** Any file whose rows "
+        "aggregate over something — provinces, report days — publishes the "
+        "coverage in a column beside the count, because without it a coverage "
+        "deficit is indistinguishable from an under-reporting one and gets "
+        "fitted as the second. `n_provinces` is how many provinces a row's "
+        "total is the sum over, and `n_province_days` how many "
+        "province-report-days; `n_report_days` is how many report days fed "
+        "the row, and `n_report_days_silent` how many report days fell in the "
+        "same window and said nothing of this quantity for this place. A row "
+        "read without them is a total over an unstated denominator. Streams "
+        "built from a TABLE, which prints every province or does not exist, "
+        "carry `n_report_days` alone; streams built from PROSE, which writes "
+        "out whichever provinces its author wrote out, carry the rest.",
+        "- **`checks` is the source's own arithmetic on the passage a value "
+        "came from**, on the streams read out of prose: `closes` where every "
+        "check bearing on that quantity passed, `contradicts` where one "
+        "failed — the report's numbers disagreeing with each other, kept and "
+        "flagged rather than dropped — and `unchecked` where the passage "
+        "offered nothing to check that quantity against. Unchecked is not "
+        "wrong; it is unverified.", "",
     ]
 
     # A STREAM THAT STOPS EARLY LOOKS EXACTLY LIKE ONE THAT IS UP TO DATE
@@ -544,28 +633,63 @@ def data_dictionary(written: list[Written], register: Path, *,
     # tile after sitrep 080; nothing in a per-file row says so. Derived rather
     # than written into the register, because it must stop being true the day
     # the source resumes -- and a hand-kept note would not.
+    #
+    # SPARSE IS NOT STOPPED, and the difference is measurable rather than a
+    # matter of opinion. A stream the source prints intermittently already
+    # shows long gaps INSIDE it; a trailing gap no larger than those is the
+    # same intermittency continuing, and reporting it as though the series had
+    # ended would raise an alarm about the normal behaviour of the quantity.
+    # A trailing gap wider than any interior one is the thing worth a second
+    # look. Both are listed, and the column says which is which, because the
+    # prose-derived care streams made the distinction load-bearing: several of
+    # them print on a third of report days by nature.
     behind = []
     for w in written:
         if w.path.name == DICTIONARY:
             continue
-        last = stream_facts(w.path)["last"]
-        if last < data_date:
-            gap = (dt.date.fromisoformat(data_date)
-                   - dt.date.fromisoformat(last)).days
-            behind.append((w.path.name, last, gap))
+        f = stream_facts(w.path)
+        last = f["last"]
+        if last >= data_date:
+            continue
+        gap = (dt.date.fromisoformat(data_date)
+               - dt.date.fromisoformat(last)).days
+        days = [dt.date.fromisoformat(t) for t in f["times"]]
+        # None, not 0, where there IS no interior gap: a file with a single
+        # observation has nothing to be compared against, and calling its
+        # trailing gap "wider than any gap inside the stream" would report the
+        # absence of a comparison as a finding.
+        inner = [int((b - a).days) for a, b in zip(days, days[1:])]
+        behind.append((w.path.name, last, gap, max(inner) if inner else None))
     if behind:
         out += [
             "## Streams with no observation at the data date", "",
-            "These stop before the rest of the release. A gap of this size is "
-            "normally the SOURCE having stopped publishing the quantity, not "
-            "this pipeline having failed to read it — but the two look "
-            "identical in the tables below, so check the `written_from` note "
-            "in `registers/stream_families.tsv` before fitting the tail.", "",
+            "These stop before the rest of the release, and the last column "
+            "says whether that is unusual FOR THIS STREAM. A quantity the "
+            "source prints only now and then already has gaps this wide "
+            "inside it, and its trailing gap is that same intermittency "
+            "continuing — not a series that ended. A trailing gap wider than "
+            "any gap inside the stream is the one to look at: it is normally "
+            "the SOURCE having stopped publishing the quantity rather than "
+            "this pipeline having failed to read it, and the `written_from` "
+            "note in `registers/stream_families.tsv` says which, but either "
+            "way the tail should not be fitted as though observation "
+            "continued.", "",
         ]
+        def _days(n: int) -> str:
+            return f"{n} day" if n == 1 else f"{n} days"
+
         out += _table(
-            [[f"`{n}`", last, f"{gap} days"] for n, last, gap in sorted(behind)],
-            ["File", "Last `time`", "Behind the data date"],
-            ["---", "---", "---:"])
+            [[f"`{n}`", last, _days(gap),
+              "—" if widest is None else _days(widest),
+              "cannot say — the file holds one observation"
+              if widest is None else
+              "no — the stream is this intermittent throughout"
+              if gap <= widest else
+              "yes — wider than any gap inside the stream"]
+             for n, last, gap, widest in sorted(behind)],
+            ["File", "Last `time`", "Behind the data date",
+             "Widest gap inside the stream", "Unusual for this stream?"],
+            ["---", "---", "---:", "---:", "---"])
         out += [""]
 
     for family, entry in families.items():
@@ -587,7 +711,10 @@ def data_dictionary(written: list[Written], register: Path, *,
                       ["File", "Place", "Resolution", "Obs", "First `time`",
                        "Last `time`", "Observation column(s)"],
                       ["---", "---", "---", "---:", "---", "---", "---"])
-        out += [""]
+        # HOW TO READ IT, beneath the table that says what is in it. Every
+        # trap listed here has already cost someone in this project real time,
+        # and none of them is visible in a span and a column name.
+        out += ["", "**How to read it.** " + entry["interpretation"], ""]
 
     out += _aside(
         revisions, families["revisions"],
@@ -829,6 +956,91 @@ def orphan_pool_increments(panel: pl.DataFrame, col: str) -> pl.DataFrame:
     return d.group_by("bin").agg(pl.col("inc").sum().alias("count")).sort("bin")
 
 
+# ---- THE CARE LEDGER, PUBLISHED -------------------------------------------
+# The situation reports state a daily care ledger IN WORDS, province by
+# province, under the care pillar: who was admitted, who left and how, and how
+# many people were in the treatment and transit centres at the end of the day.
+# `scripts/extract_care_prose.py` reads it; this is where the parts of it that
+# stand as observations become streams.
+#
+# WHY THE CONFIRMED CENSUS IS THE ONE THAT MATTERS. Every other stream here
+# observes a THINNED FLOW -- a count of events that reached a page, so a model
+# must carry a reporting fraction in front of it and cannot separate that
+# fraction from the rate that produced the events. The census is a STATE: the
+# number of confirmed people in care at an instant. A compartment model reads
+# it directly, `tau*I = dC/dt + delta*C`, with nothing free in front of it, so
+# it is the strongest instrument this archive offers for the isolation rate.
+# It is also the quantity the front-page tile stopped printing on 2 August;
+# the province bullets carry it to the end of the archive.
+
+#: The word the reports' own tables use for the all-provinces column, which is
+#: how the whole-response summary sentence is filed. Mapped onto the same
+#: place slug the rest of the build uses for a national stream.
+CARE_NATIONAL = "Ensemble"
+
+#: family stem -> (the column in care_prose.csv, the checks that bear on it).
+#: ONE ROW PER QUANTITY, and the place is substituted mechanically, exactly as
+#: the documentation register is keyed. A quantity is here only if it stands
+#: on its own as an observation for at least one streamed province; the
+#: cumulative care figures, the bed capacity, the contact-tracing proportion
+#: and the readmission count are extracted but not published, because they are
+#: either not observations of the epidemic or too thin to be one.
+CARE_STREAMS = (
+    ("care_census", "census",
+     ("census_split", "occupancy")),
+    ("care_census_confirmed", "census_confirmed",
+     ("census_split", "occupancy_confirmed", "confirmed_le_census")),
+    ("care_census_suspect", "census_suspect",
+     ("census_split", "occupancy_suspect")),
+    ("care_admissions", "admissions",
+     ("admissions_split",)),
+    ("care_exits", "exits",
+     ("exits_split", "exits_over_total")),
+    ("care_exits_recovered", "exits_recovered",
+     ("exits_split", "recovered_le_exits")),
+    ("care_exits_noncase", "exits_noncase",
+     ("exits_split",)),
+    ("care_exits_absconded", "exits_absconded",
+     ("exits_split",)),
+    ("care_exits_deaths", "exits_deaths",
+     ("exits_split", "deaths_conf_le_deaths")),
+)
+
+#: Which of the families above are STOCKS -- a reading of how many people were
+#: in care at the end of the report day. The rest are FLOWS the report states
+#: for that day, which is why they carry `days_covered` of exactly 1: the
+#: source prints one 24-hour figure and this build never spreads it.
+CARE_STOCK_FAMILIES = frozenset(
+    {"care_census", "care_census_confirmed", "care_census_suspect"})
+
+
+def care_state(checks: str, scope: tuple[str, ...]) -> str:
+    """`closes`, `contradicts` or `unchecked` for one care row and quantity.
+
+    The care extraction runs every arithmetic check a passage makes available
+    and records the verdict, pass or fail, in a `checks` string. Collapsing
+    that to one boolean would put two unlike rows on the same side of it: a
+    row whose printed occupancy disagrees with its own census over its own
+    beds is THE SOURCE CONTRADICTING ITSELF and its value is suspect, while a
+    row that prints a census with nothing beside it to check against is
+    unverified rather than wrong. A consumer that wants only rows the source
+    proved consistent filters on `closes`; one that wants everything the
+    source said keeps all three and weighs them.
+
+    SCOPED TO THE QUANTITY, because a row whose exit decomposition disagrees
+    with itself can still carry a census that closes twice over -- so only the
+    checks in `scope` count. (`scripts/plot_figures.py` states the same three
+    states for the care figure, over a row dict and a precomputed licence
+    boolean; the shapes differ enough that one function would take both a row
+    and a scope and use one or the other.)
+    """
+    got = [c.partition("=") for c in (checks or "").split(";") if c]
+    rel = [(name, verdict) for name, _, verdict in got if name in scope]
+    if not rel:
+        return "unchecked"
+    return "closes" if all(v == "pass" for _, v in rel) else "contradicts"
+
+
 def populations(geojson: Path, pop_csv: Path) -> dict[str, float]:
     """Full-province denominators: every zone in the province, affected or not.
 
@@ -878,6 +1090,11 @@ def main() -> None:
     ap.add_argument("--banner", type=Path, default=None,
                     help="banner.csv: the front-page census of people in "
                          "isolation and the cumulative recoveries")
+    ap.add_argument("--care", type=Path, default=None,
+                    help="care_prose.csv: the daily care ledger the reports "
+                         "state in words, per province -- the isolation "
+                         "census with its confirmed half, the admissions and "
+                         "the exit decomposition")
     ap.add_argument("--caveat", type=Path, default=None,
                     help="provisional_caveat.csv, so daily rows carry the "
                          "source's own consolidation flags")
@@ -911,6 +1128,20 @@ def main() -> None:
              if args.prose and args.prose.exists() else None)
     banner = (pl.read_csv(args.banner, infer_schema_length=None)
               if args.banner and args.banner.exists() else None)
+    care = (pl.read_csv(args.care, infer_schema_length=None)
+            if args.care and args.care.exists() else None)
+
+    # THE REPORT-DAY CALENDAR: every date the archive holds a report for, which
+    # is the denominator the coverage columns are counted against. Taken from
+    # the front-page reader, which reads every report including the ones whose
+    # vintage prints no zone table, and unioned with the panel so it is still
+    # right if the banner is not built. Derived, never listed: a hand-kept
+    # calendar would drift from the archive the first time a report landed.
+    report_days = {dt.date.fromisoformat(d)
+                   for d in panel["date"].unique().to_list()}
+    if banner is not None:
+        report_days |= {dt.date.fromisoformat(d)
+                        for d in banner["date"].unique().to_list()}
 
     # The source's own words about each report day, read here rather than at
     # the daily block below because the carry-forward record wants them too:
@@ -1419,7 +1650,8 @@ def main() -> None:
             daily = (lab.with_columns(pl.col("date").str.to_date())
                      .group_by("date")
                      .agg(pl.col("samples").sum(), pl.col("positives").sum(),
-                          pl.len().alias("n_prov")))
+                          pl.len().alias("n_prov"),
+                          pl.col("province").alias("provs")))
             weekly = (daily.with_columns(
                           (((pl.col("date") - pl.lit(DAY0)).dt.total_days() - 1)
                            // BIN_DAYS).alias("bin"))
@@ -1427,21 +1659,41 @@ def main() -> None:
                       .agg(pl.col("samples").sum(), pl.col("positives").sum(),
                            pl.col("date").max().alias("time"),
                            pl.len().alias("n_report_days"),
-                           pl.col("n_prov").sum().alias("n_province_days"))
+                           pl.col("n_prov").sum().alias("n_province_days"),
+                           pl.col("provs").flatten().n_unique()
+                           .alias("n_provinces"))
                       .sort("bin"))
             weekly = carried(weekly, "lab_national", "positives_national",
                              count_col="positives")
             weekly = carried(weekly, "lab_national", "tests_national",
                              count_col="samples")
+            # THE WEEKLY FILE WAS THE ONE WITHOUT A COVERAGE COLUMN, and it is
+            # the one a consumer reaches for first. Its total is a sum over
+            # however many report days AND however many provinces licensed a
+            # sentence that week, and both vary; the daily companion has said
+            # so since it was written, and the bin totals were only ever
+            # recoverable from `meta.json`. `n_provinces` is how many distinct
+            # provinces appear in the bin at all and `n_province_days` how
+            # many province-days were summed, so `n_province_days /
+            # n_report_days` is the mean breadth the bin's total rests on --
+            # the number that decides whether a shortfall against the case
+            # series is reporting or composition.
+            lab_first = daily["date"].min() - dt.timedelta(days=1)
             write_stream(
                 weekly.with_columns(
                     pl.Series("days_covered",
-                              spans(weekly["time"].to_list(),
-                                    daily["date"].min() - dt.timedelta(days=1))))
+                              spans(weekly["time"].to_list(), lab_first)),
+                    pl.Series("n_report_days_silent",
+                              silent_report_days(
+                                  weekly["time"].to_list(),
+                                  weekly["n_report_days"].to_list(),
+                                  report_days, lab_first)))
                 .select(pl.col("time").dt.to_string("%Y-%m-%d"),
                         pl.col("positives").alias("positives_national"),
                         pl.col("samples").alias("tests_national"),
-                        "days_covered", "n_report_days"),
+                        "days_covered", "n_report_days",
+                        "n_report_days_silent", "n_provinces",
+                        "n_province_days"),
                 args.out_dir / "lab_national.tsv", WEEKLY)
             # THE DAILY FORM IS THE COVERAGE-HONEST ONE, and this stream needs
             # it most: a weekly total is the sum over however many report-days
@@ -1461,12 +1713,18 @@ def main() -> None:
                          count_col="positives", time_col="date", flags=fl)
             dl = carried(dl, "lab_daily_national", "tests_national",
                          count_col="samples", time_col="date", flags=fl)
+            dl_silent = silent_report_days(
+                dl["date"].to_list(), [1] * dl.height, report_days,
+                dl["date"].min() - dt.timedelta(days=1))
             write_stream(
-                dl.with_columns(pl.lit(1, pl.Int64).alias("n_report_days"))
+                dl.with_columns(
+                    pl.lit(1, pl.Int64).alias("n_report_days"),
+                    pl.Series("n_report_days_silent", dl_silent))
                 .select(pl.col("date").dt.to_string("%Y-%m-%d").alias("time"),
                         pl.col("positives").alias("positives_national"),
                         pl.col("samples").alias("tests_national"),
                         "days_covered", "n_report_days",
+                        "n_report_days_silent",
                         pl.col("n_prov").alias("n_provinces"), "flags"),
                 args.out_dir / "lab_daily_national.tsv", DAILY)
             recon["lab_daily_national"] = {
@@ -1476,6 +1734,7 @@ def main() -> None:
                 "n_provinces": {"median": float(dl["n_prov"].median()),
                                 "min": int(dl["n_prov"].min()),
                                 "max": int(dl["n_prov"].max())},
+                "report_days_silent": int(sum(dl_silent)),
                 **carry_note("lab_daily_national", "positives_national"),
             }
             # PER-PROVINCE DAILY LABORATORY STREAMS, so a consumer never has
@@ -1506,18 +1765,29 @@ def main() -> None:
                 d = d.with_columns(daily_flags(d["date"], caveat, exceptions,
                                                prov))
                 name = f"lab_daily_{slug}"
+                # SINGLE-PROVINCE BY CONSTRUCTION, so `n_provinces` would say
+                # 1 on every row and state nothing. The coverage question that
+                # remains is the other one: the laboratory paragraph does not
+                # write this province out every report day, and a file holding
+                # only the days it did cannot say how many it skipped.
+                silent = silent_report_days(
+                    d["date"].to_list(), [1] * d.height, report_days,
+                    d["date"].min() - dt.timedelta(days=1))
                 write_stream(
-                    d.with_columns(pl.lit(1, pl.Int64).alias("n_report_days"))
+                    d.with_columns(pl.lit(1, pl.Int64).alias("n_report_days"),
+                                   pl.Series("n_report_days_silent", silent))
                     .select(pl.col("date").dt.to_string("%Y-%m-%d")
                             .alias("time"),
                             pl.col("positives").alias(f"positives_{slug}"),
                             pl.col("samples").alias(f"tests_{slug}"),
-                            "days_covered", "n_report_days", "flags"),
+                            "days_covered", "n_report_days",
+                            "n_report_days_silent", "flags"),
                     args.out_dir / f"{name}.tsv", DAILY)
                 recon[name] = {
                     "n_obs": d.height,
                     "tests": int(d["samples"].sum()),
                     "positives": int(d["positives"].sum()),
+                    "report_days_silent": int(sum(silent)),
                 }
             # Cross-check: a day's positives should be the day's newly
             # confirmed cases, province by province. Equality on most dates is
@@ -1539,6 +1809,7 @@ def main() -> None:
                 "report_days": int(daily.height),
                 "per_bin": [{"bin": int(r["bin"]), "time": str(r["time"]),
                              "n_report_days": int(r["n_report_days"]),
+                             "n_provinces": int(r["n_provinces"]),
                              "n_province_days": int(r["n_province_days"])}
                             for r in weekly.iter_rows(named=True)],
                 "positives_vs_new_cases": {
@@ -1578,6 +1849,89 @@ def main() -> None:
                           "last_date": d["date"][-1],
                           "first_value": int(d[col][0]),
                           "last_value": int(d[col][-1])}
+
+    # ---- THE CARE LEDGER, PER PROVINCE -------------------------------
+    # The care pillar states its ledger in words, one bullet per province, and
+    # the bullets keep printing the confirmed isolation census after the
+    # front-page tile stopped on 2 August. See CARE_STREAMS above for why the
+    # confirmed census is the quantity this block exists for.
+    #
+    # NO CARRY-FORWARD, and none is possible or wanted. These are not
+    # differences of a cumulative: every value is a figure the report states
+    # for that day, so there is no revision for a deficit to represent and no
+    # later row for one to come out of. A negative here would be an extraction
+    # defect rather than the source withdrawing cases, and the non-negativity
+    # gate reads these files back off disk like all the others.
+    #
+    # ONE FILE PER QUANTITY PER PLACE, never one wide file per province. The
+    # bullets print different quantities on different days -- Ituri states a
+    # census on 37 report days and its confirmed half on 23 -- so a shared
+    # table would be mostly holes, and a hole in a stream file is a row a
+    # consumer has to decide about. A file that carries only the days its
+    # quantity was printed needs no such decision, and `n_report_days_silent`
+    # is where the days it was not printed are stated.
+    if care is not None and not care.is_empty():
+        care_places = dict(STREAM_PROVINCES) | {CARE_NATIONAL: "national"}
+        cd = care.with_columns(pl.col("date").str.to_date())
+        for family, col, scope in CARE_STREAMS:
+            stock = family in CARE_STOCK_FAMILIES
+            for prov, slug in care_places.items():
+                d = (cd.filter((pl.col("province") == prov)
+                               & pl.col(col).is_not_null())
+                     .sort("date"))
+                if d.is_empty():
+                    continue
+                name = f"{family}_{slug}"
+                obs = f"{col}_{slug}"
+                left = d["date"].min() - dt.timedelta(days=1)
+                silent = silent_report_days(d["date"].to_list(),
+                                            [1] * d.height, report_days, left)
+                state = [care_state(c, scope) for c in d["checks"].to_list()]
+                d = d.with_columns(
+                    pl.Series("n_report_days_silent", silent),
+                    pl.Series("checks", state, dtype=pl.Utf8),
+                    pl.col(col).cast(pl.Int64).alias(obs))
+                if stock:
+                    # A reading at the end of the report day: no accumulation
+                    # window at all, so no `days_covered` and no
+                    # `n_report_days` -- the rule `uganda_exports` follows.
+                    cols = [pl.col("date").dt.to_string("%Y-%m-%d")
+                            .alias("time"), obs,
+                            "n_report_days_silent", "checks"]
+                    resolution = STOCK
+                else:
+                    # `days_covered` IS 1 ON EVERY ROW, AND THAT IS THE POINT.
+                    # The report states one 24-hour figure for the day it
+                    # covers; a row three report days after the last one still
+                    # holds one day of flow, so writing the calendar gap here
+                    # would invite a consumer to divide by it and read a rate
+                    # a third of the truth. The gap is in
+                    # `n_report_days_silent` instead, where it cannot be
+                    # mistaken for a window.
+                    d = d.with_columns(
+                        pl.lit(1, pl.Int64).alias("days_covered"),
+                        pl.lit(1, pl.Int64).alias("n_report_days"),
+                        daily_flags(d["date"], caveat, exceptions,
+                                    prov if prov != CARE_NATIONAL
+                                    else "national"))
+                    cols = [pl.col("date").dt.to_string("%Y-%m-%d")
+                            .alias("time"), obs, "days_covered",
+                            "n_report_days", "n_report_days_silent",
+                            "checks", "flags"]
+                    resolution = DAILY
+                write_stream(d.select(cols), args.out_dir / f"{name}.tsv",
+                             resolution)
+                recon[name] = {
+                    "n_obs": d.height, "kind": "care",
+                    "resolution": resolution,
+                    "first_date": str(d["date"][0]),
+                    "last_date": str(d["date"][-1]),
+                    "total": int(d[obs].sum()),
+                    "report_days_silent": int(sum(silent)),
+                    "checks": {v: state.count(v)
+                               for v in ("closes", "contradicts", "unchecked")
+                               if state.count(v)},
+                }
 
     # ---- THE RECORD OF WHAT THE CARRY-FORWARD DID --------------------
     # GENERATED, never hand-maintained. A curated list would go stale the first
@@ -1636,6 +1990,12 @@ def main() -> None:
         uganda=args.uganda_stream))
 
     for name, r in sorted(recon.items()):
+        if r.get("kind") == "care":
+            ch = ", ".join(f"{k} {v}" for k, v in r["checks"].items())
+            print(f"  {name:<34} {r['n_obs']:>3} obs   {r['first_date']} -> "
+                  f"{r['last_date']}   {r['report_days_silent']:>3} report "
+                  f"day(s) silent   [{ch}]")
+            continue
         if r.get("kind") == "stock":
             print(f"  {name:<26} {r['n_obs']:>3} obs   {r['first_value']} "
                   f"({r['first_date']}) -> {r['last_value']} ({r['last_date']})"

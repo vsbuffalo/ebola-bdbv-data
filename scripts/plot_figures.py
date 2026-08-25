@@ -260,6 +260,19 @@ RELEASE_GROUPS = [
         ("patients_isolated_confirmed", "isolation, confirmed"),
         ("cumul_recovered", "recovered, cumul."),
     ]),
+    # THE CONFIRMED CARE CENSUS, which is the one row of the care ledger that
+    # belongs on this figure: it carries the confirmed isolation census past
+    # 2 August, where the national `patients_isolated_confirmed` row above it
+    # stops, and the two together are the argument for reading it at all. The
+    # rest of the care ledger -- admissions, exits and their decomposition --
+    # is published and documented but not drawn here, because thirty more
+    # rows would make the grid unreadable and say nothing this one does not.
+    ("care census\n(confirmed)", [
+        ("care_census_confirmed_ituri", "Ituri"),
+        ("care_census_confirmed_nord_kivu", "Nord-Kivu"),
+        ("care_census_confirmed_haut_uele", "Haut-Uélé"),
+        ("care_census_confirmed_national", "national"),
+    ]),
 ]
 
 #: Flattened, top to bottom -- the registry's dependency set is derived from
@@ -316,6 +329,15 @@ def draw_release_grid(inputs: dict[str, Path], out: Path) -> None:
     holes are the argument: the laboratory rows stop where the paragraph stops
     naming provinces, and the two stock rows begin late because the early
     dashboard prints its tiles above their labels rather than below.
+
+    ONE ROW PER STREAM, AT ONE RESOLUTION, over a chosen set: the daily
+    companion of each incidence family, the national stocks, and the confirmed
+    care census. The weekly files are the same quantities re-binned and would
+    draw the same picture at a coarser pitch; the rest of the care ledger is
+    published and documented in `data/build/streams/README.md` but not drawn,
+    because thirty further rows would cost the grid its legibility. RELEASE
+    GROUPS above is the list, and it is what a reader should be pointed at
+    when they ask whether the release contains something not on this slide.
 
     Three annotation layers, all drawn from artefacts rather than typed in:
       * cell colour   -- the row's own `flags`, so backlog and harmonisation
@@ -548,9 +570,13 @@ def draw_release_grid(inputs: dict[str, Path], out: Path) -> None:
     d0 = dt.date.fromisoformat(all_dates[0])
     d1 = dt.date.fromisoformat(all_dates[-1])
     span = f"{d0:%b\\ %-d}\\ to\\ {d1:%b\\ %-d,%Y}"
+    # `streams drawn`, NOT `published streams`. The release ships more files
+    # than this grid has rows -- the weekly re-binnings of these same
+    # quantities, and the rest of the care ledger -- and a subtitle that
+    # counted rows while calling them the release would understate it.
     fig.text(0.008, 0.951,
              f"{nx} report-days carrying at least one observation \u00b7 "
-             f"{ny} published streams \u00b7 $\\bf{{{span}}}$",
+             f"{ny} streams drawn \u00b7 $\\bf{{{span}}}$",
              ha="left", va="top", fontsize=11, color="#555555")
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, dpi=200)

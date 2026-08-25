@@ -16,6 +16,161 @@ carries the rest.
 
 ---
 
+## `data/2026-08-22-r4` — 2026-08-24 — the care ledger published, and coverage stated on every prose-derived stream
+
+**Additive, and not breaking.** No stream file is renamed or removed, no
+observation column is renamed, and **no published value changes**: every
+observation in `data/2026-08-22-r3` is present here with the same value at the
+same `time`, and `revisions.tsv` is byte-identical. Thirty-two new stream files
+are added, and five existing files gain metadata columns beside their unchanged
+counts. `meta.json` gains a `reconciliation` entry per new stream and a
+coverage field on the laboratory ones; nothing in it is removed or revalued.
+
+**What a consumer must do.** Nothing, to keep working. A model pinned to
+`r3` reads every file it read before, with the same columns present and the
+same numbers in them, and can move the pin to `r4` without touching a
+`columns { }` declaration. To pick the new streams up: re-vendor, then read
+`data/build/streams/README.md`, whose per-family **How to read it** block is
+new in this release and states the construction and the limits of every
+stream, not only the new ones. If your reader validates a file's column set
+exactly rather than by name lookup, the five laboratory files below will need
+that list extended.
+
+### The care ledger becomes observation streams
+
+`data/build/series/care_prose.csv` shipped at `r2` and was drawn at `r3`;
+nothing was published from it. It is now the source of nine stream families,
+one file per quantity per place, written only where the source states that
+quantity for that place at all. **The priority quantity is the confirmed
+isolation census** (`care_census_confirmed_*`): unlike every count stream in
+this release it reads a **state** rather than a thinned flow, so a compartment
+model relates it to the latent infectious pool with no reporting fraction free
+in front of it. It is validated against an independent reader in this
+repository — on all 24 report days where the front-page ISOLEMENT/CTE tile and
+the care prose both print a confirmed census, they agree exactly — and it is
+what carries that census past 2 August, where `patients_isolated_confirmed`
+stops because the source stopped printing the tile.
+
+| family | files | what it is | Ituri | Nord-Kivu | Haut-Uélé | national |
+|---|---|---|---:|---:|---:|---:|
+| `care_census_confirmed` | 4 | confirmed people in care, a stock | 23 | 17 | 6 | 27 |
+| `care_census_suspect` | 4 | suspected people in care, a stock | 23 | 16 | 6 | 27 |
+| `care_census` | 4 | both together, a stock | 37 | 23 | 9 | 27 |
+| `care_admissions` | 3 | admitted over the report day | 28 | 24 | 7 | — |
+| `care_exits` | 3 | left care by any route | 23 | 18 | — | 14 |
+| `care_exits_recovered` | 4 | discharged as recovered | 36 | 21 | 5 | 14 |
+| `care_exits_noncase` | 3 | discharged after testing negative | 6 | 10 | — | 14 |
+| `care_exits_absconded` | 3 | absconded | 8 | 1 | — | 14 |
+| `care_exits_deaths` | 4 | died in care | 19 | 16 | 2 | 14 |
+
+Observation counts are at this data date and are regenerated into
+`data/build/streams/README.md` on every build. The census families are
+**stocks** — readings at the end of the report day, with no accumulation
+window, so they must not be differenced into an incidence. The exit and
+admission families are **flows the report states for the report day itself**,
+so `days_covered` is 1 on every row whatever the gap to the previous one: the
+source prints one 24-hour figure and this build never spreads it. The gap is in
+`n_report_days_silent` instead, where it cannot be mistaken for a window.
+
+**Absconders are published despite being the thinnest thing here**, because
+they are the only observation of a route back into the community while still
+infectious: 24 province-days in the whole archive, five of them after 2 August,
+and `care_exits_absconded_nord_kivu.tsv` holds a single row. The scarcity is in
+the files rather than left to be discovered — the `Obs` column of the
+dictionary, `n_report_days_silent` per row, and an explicit warning that a
+report which does not mention absconders is **silent, not reporting none**.
+
+**What was extracted and deliberately not published**, so a consumer does not
+go looking: the confirmed/suspected split of admissions (Ituri prints it on 0
+of its 28 admission days, so the family would exist for two provinces only);
+the confirmed subset of deaths in care (7 and 2 province-days); transfers to a
+general hospital (2 and 1); readmissions (Ituri only, 5); installed bed
+capacity and the printed occupancy percentage, which are capacity and a check
+rather than observations of the epidemic; and the contact-tracing proportion.
+All remain in `data/build/series/care_prose.csv`.
+
+### Every prose-derived stream now states its coverage in a column
+
+The rule this encodes: **a stream that aggregates over a population must
+publish how much of that population it saw.** It is written into the "Reading
+any row" section of the data dictionary as a stated contract.
+
+It comes from a real failure. Read without `n_provinces`, the national
+laboratory stream carries about 23 % fewer positives than the case series over
+the report days both cover, and that shortfall was very nearly fitted as a
+probability of publication. Split by coverage it is not reporting at all:
+report days whose laboratory paragraph covers three or four provinces agree
+with the case series to within about a percent, two-province days sit near
+0.76, one-province days near 0.30, and the average of those is the 0.77 that
+was almost taken for a parameter.
+
+| file | columns added |
+|---|---|
+| `lab_national.tsv` | `n_report_days_silent`, `n_provinces`, `n_province_days` |
+| `lab_daily_national.tsv` | `n_report_days_silent` |
+| `lab_daily_ituri.tsv`, `lab_daily_nord_kivu.tsv`, `lab_daily_haut_uele.tsv` | `n_report_days_silent` |
+
+`lab_national.tsv` is the weekly file and had no coverage column at all, though
+its daily companion has carried `n_provinces` since it was written; its per-bin
+province-day counts existed only inside `meta.json`. `n_provinces` is how many
+distinct provinces appear in the bin and `n_province_days` how many
+province-days were summed, so `n_province_days / n_report_days` is the mean
+breadth a bin's total rests on.
+
+`n_report_days_silent` is the coverage statement for a **single-place** prose
+stream, where `n_provinces` would say 1 on every row and mean nothing: it
+counts the report days that fell in the row's window and said nothing of that
+quantity for that place. Zero means the previous observation was the previous
+report day. It is on all thirty-two care files and all five laboratory files.
+The per-province laboratory files were adequate on the province axis by
+construction and now state the report-day axis too; the table-derived case,
+death and community-death streams are unchanged, because a table prints every
+province or does not exist.
+
+**`checks`** is also new, on the care files only: the source's own arithmetic
+on the passage a value came from, as `closes`, `contradicts` or `unchecked`.
+No row is dropped for failing a check — a report contradicting itself is a
+finding about the source — but `contradicts` marks the rows where it does, and
+`unchecked` marks a passage that offered nothing to check against, which is
+unverified rather than wrong.
+
+### The data dictionary now says how to read each stream, and fails closed on it
+
+`registers/stream_families.tsv` gains an `interpretation` column beside
+`measures`, rendered under each family's table as **How to read it**, and a
+family with either sentence blank now stops the build. Saying what a stream
+measures is not saying how to read it, and the traps are not visible in a span
+or a column name: that `days_covered` means an accumulation window in a
+differenced stream and only a calendar gap in a summed-flow one; that
+laboratory positives include post-mortem confirmations and re-swabs of already
+confirmed patients (6.6 % to 26.9 % of positives across the seven reports that
+print the decomposition), so they are not new live confirmations; that the
+community-death column counts only deaths **first confirmed at death**, so an
+already-confirmed person's death cannot enter it and it does not observe a
+transition out of the confirmed-case compartment; that weekly and daily files
+are one quantity at two resolutions and
+fitting both double-counts; that the national files are the source's printed
+national row and are not meant to equal the sum of the provinces.
+
+The dictionary's "Streams with no observation at the data date" section now
+distinguishes **sparse from stopped**, by comparing each stream's trailing gap
+against the widest gap inside it. The care streams are intermittent by nature
+and would otherwise all have read as failures; the four whose trailing gap is
+genuinely unusual are the `_national` care files and
+`patients_isolated_confirmed`, which stop together on 2 August because the
+source stopped printing both the tile and the whole-response summary sentence.
+
+### One figure changed
+
+`docs/figures/release_grid.png` gains a `care census (confirmed)` group of four
+rows, so the figure that says what the release contains shows the stream this
+release is about, and its subtitle now says *streams drawn* rather than
+*published streams* — the release ships more files than the grid has rows. The
+rest of the care ledger is documented but not drawn; thirty more rows would
+cost the grid its legibility.
+
+---
+
 ## `data/2026-08-22-r3` — 2026-08-24 — figures only: the care ledger drawn, and one panel split in two
 
 **Also in this tag, and the reason a consumer may need it:** `make check` no

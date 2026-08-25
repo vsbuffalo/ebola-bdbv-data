@@ -2571,3 +2571,346 @@ def test_the_figure_registry_declares_every_input_each_figure_reads():
     assert "banner" not in P.FIGURES["streams_detail"][1], \
         "the banner moved to national_detail with the panels that read it"
     assert "banner" in P.FIGURES["national_detail"][1]
+
+
+# --------------------------------------------------------------------------
+# THE CARE LEDGER AS PUBLISHED STREAMS
+#
+# `care_prose.csv` was extracted and drawn without anything being published
+# from it. These pin what is published now: that the streams carry the
+# extraction's numbers unaltered, that the confirmed census -- the quantity the
+# release exists for -- holds the observations it should, that a flow row
+# covers one day and not the calendar gap, and that a stock carries no
+# accumulation window at all.
+# --------------------------------------------------------------------------
+
+CARE_PROSE = BUILD / "care_prose.csv"
+needs_care_streams = pytest.mark.skipif(
+    not CARE_PROSE.exists() or not any(STREAMS.glob("care_*.tsv")),
+    reason="the care streams are not built; run `make build && make streams`")
+
+#: The reports' word for the all-provinces column -> the slug the build files
+#: it under. Read off the build rather than retyped, so a change there fails
+#: here rather than passing against a stale copy.
+CARE_PLACES = dict(BS.STREAM_PROVINCES) | {BS.CARE_NATIONAL: "national"}
+
+
+def _care_files():
+    return sorted(STREAMS.glob("care_*.tsv"))
+
+
+def _care_stream(path):
+    """`(province, source column, the published frame)` for one care file."""
+    t = pl.read_csv(path, separator="\t", infer_schema_length=None)
+    obs = [c for c in t.columns if c not in BS.METADATA_COLUMNS and c != "time"]
+    assert len(obs) == 1, f"{path.name} publishes {obs}, expected one column"
+    for prov, slug in CARE_PLACES.items():
+        if path.stem.endswith("_" + slug):
+            return prov, obs[0][: -(len(slug) + 1)], t
+    raise AssertionError(f"{path.name} names no place this build streams")
+
+
+def _synthetic_care(path):
+    """A minimal care ledger over the synthetic panel's report days: one
+    province stating a census with its confirmed half, on two of the four.
+
+    Every column the build harvests is present, empty where the passage says
+    nothing -- the shape `extract_care_prose.py` writes. The column list comes
+    off `CARE_STREAMS` so it cannot drift from what the build reads.
+    """
+    quantities = [col for _, col, _ in BS.CARE_STREAMS]
+    rows = []
+    for date, census, conf in (("2026-05-20", 10, 4), ("2026-05-22", 12, 5)):
+        row = {"sitrep": 5, "date": date, "province": "Ituri"}
+        row |= {q: None for q in quantities}
+        row |= {"census": census, "census_confirmed": conf,
+                "census_suspect": census - conf,
+                "checks": "census_split=pass", "licensed": True,
+                "census_licensed": True, "sentence": "-"}
+        rows.append(row)
+    pl.DataFrame(rows).write_csv(path)
+
+
+@needs_care_streams
+def test_the_care_streams_carry_exactly_what_the_extraction_read():
+    """No filtering, no re-derivation, no rounding. Every row the extraction
+    holds for that province and that column is published, at the same date and
+    with the same value -- including the rows whose own arithmetic did not
+    close, which are kept and flagged rather than dropped, because a report
+    contradicting itself is a finding about the source."""
+    care = pl.read_csv(CARE_PROSE, infer_schema_length=None)
+    assert _care_files(), "no care streams were written"
+    for path in _care_files():
+        prov, col, got = _care_stream(path)
+        want = (care.filter((pl.col("province") == prov)
+                            & pl.col(col).is_not_null())
+                .sort("date"))
+        assert got["time"].to_list() == want["date"].to_list(), path.name
+        assert got[got.columns[1]].to_list() == want[col].to_list(), path.name
+
+
+@needs_care_streams
+def test_the_confirmed_census_holds_the_observations_the_release_rests_on():
+    """THE PRIORITY QUANTITY. It reads a state rather than a thinned flow, so
+    it constrains the isolation rate with no reporting fraction in front of it
+    -- and it is thin, which is the thing a consumer must see before fitting
+    it. Ituri and Nord-Kivu are the two provinces the models pin; the split at
+    2 August is where the front-page tile stopped and these files became the
+    only route to the quantity."""
+    counts = {}
+    for slug in ("ituri", "nord_kivu"):
+        t = pl.read_csv(STREAMS / f"care_census_confirmed_{slug}.tsv",
+                        separator="\t", infer_schema_length=None)
+        counts[slug] = (t.height,
+                        t.filter(pl.col("time") > "2026-08-02").height)
+    assert counts == {"ituri": (23, 9), "nord_kivu": (17, 10)}
+    # The national file is the whole-response summary sentence, which stopped
+    # on the same report as the tile -- so nothing national survives the split.
+    nat = pl.read_csv(STREAMS / "care_census_confirmed_national.tsv",
+                      separator="\t", infer_schema_length=None)
+    assert nat["time"].max() == "2026-08-02"
+
+
+@needs_care_streams
+def test_a_care_flow_row_covers_one_day_and_never_the_calendar_gap():
+    """The single most dangerous thing a consumer could do with these files.
+
+    The report states one 24-hour figure for the report day, so a row landing
+    seven days after the previous one still holds ONE day of admissions --
+    `days_covered` is 1, and dividing by the calendar gap would read a rate a
+    seventh of the truth. The gap is published too, as `n_report_days_silent`,
+    where it cannot be mistaken for a window.
+    """
+    seen_gap = False
+    for path in _care_files():
+        t = pl.read_csv(path, separator="\t", infer_schema_length=None)
+        if "days_covered" not in t.columns:
+            continue                       # a stock; the test below covers it
+        assert set(t["days_covered"].to_list()) == {1}, path.name
+        assert set(t["n_report_days"].to_list()) == {1}, path.name
+        seen_gap |= t["n_report_days_silent"].max() > 0
+    assert seen_gap, "no care flow stream reports a silent report day"
+
+
+@needs_care_streams
+def test_the_census_streams_carry_no_accumulation_window():
+    """A stock is a reading at an instant, so a span column would assert an
+    interval that does not exist -- the rule `uganda_exports` follows. It must
+    still state its coverage, which for a single-place stream is how many
+    report days went by saying nothing."""
+    for path in STREAMS.glob("care_census*.tsv"):
+        t = pl.read_csv(path, separator="\t", infer_schema_length=None)
+        assert "days_covered" not in t.columns, path.name
+        assert "n_report_days" not in t.columns, path.name
+        assert "n_report_days_silent" in t.columns, path.name
+
+
+@needs_care_streams
+def test_the_absconder_streams_are_published_thin_and_say_how_thin():
+    """Published because nothing else observes a route back into the community
+    while still infectious, and published WITH its scarcity visible rather than
+    left to be discovered: one file holds a single row, and a report that does
+    not mention absconders is silent rather than reporting none, so no zero is
+    manufactured to fill the gap."""
+    files = sorted(STREAMS.glob("care_exits_absconded_*.tsv"))
+    assert [p.stem.replace("care_exits_absconded_", "") for p in files] \
+        == ["ituri", "national", "nord_kivu"]
+    obs = {}
+    for p in files:
+        t = pl.read_csv(p, separator="\t", infer_schema_length=None)
+        obs[p.stem] = t.height
+        assert (t[t.columns[1]] >= 0).all()
+        assert t["n_report_days_silent"].min() >= 0
+    assert obs["care_exits_absconded_nord_kivu"] == 1
+    assert obs["care_exits_absconded_ituri"] == 8
+    assert obs["care_exits_absconded_national"] == 14
+
+
+def test_care_state_scopes_the_verdict_to_the_quantity_it_describes():
+    """Three states, not two, and each scoped to the closures that bear on the
+    published column. A row whose exit decomposition disagrees with itself can
+    still carry a census that closes twice over, so the census stream must not
+    inherit the exits' failure -- and a passage with nothing to check against
+    is unverified, which is a different claim from wrong."""
+    census = ("census_split", "occupancy_confirmed")
+    assert BS.care_state("census_split=pass;occupancy_confirmed=pass",
+                         census) == "closes"
+    assert BS.care_state("census_split=fail;confirmed_le_census=pass",
+                         census) == "contradicts"
+    assert BS.care_state("confirmed_le_census=pass", census) == "unchecked"
+    assert BS.care_state("", census) == "unchecked"
+    # The exits failing says nothing about the census.
+    row = "exits_split=fail;census_split=pass"
+    assert BS.care_state(row, census) == "closes"
+    assert BS.care_state(row, ("exits_split",)) == "contradicts"
+
+
+# --------------------------------------------------------------------------
+# THE COVERAGE CONTRACT
+#
+# A stream that aggregates over a population must publish how much of that
+# population it saw. The rule is pinned here because breaking it cost real
+# time downstream: without `n_provinces` the national laboratory stream's
+# coverage deficit reads exactly like an under-reporting one, and was very
+# nearly fitted as a probability of publication.
+# --------------------------------------------------------------------------
+
+#: Every published stream read out of PROSE rather than off a drawn table.
+#: A table prints every province or does not exist; a paragraph writes out
+#: whichever provinces its author wrote out, which is the whole difference.
+PROSE_PREFIXES = ("lab_", "care_")
+
+
+def _prose_streams():
+    return sorted(p for p in STREAMS.glob("*.tsv")
+                  if p.name.startswith(PROSE_PREFIXES))
+
+
+@needs_dictionary
+def test_every_prose_derived_stream_states_its_coverage_in_a_column():
+    """The contract, asserted over the release rather than over a list: any
+    file built from prose carries `n_report_days_silent`, and any file whose
+    row is a total over provinces carries `n_provinces` beside it. A docstring
+    saying so would not have stopped the failure this exists for."""
+    assert _prose_streams()
+    for path in _prose_streams():
+        t = pl.read_csv(path, separator="\t", infer_schema_length=None)
+        assert "n_report_days_silent" in t.columns, \
+            f"{path.name} is prose-derived and states no coverage"
+        assert t["n_report_days_silent"].min() >= 0, path.name
+        if path.stem.startswith("lab") and path.stem.endswith("national"):
+            assert "n_provinces" in t.columns, \
+                f"{path.name} totals over provinces and does not say how many"
+
+
+@needs_dictionary
+def test_the_weekly_laboratory_file_states_both_axes_of_its_coverage():
+    """A weekly bin sums over report days AND over provinces, and only one of
+    those was ever stated -- and not on this file, which is the one a consumer
+    reaches for first. `n_provinces` is how many distinct provinces the bin saw
+    at all, `n_province_days` how many province-days were summed, so the ratio
+    of the second to `n_report_days` is the mean breadth the bin's total rests
+    on: the number that decides whether a shortfall against the case series is
+    reporting or composition."""
+    t = pl.read_csv(STREAMS / "lab_national.tsv", separator="\t",
+                    infer_schema_length=None)
+    for col in ("n_report_days", "n_report_days_silent", "n_provinces",
+                "n_province_days"):
+        assert col in t.columns, col
+    assert (t["n_province_days"] >= t["n_provinces"]).all()
+    assert (t["n_province_days"] >= t["n_report_days"]).all()
+    assert t["n_provinces"].min() >= 1
+
+
+def test_silent_report_days_counts_the_calendar_the_row_did_not_use():
+    """Pure, and the whole definition: report days in `(previous time, this
+    time]` that did not feed the row. Zero on a contiguous series, the count of
+    skipped reports otherwise -- and it refuses rather than clamps when the
+    calendar is missing a day a row rests on, because a negative coverage would
+    be a defect in the calendar and not a small number."""
+    import datetime as _dt
+
+    def d(day):
+        return _dt.date(2026, 8, day)
+
+    cal = [d(1), d(2), d(3), d(4), d(5)]
+    assert BS.silent_report_days([d(2), d(3)], [1, 1], cal, d(1)) == [0, 0]
+    assert BS.silent_report_days([d(2), d(5)], [1, 1], cal, d(1)) == [0, 2]
+    # a weekly bin: four report days in the window, three of them fed it
+    assert BS.silent_report_days([d(5)], [3], cal, d(1)) == [1]
+    with pytest.raises(SystemExit, match="report-day calendar"):
+        BS.silent_report_days([d(2)], [3], cal, d(1))
+
+
+@needs_dictionary
+def test_the_dictionary_states_the_coverage_contract_as_a_contract():
+    """Not a convention and not left in a docstring: the reading section of the
+    shipped dictionary states it, and names every column that carries it."""
+    text = DICTIONARY.read_text()
+    assert "HOW MUCH OF ITS POPULATION IT SAW" in text
+    for col in ("n_provinces", "n_province_days", "n_report_days_silent",
+                "checks"):
+        assert f"`{col}`" in text, col
+
+
+# --------------------------------------------------------------------------
+# THE DICTIONARY SAYS HOW TO READ A STREAM, AND FAILS CLOSED ON IT
+# --------------------------------------------------------------------------
+
+@needs_dictionary
+def test_every_family_in_the_dictionary_says_how_to_read_it():
+    """Saying what a quantity is is not saying how to read it, and the traps
+    are not visible in a span or a column name. Every section the document
+    prints for a family carries the reading beneath its table."""
+    text = DICTIONARY.read_text()
+    families = BS.load_families(FAMILIES)
+    printed = [f for f in families if f"## {families[f]['title']}" in text]
+    assert len(printed) >= 10, printed
+    assert text.count("**How to read it.**") == len(printed)
+    for family in printed:
+        assert families[family]["interpretation"].strip(), family
+        assert families[family]["interpretation"] in text, family
+
+
+def test_the_register_carries_a_reading_for_every_family_it_names():
+    """Both sentences are required of every row, including the two files that
+    are not observation streams, which are rendered in their own sections and
+    could otherwise lose one quietly."""
+    for family, entry in BS.load_families(FAMILIES).items():
+        assert entry["measures"].strip(), family
+        assert entry["interpretation"].strip(), family
+
+
+@needs_pdftotext
+def test_a_family_with_no_reading_stops_the_build(monkeypatch, tmp_path):
+    """The same fail-closed rule the `measures` sentence has had, extended to
+    the reading: blanking one stops the build and names the family, rather than
+    shipping a stream whose limits nobody wrote down."""
+    header = FAMILIES.read_text().splitlines()
+    col = None
+    out_lines = []
+    for line in header:
+        if line.startswith("family\t"):
+            col = line.split("\t").index("interpretation")
+        if col is not None and line.startswith("cases\t"):
+            cells = line.split("\t")
+            cells[col] = ""
+            line = "\t".join(cells)
+        out_lines.append(line)
+    assert col is not None, "the register has no interpretation column"
+    register = tmp_path / "families.tsv"
+    register.write_text("\n".join(out_lines) + "\n")
+    panel = tmp_path / "panel.csv"
+    _synthetic_panel(panel, [10, 20, 30, 40], [2, 4, 6, 8])
+    out = tmp_path / "streams"
+    with pytest.raises(SystemExit) as e:
+        _run_build(monkeypatch, panel, out, "--families", str(register))
+    msg = str(e.value)
+    assert "no `interpretation` for ['cases']" in msg
+    assert not (out / "README.md").exists()
+
+
+@needs_pdftotext
+def test_an_unregistered_care_family_still_stops_the_build(monkeypatch,
+                                                          tmp_path):
+    """The register is fail-closed over whatever a run wrote, so adding a whole
+    group of streams must not have opened a hole in it: with the confirmed
+    census dropped from the register and a care input supplied, the build stops
+    and names the files rather than documenting the release short."""
+    register = tmp_path / "families.tsv"
+    register.write_text("\n".join(
+        line for line in FAMILIES.read_text().splitlines()
+        if not line.startswith("care_census_confirmed\t")) + "\n")
+    panel = tmp_path / "panel.csv"
+    _synthetic_panel(panel, [10, 20, 30, 40], [2, 4, 6, 8])
+    care = tmp_path / "care.csv"
+    _synthetic_care(care)
+    out = tmp_path / "streams"
+    with pytest.raises(SystemExit) as e:
+        _run_build(monkeypatch, panel, out, "--families", str(register),
+                   "--care", str(care))
+    msg = str(e.value)
+    assert "A PUBLISHED STREAM IS UNDOCUMENTED" in msg
+    assert ("care_census_confirmed_ituri.tsv "
+            "(family `care_census_confirmed`)") in msg
+    assert "care_census_ituri.tsv" not in msg      # that family is registered
