@@ -84,6 +84,15 @@ build:
 	uv run python scripts/extract_lab_prose.py \
 		--pdfs data/raw/sitrep_pdfs --quiet \
 		--out data/build/series/lab_prose.csv
+	# The care ledger the reports state in words: admissions, exits and how
+	# they end, the end-of-day census with its confirmed/suspected split, the
+	# beds and the printed occupancy. Extraction only -- nothing here is
+	# published as an observation stream. It exists because the front-page
+	# ISOLEMENT/CTE tile stops after 2 August while the prose carries the same
+	# quantities per province to the end of the archive.
+	uv run python scripts/extract_care_prose.py \
+		--pdfs data/raw/sitrep_pdfs --quiet \
+		--out data/build/series/care_prose.csv
 	uv run python scripts/extract_banner.py \
 		--pdfs data/raw/sitrep_pdfs --quiet \
 		--out data/build/series/banner.csv
@@ -101,6 +110,7 @@ build:
 	#   data/build/series/province_summary_letality.csv
 	#   data/build/series/prose_provinces_status.csv
 	#   data/build/series/lab_prose_status.csv
+	#   data/build/series/care_prose_status.csv
 	#   data/build/series/banner_status.csv
 	#   data/build/series/province_series_reconciliation.csv
 
