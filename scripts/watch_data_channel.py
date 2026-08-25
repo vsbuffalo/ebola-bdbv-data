@@ -110,6 +110,28 @@ def main() -> int:
         if h == base_hash:
             continue
 
+        # OUR OWN POST IS NOT A MESSAGE. `post_data_channel.py` appends and
+        # advances the state file in the same breath, but a watcher already
+        # running holds its baseline in MEMORY and would otherwise fire on our
+        # own entry and read it back to us -- which happened three times before
+        # this existed. Re-reading the state each poll and taking the later of
+        # the two lets a post that has already been accounted for slide past,
+        # while anything the other side appends beneath it still reports.
+        if args.state and args.state.exists():
+            try:
+                claimed = int(args.state.read_text().split()[0])
+            except (ValueError, IndexError):
+                claimed = 0
+            if claimed > len(base_lines):
+                ours = claimed - len(base_lines)
+                base_lines = lines[:claimed]
+                base_hash = hashlib.sha256(
+                    "".join(base_lines).encode()).hexdigest()
+                if claimed >= len(lines):
+                    print(f"{stamp()}  our own {ours} line post absorbed; "
+                          f"still watching", flush=True)
+                    continue
+
         # Settle: hold still before reporting, so a half-written append is not
         # reported as a complete message.
         while True:
