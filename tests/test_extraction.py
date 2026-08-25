@@ -2946,9 +2946,10 @@ def test_every_hole_in_the_outcome_composition_carries_a_reason():
     """A break in the composition is a report day with no national cumulative,
     and there are three different causes: INSP published nothing that day, the
     report printed no health-zone table, or the table printed only its 24-hour
-    columns. The figure labels each break with which, so a reader never has to
-    read absence as a value -- and none may fall through to an unlabelled
-    default."""
+    columns. Every break must carry which -- none may fall through to an
+    unlabelled default -- because the caption in `docs/figures/README.md`
+    states that there are three and names them, and a fourth cause appearing
+    silently would make that caption wrong."""
     import plot_figures as P
     import polars as pl
     zone, banner = _outcome_inputs()
@@ -2981,6 +2982,62 @@ def test_the_figure_registry_declares_every_input_each_figure_reads():
     assert "banner" not in P.FIGURES["streams_detail"][1], \
         "the banner moved to national_detail with the panels that read it"
     assert "banner" in P.FIGURES["national_detail"][1]
+
+
+# --------------------------------------------------------------------------
+# THE CAPTION DOCUMENT
+#
+# `docs/figures/` holds the committed copies of the published figures, and
+# `docs/figures/README.md` holds the caption each one travels with: what it
+# shows, and the limits on what it licenses a reader to conclude. Several of
+# these figures are drawn at slide proportions and carry almost no text, which
+# is only defensible while the caption exists -- so this pair of tests is the
+# same shape as the stream register's: a figure with no caption must stop the
+# suite, and a caption naming no figure must too, because it is either a typo
+# or a figure that was dropped without its caption going with it.
+# --------------------------------------------------------------------------
+
+FIGURE_DIR = ROOT / "docs" / "figures"
+CAPTIONS = FIGURE_DIR / "README.md"
+
+
+def _caption_sections(path: Path) -> list[str]:
+    """The filenames the document captions, in document order.
+
+    A section opens with a level-two heading holding nothing but a backticked
+    filename, which is what separates it from the prose headings around it and
+    keeps the parse from drifting as the prose is edited.
+    """
+    names = []
+    for line in path.read_text().splitlines():
+        if line.startswith("## `") and line.rstrip().endswith("`"):
+            names.append(line[4:].rstrip()[:-1])
+    return names
+
+
+def test_every_committed_figure_has_a_caption():
+    """No figure ships uncaptioned. These are published artefacts -- the
+    README embeds them and the cross-repo channel links them -- and a figure
+    that reaches a slide without the sentence saying what its top band does
+    NOT mean is the failure this document exists to prevent."""
+    captioned = set(_caption_sections(CAPTIONS))
+    shipped = sorted(p.name for p in FIGURE_DIR.glob("*.png"))
+    assert shipped, "no committed figures found; has docs/figures/ moved?"
+    for name in shipped:
+        assert name in captioned, \
+            f"{name} is committed but has no section in {CAPTIONS.name}"
+
+
+def test_every_caption_names_a_figure_that_exists():
+    """The other direction, which catches the two ways this document rots: a
+    misspelt filename in a heading, and a figure retired without its caption
+    going with it. Either leaves a caption nothing can ever be read against."""
+    sections = _caption_sections(CAPTIONS)
+    assert len(sections) == len(set(sections)), \
+        f"{CAPTIONS.name} captions the same figure twice"
+    for name in sections:
+        assert (FIGURE_DIR / name).exists(), \
+            f"{CAPTIONS.name} captions {name}, which is not in {FIGURE_DIR}"
 
 
 # --------------------------------------------------------------------------

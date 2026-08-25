@@ -259,6 +259,8 @@ compare:
 	# validation section travels with the repository (data/build is
 	# gitignored). Refreshed on every compare; a diff here is a change in
 	# what the comparison shows, and belongs in the commit that caused it.
+	# These three carry captions in docs/figures/README.md like the rest,
+	# and `make test` fails if one of them stops having a section there.
 	# SLIDE FIGURE, 16:9, built HERE rather than in `figures` because it reads
 	# this target's outputs: three lineages against each other, and what each
 	# one covers.
@@ -312,8 +314,12 @@ figures:
 		--out data/build/figures/residuals.png
 	# COMMITTED COPIES, so the README, the data document and the cross-repo
 	# channel can link to figures that survive (data/build is gitignored).
-	# Everything copied here is gated by `release-check`: it must rebuild
-	# byte-identically from a fresh clone of the committed state.
+	# Everything copied here is gated twice: by `release-check`, which
+	# requires it to rebuild byte-identically from a fresh clone of the
+	# committed state, and by `make test`, which requires it to have a
+	# section in docs/figures/README.md saying what it shows and what it does
+	# not license anyone to conclude. Adding a `cp` here without adding that
+	# section fails the suite.
 	mkdir -p docs/figures
 	cp data/build/figures/streams_detail.png docs/figures/
 	cp data/build/figures/national_detail.png docs/figures/
