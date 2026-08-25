@@ -1,0 +1,223 @@
+Initial genomes from May 2026 Bundibugyo Virus Disease Outbreak in the Democratic Republic of the Congo and Uganda
+virological.org/t/1032 — posted 2026-05-18
+Author: mbalaplacide
+
+Initial genomes from May 2026 Bundibugyo Virus Disease Outbreak in the Democratic Republic of the Congo and Uganda, reveal a new spillover event
+Context
+On 15 May 2026, the Ministry of Public Health, Hygiene and Social Welfare, Democratic Republic of the Congo (DRC) officially declared a Bundibugyo Virus Disease (BVD) outbreak in Ituri province, DRC. This represents 17th Ebola outbreak in DRC and the second caused by  Bundibugyo Virus (BDBV) in the species Orthoebolavirus bundibugyoense. With the 2007 outbreak in Bundibugyo, Uganda, and the 2012 BDV outbreak in Isiro, DRC, the ongoing outbreak is the third documented BDV outbreak.
+
+
+Concurrently, on 15 May 2026, the Ministry of Health, Republic of Uganda confirmed an outbreak of BVD in Kampala, Uganda following the identification of one imported fatal case (a patient who traveled from Bunia, DRC to Kampala, Uganda to seek medical care). WHO declared a public health emergency of international concern on 17 May 2026 and Africa CDC a public health emergency of continental security on 18 May 2026. Here, we present the phylogenetic tree of initial complete BDBV genomes from samples sequenced at the Institut National de Recherche Biomédicale (INRB) in DRC and Central Public Health Laboratory (CPHL) in Uganda.
+
+
+Laboratory work performed at the Institut National de Recherche Biomédicale (INRB), Kinshasa - DRC
+On 14 May 2026, 13 samples (11 whole blood, 1 serum and 1 oro-pharyngeal swab) were tested at INRB, Kinshasa using two point-of-care (POC) tests: GeneXpert Ebola (specific for species Orthoebolavirus zairense) and RADIONE Ebola (a pan-Ebola virus RNA detection kit), as well as real-time PCR using the Altona RealStar Filovirus Screen RT-PCR kit (a pan Ebola- and Marburgvirus specific RNA detection kit).
+
+
+Briefly, viral RNA was extracted from 140 µL of inactivated specimens using viral RNA extraction kit (QIAGEN) according to the manufacturer’s instructions. Eight out of thirteen RNA samples were tested positive for Ebola virus by the used real-time PCR (Altona RealStar Filovirus Screen). However, all samples were tested negative for Ebola by GeneXpert.
+
+Prior sequencing, reverse transcription was performed with LunaScript RT SuperMix kit (New England Biolabs). Sequencing library was prepared using the Illumina RNA Prep with Enrichment kit (Illumina) with Twist Comprehensive Viral Research panel (Twist Bioscience) and loaded on Nextseq1000/2000 and on Gridion.
+
+
+Data were processed using several approaches including czid and nf-core/viralrecon v3.0.0 (doi: 10.5281/zenodo.3901628), part of the nf-core collection of workflows (Ewels et al., 2020), ensuring reproducible analyses through software environments from Bioconda (Grüning et al., 2018) and Biocontainers (da Veiga Leprevost et al., 2017) projects. The pipeline was executed with Nextflow v25.10.2.
+
+We successfully obtained two near-complete genomes from a serum sample and an oropharyngeal swab with corresponding Ct values of 17.27 and 25.78, respectively, in less than 16 hours starting from sample reception in the laboratory. The two sequences have >99% genome coverage of BDBV with 47× (26FHV054) and >2500× (26FHV045) read depth coverages. For the remaining positive samples, bioinformatics analysis was still ongoing at the time of writing this post. The two BDBV genome sequences have been deposited in Pathoplexus https://pathoplexus.org/ under Restricted Use terms for public health use with accession numbers PP_006XHL9 and PP_006XHKB.
+
+
+Laboratory work performed at the Central Public Health Laboratory (CPHL), Kampala - Uganda
+An individual from the DRC who had recently travelled to Kampala to seek medical care was post-mortem confirmed to be infected with BDBV on 15 May 2026 at the Central Emergency Response and Surveillance Laboratory using the Altona RealStar Filovirus Type RT-PCR kit. Following confirmation, the extracted nucleic acid sample (ID: CL023114) was transferred to the Central Public Health Laboratories (CPHL) Genomics Core Laboratory for molecular characterization.
+
+
+At CPHL, viral genome enrichment and characterization were undertaken using a targeted metagenomics workflow. Next generation sequencing libraries were prepared with the Illumina Viral Surveillance Panel and sequenced on the Illumina NextSeq 2000 platform. Subsequent reference based bioinformatic analysis was performed using an in house pipeline optimized for filovirus genomes. By 17 May 2026, we successfully recovered 99% genome coverage of BDBV at an average 100× read depth. The consensus genome has been deposited in Pathoplexus under Restricted Use terms for public health use with accession number PP_006XCJJ.
+
+
+Phylogenetic inference and conclusion
+The three newly generated BDBV genome sequences from Uganda (one) and DRC (two) were analysed in the context of 34 BDBV genomes from the previous outbreaks in 2007 and 2012 downloaded from Pathoplexus (Table 1). The sequences used are available from https://pathoplexus.org/seqsets/PP_SS_1651.
+
+
+Refseq genomes from other orthoebolaviruses were used as outgroup to confirm the position of the root. Alignment and phylogenetic were performed using RACCOON pipeline https://github.com/artic-network/raccoon which utilizes MAFFT to generate a multiple sequence alignment and IQTree2 to construct a maximum likelihood tree (Figure1).
+
+
+
+
+
+Figure 1 | A maximum likelihood phylogeny constructed using the +gamma model in IQTree2. Ultrafast Bootstrap values are shown for each branch. The scale is given in units of substitutions per site. The current outbreak is highlighted in red, previous outbreaks in yellow (Uganda, 2007) and blue (DRC, 2012).`
+
+
+
+Authors
+Key contributors to data collection/molecular testing/data interpretation/whole genome sequencing/bioinformatics analysis/phylogenetic analysis, and manuscript writing:
+
+
+Institut National de Recherche Biomédicale (INRB), Kinshasa – DRC and partners
+Adrienne Amuri-Aziza (INRB, Kinshasa, DRC)
+
+Pascal Adroba Tandele (Laboratoire Provincial de Santé Publique, Ituri, DRC)
+
+Gradi Luakanda-Ndelemo (INRB, Kinshasa, DRC)
+
+Eddy Kinganda-Lusamaki (INRB, University of Kinshasa, Kinshasa, DRC; TransVIHMI, Université de Montpellier, INSERM, IRD, Montpellier, France)
+
+Marcel Lola-Loway (Division Provinciale de la Santé, Ituri, DRC)
+
+Benjamin Djemba-Fundji (Laboratoire Provincial de Santé Publique, Ituri, DRC)
+
+Rilia Ola-Mpumbe (INRB, Kinshasa, DRC)
+
+Fiston Cikaya-Kankolongo (INRB, Kinshasa, DRC)
+
+Princesse Paku-Tshambu (INRB, Kinshasa, DRC)
+
+Pauline-Chloé Muswamba-Kayembe (INRB, Kinshasa, DRC)
+
+Raphael Lumembe (INRB, University of Kinshasa, Kinshasa, DRC)
+
+Nelson Kashali (INRB, Kinshasa, DRC)
+
+Jean-Claude Makangara-Cigolo (INRB, University of Kinshasa, Kinshasa, DRC; Institute of Social and Preventive Medicine, University of Bern, Bern, Switzerland)
+
+Prince Akil-Bandali (INRB, Kinshasa, DRC)
+
+Servet Kimbonza (INRB, Kinshasa, DRC)
+
+Elzedek Mabika-Bope (INRB, Kinshasa, DRC)
+
+André Citenga (INRB, Kinshasa, DRC)
+
+Patrick Mukadi (INRB, University of Kinshasa)
+
+Daniel Mukadi-Bamuleka (INRB, University of Kinshasa, Laboratoires P2/P3 Rodolphe -Merieux INRB-Goma, DRC)
+
+Elisabeth Pukuta (INRB, Kinshasa, DRC)
+
+Nick Loman (University of Birmingham, UK)
+
+Sam Wilkinson (University of Birmingham, UK)
+
+Joshua Quick (University of Birmingham, UK)
+
+Chris Kent (University of Birmingham, UK)
+
+Emma Hodcroft (University of Basel, Switzerland)
+
+Ahidjo Ayouba (TransVIHMI, Université de Montpellier, INSERM, IRD, Montpellier, France)
+
+Martine Peeters (TransVIHMI, Université de Montpellier, INSERM, IRD, Montpellier, France)
+
+Eric Delaporte (TransVIHMI, Université de Montpellier, INSERM, IRD, Montpellier, France)
+
+Justus Nsio (Africa Centres for Disease Control and Prevention, Addis Ababa, Ethiopia)
+
+Olga Ntumba-Tshitenge (World Health Organization Country Office, Kinshasa, DRC)
+
+John Otokoye Otshudiema (World Health Organization Regional Office for Africa, Brazzaville, Republic of Congo)
+
+Mory Keita (World Health Organization Regional Office for Africa, Brazzaville, Republic of Congo)
+
+Krutika Kuppalli (Department of Medicine, University of Texas Southwestern Medical Center & O’Donnell School of Public Health, University of Texas Southwestern Medical Center, Dallas, Texas)
+
+Piet Maes (European Plotkin Institute for Vaccinology, Université Libre de Bruxelles (ULB), Brussels, Belgium)
+
+Kevin K. Ariën (Institute of Tropical Medicine, Antwerp, Belgium)
+
+Laurens Liesenborghs (Institute of Tropical Medicine, Antwerp; KU Leuven, Leuven, Belgium)
+
+Koen Vercauteren (Institute of Tropical Medicine, Antwerp, Belgium)
+
+Áine O’Toole (University of Edinburgh, UK)
+
+Andrew Rambaut (University of Edinburgh, UK)
+
+Yenew Kebede (Africa CDC)
+
+Steve Ahuka-Mundeke (INRB, University of Kinshasa, Kinshasa, DRC)
+
+Christian Ngandu (Institut National de Santé Publique (INSP), Kinshasa, DRC)
+
+Jean-Jacques Muyembe-Tamfum (INRB, University of Kinshasa, Kinshasa, DRC)
+
+Dieudonné Mwamba (Institut National de Santé Publique (INSP), Kinshasa, DRC)
+
+Tony Wawina-Bokalanga (INRB, University of Kinshasa, Kinshasa, DRC; Department of Clinical Sciences, Institute of Tropical Medicine, Antwerp, Belgium)
+
+Placide Mbala-Kingebeni (INRB, University of Kinshasa, Kinshasa, DRC; South African National Bioinformatics Institute, University of the Western Cape, South Africa).
+
+
+Central Public Health Laboratory (CPHL), Kampala - Uganda and partners
+Susan Nabadda (Central Public Health Laboratories, Uganda)
+
+Isaac Sewanyana (Central Public Health Laboratories, Uganda)
+
+Henry Kyobe Bosa (Ministry of Health, Uganda)
+
+Misaki Wayengera (Ministry of Health, Uganda)
+
+Sofonias Kifle Tessema (Gates Foundation)
+
+Deo Ssemwanga (Uganda Virus Research Institute, Uganda)
+
+Stephen Balinandi (Uganda Virus Research Institute, Uganda)
+
+Harris Onywera (Africa CDC)
+
+Collins Kipngetich Tanui (Africa CDC)
+
+Sarah Wambui Mwangi (Africa CDC)
+
+Tebba Andrew (Central Public Health Laboratories, Uganda)
+
+Valeria Nakintu (Central Public Health Laboratories, Uganda)
+
+Hellen Rosette Oundo (Central Public Health Laboratories, Uganda)
+
+Wilson Tenywa (Central Public Health Laboratories, Uganda)
+
+Godwin Tusabe Wenka (Central Public Health Laboratories, Uganda)
+
+Moses Murungi (Central Public Health Laboratories, Uganda)
+
+Jupiter Marina Kabahita (Central Public Health Laboratories, Uganda)
+
+Caroline Makoha (Central Public Health Laboratories, Uganda)
+
+Aloysious Ssemaganda (Central Public Health Laboratories, Uganda)
+
+Alice Mbambu (Central Public Health Laboratories, Uganda)
+
+Shakira Namakula (Central Public Health Laboratories, Uganda)
+
+Stephen Kanyerezi (Central Public Health Laboratories, Uganda)
+
+Alisen Ayitewala (Central Public Health Laboratories, Uganda)
+
+
+Data availability
+The consensus genomes are shared on the Pathoplexus platform under the following accession numbers: PP_006XCJJ; PP_006XHL9; and PP_006XHKB.
+
+
+Acknowledgements
+We are grateful to all institutions and partners for their support to genomic surveillance efforts in the DRC and Uganda.
+
+
+Statement on continuing work and analyses prior to publication
+Please note that this data is based on work in progress and should be considered preliminary. Our analyses are ongoing, and a publication communicating our findings is in preparation. Three genomes are now available on Pathoplexus database. These are publicly accessible under the Pathoplexus ‘Restricted’ licence and we would be grateful if the terms of this were respected. If you intend to use our data prior to our publication, please contact Prof. Placide Mbala-Kingebeni (INRB, DRC) and Dr Isaac Ssewanyana (CPHL, Uganda).
+
+
+Collaborating institutions and agencies
+•	Africa Centres for Disease Control and Prevention, Addis Ababa, Ethiopia
+
+•	World Health Organization, Geneva, Switzerland
+
+•	World Health Organization Country Office, Kinshasa, Democratic Republic of the Congo
+
+•	Biosurv international
+
+•	Culmen International
+
+•	Institute of Ecology and Evolution, University of Edinburgh, Edinburgh EH9 3FL, UK
+
+•	Institute of Tropical Medicine, Antwerp, Belgium
+
+•	TransVIHMI, Université de Montpellier, INSERM, IRD, Montpellier, France
+
+•	University of Birmingham, Birmingham, UK

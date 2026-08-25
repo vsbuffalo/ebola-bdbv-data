@@ -48,3 +48,11 @@ analysis/_explore_data.json
 
 # agent worktrees: isolated checkouts, never part of this repo
 .claude/worktrees/
+
+# Reference PDFs that are NOT ours to redistribute. This repository has a
+# public remote, and the NEJM correspondence is copyright Massachusetts
+# Medical Society -- not open access, unlike the two PLOS papers beside it,
+# which are CC-BY and are committed. Cited in pdfs/PROVENANCE.md and in
+# notes/; fetch your own copy from nejm.org.
+pdfs/akilimali_et_al_2026.pdf
+pdfs/akilimali_et_al_2026_supp.pdf

@@ -1,0 +1,299 @@
+Genomic epidemiology of the ongoing 2026 Bundibugyo Virus Disease outbreak in the Democratic Republic of the Congo
+virological.org/t/1045 — posted 2026-07-09
+Author: mbalaplacide
+
+Genomic epidemiology of the ongoing 2026 Bundibugyo Virus Disease outbreak in the Democratic Republic of the Congo
+Institut National de Recherche Biomédicale (INRB), Kinshasa – DRC and partners
+
+
+Context
+On 15 May 2026, the Ministry of Public Health, Hygiene and Social Welfare, Democratic Republic of the Congo (DRC) officially declared a Bundibugyo Virus Disease (BVD) outbreak in Ituri province, DRC. This represents the 17th Ebola disease outbreak in DRC and the second caused by Bundibugyo Virus (BDBV; the species Orthoebolavirus bundibugyoense). With the 2007 outbreak in Bundibugyo district, Uganda, and the 2012 BVD outbreak in Isiro, DRC, the ongoing outbreak is the third documented BVD outbreak.
+
+
+A previous post described the phylogenetic relationship of the ongoing 2026 outbreak with the previous BVD outbreaks along with an initial analysis of the first genomes sequenced from cases in Ituri, DRC and Uganda. In those analyses it was necessary to make assumptions about the rate of evolution based on measurements from previous epidemics of Ebola Virus but there is now a sufficient sampling time frame to estimate the evolutionary rate and epidemiological characteristics directly from the 2026 BVD outbreak.
+
+
+Clinical specimens, including EDTA whole-blood samples from living patients and oral fluid specimens from deceased patients, were collected from suspected cases of BVD in Ituri province, DRC. Specimens were analyzed at either the Laboratoire Provincial de Santé Publique (LPSP, Provincial Public Health Laboratory), Ituri or the Institut National de Recherche Biomédicale (INRB), Kinshasa for BDBV detection using the RADIONE Point-of-care system with Ebola detection kit RP017 (KH Medical, Pyeongtaek-si, South Korea) and the RealStar Filovirus Screen RT-PCR kit 1.0 (Altona Diagnostics, Hamburg, Germany). All PCR-positive samples with Cycle threshold (Ct) values <31 were subsequently selected for viral whole genome sequencing (WGS).
+
+
+Following viral RNA extraction using the QIAamp viral RNA Mini kit (QIAGEN) according to the manufacturer’s instructions, reverse transcription was performed using the LunaScript RT SuperMix kit (New England Biolabs). At INRB, sequencing libraries were prepared using the Illumina DNA Prep protocol with pan-ebola ARTIC primers - artic-pan-ebola/1000/v2.0.0 - according to the protocol (see here for more information). This library was loaded on the Illumina NextSeq 1000/2000 sequencer. At LPSP, sequencing libraries were performed using the rapid barcoding kit (SQK-RBK114.96 V14; Oxford Nanopore Technologies (ONT), Oxford, UK)) following the manufacturer’s instructions. Libraries were loaded on R10 flow cells and run for 48 h on GridION.
+
+
+We used the amplicon-nf v.2 https://artic.network/resources/amplicon-nf pipeline for consensus generation. Further genomes QC, ADAR mutation assessment and masking were performed using raccoon prior to Maximum likelihood and Bayesian phylogenetic analysis.
+
+
+The first 14 genomes were sequenced using virus enrichment panels and are described in the previous post.
+
+
+A total of 139 genomes from 16 Health Zones in Ituri (n=138) and Nord-Kivu (n=1) Provinces (Figure 1) were sequenced and have been deposited on pathoplexus.org. Sampling dates span between 02-May-2026 and 23-Jun-2026. These can be accessed as Pathoplexus SeqSet BDBV_DRC_2026-07-07.
+
+
+map3228×1650 246 KB
+
+
+
+Figure 1 | Location of sampling of the 139 genomes described here. All but one are from Health Zones in Ituri Province with the remaining one from Katwa in Nord-Kivu.
+
+
+
+Maximum likelihood phylogenetics
+
+139 genomes Pathoplexus SeqSet BDBV_DRC_2026-07-07 from DRC sampled between 2026-05-03 and 2026-06-23.
+One genome (BIA-1299, PP_00764QW) was removed as it showed evidence of ADAR editing (11 T->C mutations in a 182 base-pair region).
+Aligned using MAFFT (Katoh et al, 2002) – resulting alignment contained no indels.
+The alignment was trimmed to length 18,900 to remove sequencing artefacts at the end of the genome (one genome exhibited these: 26FHV054, PP_006XHL9.3).
+Maximum likelihood tree using IQ-TREE 3 (Wong et al 2025) (ModelFinder (Kalyaanamoorthy et al, 2017) selected the K3Pu+F+I substitution model) and with small branch lengths collapsed to zero.
+
+Results
+The maximum phylogenetic tree (Figure 2) exhibits a good temporal signal when rooted to minimise the residuals from the regression line. Four outlier genomes were identified as being noticeably outside ±2 standard deviations of the residuals. Three were above the regression line, suggesting greater than expected divergence, and one below the line with less than expected divergence (Table 1). Further investigation of these genomes and their metadata is underway.
+
+
+Table 1
+
+
+
+
+
+
+ID
+accession
+Sampling date
+Health Zone
+Z-score1
+
+
+
+
+26FHV0325
+PP_0075ZAY
+2026-05-26
+Rwampara
+3.62
+
+
+26FHV0224
+PP_0075Z66
+2026-05-17
+Mongbwalu
+2.85
+
+
+BIA-1345
+PP_00764TQ
+2026-05-05
+Bunia
+2.65
+
+
+BIA-1621
+PP_00765FE
+2026-06-08
+Rwampara
+-2.79
+
+
+
+1 Number of standard deviations of the residuals.
+
+
+A.
+
+Ituri2026.DRC_trimmed_n138.ml.tree1920×1453 282 KB
+
+B.
+
+root-to-tip_n1381926×1746 178 KB
+
+
+
+Figure 2 | A. Maximum likelihood tree rooted to minimise residual mean square. B. Root-to-tip plot shown on right with shaded area enclosing ±2 standard deviations of the regression residuals. 4 outliers are identified (blue and orange points) to be removed from further analysis for further investigation. One genome (yellow) likely has the wrong date (02-May instead of 02-June).
+
+
+
+Removing these outliers produced a regression slope (an estimate of the evolutionary rate) of 1.1E-3 (Figure 3). The intercept with the x-axis provided a tMRCA (time to the most recent common ancestor) of 7th March but this is reported without error intervals with the non-independence of the data points precluding an appropriate method of determining these. The following BEAST analysis provides the appropriate time estimates and the root-to-tip (RTT) plot should be considered a data exploration tool.
+
+
+root-to-tip_n1341924×1746 188 KB
+
+
+
+Figure 3 | Root-to-tip plot with 4 outliers removed. Estimated rate of evolution of 1.1E-3 and a TMRCA of early March 2026. The yellow point now has the putative date of 02-June, placing it closer to the regression line.
+
+
+
+The majority of samples are from Bunia and Rwampara (n = 96), also the documented epicentre of the outbreak (Figure 4). We had comparatively fewer samples from Mongbwalu (n = 9) where there were early epidemiological investigations and documented clusters of transmission. The distribution of sequences in relation to the epidemiological data can be explored here:
+
+
+
+https://inrb-umie.github.io/BDBV2026-Epidemic_Dashboard.
+
+
+
+Ituri2026.DRC_trimmed_n138.ml.location.tree1920×1274 520 KB
+
+
+
+Figure 4 | The maximum likelihood tree with tips coloured by health zone of sampling.
+
+
+
+Bayesian time-calibrated phylogenetics
+To infer the timescale and basic epidemiological characteristics of the data set we used BEAST X v10.6.0-beta2 (Baele et al 2025).
+
+
+For an initial investigation, two coalescent-based tree prior models were employed: exponential growth and the SkyGrid non-parametric model Gill et al, 2013 with 23 transition points at one week intervals and a cutoff of 24 weeks. A GTR model was employed with default priors and transition kernels. Runs were 50m steps, with 10,000 samples taken with a 10% burnin.
+
+
+Results
+Both tree models gave very similar temporal results (Table 2) with evolutionary rates around 1.1E-3 and a tMRCA estimated to be mid-March but plausibly spanning back to early February.
+
+
+Table 2
+
+
+
+
+
+
+
+Evolutionary rate1    
+tMRCA
+
+
+
+
+Exponential growth
+1.12E-3 (0.73, 1.48)
+08 Mar (01 Feb - 05 Apr)
+
+
+Skygrid
+1.10E-3 (0.71, 1.49)
+15 Mar (09 Feb - 12 Apr)
+
+
+
+1 substitutions/site/year
+
+
+Assuming fixed exponential growth between the estimated tMRCA and the latest sampling date (June 23), the estimated doubling time is 11.7 days with a 95% HPD interval of 6.8 - 17.5 days.
+
+
+The Bayesian Skygrid model also demonstrates approximately exponential growth over the majority of the time period with some evidence of a slowing rate in early June but the uncertainty intervals are widening and sampling currently spans until 23-Jun so this interpretation should be taken with caution (Figure 5).
+
+
+ne_plot_from_txt2617×1796 341 KB
+
+
+
+Figure 5 | A. Skygrid reconstruction of relative population size over time. The blue line shows the mean estimate, and the shaded region represents the 95% HPD interval. The heavy dashed line indicates the mean tMRCA (15 Mar), while the dotted line indicates the upper bound of the 95% HPD interval (12 Apr); the lower bound (9 Feb) coincides with the lower limit of the y-axis. The exponential growth reconstruction is shown in orange. A rug plot at the bottom of the panel shows the dates and frequency of genomes included in the analysis. B. Daily case counts (RT-qPCR positive) in the early epicentre (Mongbwalu, Bunia, and Rwampara orange), the rest of Ituri (green), and Nord Kivu (purple).
+
+
+
+
+
+
+Figure 6 | Phylogenetic summary tree from Skygrid analysis.
+
+Show in PearTree
+
+
+
+References
+
+Sequences used here may be obtained as a SeqSet on the Pathoplexus database: PP_SS_2740.1 | Pathoplexus Please respect the conditions of the license they are shared under.
+Wong TKF, Ly-Trong N, Ren H, Banos H, Roger AJ, Susko E, Bielow C, De Maio N, Goldman N, Hahn MW, Huttley G, Lanfear R, Minh BQ (2026) IQ-TREE 3: Phylogenomic Inference Software using Complex Evolutionary Models. Molecular Biology and Evolution, 43: msag117.
+
+DOI: 10.1093/molbev/msag117
+Kalyaanamoorthy S, Minh BQ, Wong TKF, von Haeseler A, & Jermiin LS (2017) ModelFinder: Fast model selection for accurate phylogenetic estimates. Nature Methods, 14:587–589.
+
+DOI: 10.1038/nmeth.4285
+Baele G, Ji X, Hassler GW, McCrone JT, Shao Y, Zhang Z, Holbrook AJ, Lemey P, Drummond AJ, Rambaut A & Suchard MA (2025) BEAST X for Bayesian phylogenetic, phylogeographic and phylodynamic inference. Nat Methods. 22: 1653–1656.
+
+DOI: 10.1038/s41592-025-02751-x
+Gill MS, Lemey P, Faria NR, Rambaut A, Shapiro B, Suchard MA (2013) Molecular Biology and Evolution 30, 713–724.
+
+DOI: 10.1093/molbev/mss265
+
+Authors
+Key contributors to data collection/molecular testing/data interpretation/whole genome sequencing/bioinformatics analysis/phylogenetic analysis, and manuscript writing:
+
+
+Institut National de Recherche Biomédicale (INRB), Kinshasa – DRC and partners
+
+Adrienne Amuri-Aziza (INRB, Kinshasa, DRC)
+Pascal Adroba Tandele (Laboratoire Provincial de Santé Publique, Ituri, DRC)
+Princesse Paku-Tshambu (INRB, Kinshasa, DRC)
+Neema Kavugho-Sindani (Laboratoire Provincial de Santé Publique, Ituri, DRC)
+Prince Akil-Bandali (INRB, Kinshasa, DRC)
+Moritz U.G. Kraemer (University of Oxford, UK)
+Gradi Luakanda-Ndelemo (INRB, Kinshasa, DRC)
+Eddy Kinganda-Lusamaki (INRB, University of Kinshasa, Kinshasa, DRC; TransVIHMI, Université de Montpellier, INSERM, IRD, Montpellier, France)
+César-Christian Carrenard-Odzali (Institut National de Santé Publique (INSP), Kinshasa, DRC)
+Daan Jansen (Institute of Tropical Medicine, Antwerp, Belgium)
+Lievin Tibasima-Dhesa (Laboratoire Provincial de Santé Publique, Ituri, DRC)
+Marcel Lola-Loway (Division Provinciale de la Santé, Ituri, DRC)
+Benjamin Djemba-Fundji (Laboratoire Provincial de Santé Publique, Ituri, DRC)
+François Berocan-Underos (Laboratoire Provincial de Santé Publique, Ituri, DRC)
+Berkias Bakambu-Nebape (Laboratoire Provincial de Santé Publique, Ituri, DRC)
+Rilia Ola-Mpumbe (INRB, Kinshasa, DRC)
+Fiston Cikaya-Kankolongo (INRB, Kinshasa, DRC)
+Judith Tete-Sitra (INRB, Kinshasa, DRC)
+Pauline-Chloé Muswamba-Kayembe (INRB, Kinshasa, DRC)
+Raphael Lumembe - Numbi (INRB, University of Kinshasa, Kinshasa, DRC)
+Julie Tuenakoko-Kulumbula (INRB, Kinshasa, DRC)
+Nelson Kashali (INRB, Kinshasa, DRC)
+David Isengelo-Sikatenda (INRB, Kinshasa, DRC)
+Jean-Claude Makangara-Cigolo (INRB, University of Kinshasa, Kinshasa, DRC; Institute of Social and Preventive Medicine, University of Bern, Bern, Switzerland)
+Servet Kimbonza (INRB, Kinshasa, DRC)
+Elzedek Mabika-Bope (INRB, Kinshasa, DRC)
+Patrick Mukadi-Kakoni (INRB, University of Kinshasa)
+Daniel Mukadi-Bamuleka (INRB, University of Kinshasa, Laboratoires P2/P3, Rodolphe-Merieux INRB-Goma, DRC)
+Dav Ebengo (INRB, INOHA, DRC)
+Nick Loman (University of Birmingham, UK)
+Sam Wilkinson (University of Birmingham, UK)
+Josh Quick (University of Birmingham, UK)
+Chris Kent (University of Birmingham, UK)
+Sam Richardson (University of Birmingham, UK)
+Charlotte Pratt (University of Birmingham, UK)
+Bernardo Gutierrez (University of Oxford, UK)
+Renny Doig (Simon Fraser University, Canada)
+Onesime Mbulayi (INRB)
+Patrick Mulu (INRB)
+Ciara Judge (University of Oxford)
+Joseph L.-H. Tsui (University of Oxford)
+Caroline Colijn (Simon Fraser University, Canada)
+Emma Hodcroft (University of Basel, Switzerland)
+Martine Peeters (TransVIHMI, Université de Montpellier, INSERM, IRD, Montpellier, France)
+Ahidjo Ayouba (TransVIHMI, Université de Montpellier, INSERM, IRD, Montpellier, France)
+Eric Delaporte (TransVIHMI, Université de Montpellier, INSERM, IRD, Montpellier, France)
+Collins Kipngetich Tanui (Africa CDC)
+Justus Nsio (Africa Centres for Disease Control and Prevention, Addis Ababa, Ethiopia)
+Olga Ntumba-Tshitenge (World Health Organization Country Office, Kinshasa, DRC)
+John O. Otshudiema (World Health Organization Regional Office for Africa, Brazzaville, Republic of Congo)
+Marie-Roseline Belizaire (World Health Organization Regional Office for Africa, Brazzaville, Republic of Congo)
+Kevin K. Ariën (Institute of Tropical Medicine, Antwerp, Belgium)
+Laurens Liesenborghs (Institute of Tropical Medicine, Antwerp; KU Leuven, Leuven, Belgium)
+Piet Maes (European Plotkin Institute for Vaccinology, Université Libre de Bruxelles (ULB), Brussels, Belgium)
+Jonathan E. Pekar (University of Edinburgh, UK)
+Áine O’Toole (University of Edinburgh, UK)
+Christian Happi (African Center of Excellence for Genomics of Infectious Diseases, Redeemer’s University, Ede, Nigeria)
+Jason Kindrachuk (University of Manitoba, Winnipeg, Manitoba, Canada)
+Anne Rimoin (Department of Epidemiology, Jonathan and Karin Fielding School of Public Health, University of California, Los Angeles, CA, USA)
+Lisa E. Hensley (US Department of Agriculture, Manhattan, KS, USA)
+Sofonias Kifle Tessema (Gates Foundation)
+Yenew Kebede (Africa CDC)
+Lorenzo Subissi (WHO)
+Nicksy Gumede (WHO AFRO)
+Steve Ahuka-Mundeke (INRB, University of Kinshasa, Kinshasa, DRC)
+Christian Ngandu (Institut National de Santé Publique (INSP), Kinshasa, DRC)
+Jean-Jacques Muyembe-Tamfum (INRB, University of Kinshasa, Kinshasa, DRC)
+Koen Vercauteren (Institute of Tropical Medicine, Antwerp, Belgium)
+Dieudonné Mwamba (Institut National de Santé Publique (INSP), Kinshasa, DRC)
+Pierre Akilimali (Institut National de Santé Publique (INSP), Kinshasa, DRC)
+Andrew Rambaut (University of Edinburgh, UK)
+Tony Wawina-Bokalanga (INRB, University of Kinshasa, Kinshasa, DRC; Department of Clinical Sciences, Institute of Tropical Medicine, Antwerp, Belgium)
+Placide Mbala-Kingebeni (INRB, University of Kinshasa, Kinshasa, DRC; South African National Bioinformatics Institute, University of the Western Cape, South Africa).
+
+Acknowledgments and Funding
+We thank the Ministry of Public Health, Hygiene and Social Welfare of the DRC. The authors gratefully acknowledge the ongoing support of the Africa Centers for Disease Control and Prevention (Africa CDC), the World Health Organization, and partner non-governmental organizations. We also acknowledge the support provided by the Unité de Gestion du Programme de Développement du Système de Santé (UG-PDSS), the Institute of Tropical Medicine (ITM) through Belgian Directorate-general for Development Cooperation and Humanitarian Aid (DGD FA5 project, the Culmen International LCC, the US CDC Atlanta, and the Agence Française de Développement through the AFROSCREEN project (grant agreement CZZ3209), coordinated by ANRS Maladies Infectieuses émérgentes in partnership with Institut Pasteur and Institut de Recherche pour le Développement, the French Ministry of Europe and Foreign Affairs through FEF programme and support provided by Institut de Recherche pour le Développement. AREBO project funded by ANRS-MIE. A.A.-A is supported by a DGD sandwich PhD scholarship. N.L., S.W., J.Q., C.K., R.D., C.C., E.H., J.E.P., A.O’T., A.R & P.M-K. acknowledge the support of the Wellcome Trust through the ARTIC Network (award 313694/Z/24/Z) and the Gates Foundation. The authors are also grateful for the support of the John D. and Catherine T. MacArthur Foundation, Flu Lab, and a cohort of generous donors through TED’s Audacious Project, including the ELMA Foundation, MacKenzie Scott, the Skoll Foundation, and Open Philanthropy.

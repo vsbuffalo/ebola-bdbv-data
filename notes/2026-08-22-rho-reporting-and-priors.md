@@ -290,6 +290,31 @@ patients"* — so it is genuinely an in-care fatality. Kratz: *"CFR of ETC cases
 confirmed cases."* The model's existing `beta(4, 5)` prior (mean 0.44) covers
 both, so the fitted 0.310 is driven by structure or data, not by the prior.
 
+**Updated 2026-08-24 — a current-outbreak death proportion now exists. It is
+not an f_cfr and must not be used as one; and the historical in-care CFRs may
+be biased upward.**
+
+Akilimali et al. report **95 of 505 laboratory-confirmed patients (18.8%) had
+died by the data cut-off**, against 65 of 635 test-negatives (10.2%). The
+authors state plainly that this **"cannot be interpreted as the case fatality
+rate owing to limited data on final outcome and unknown denominators"** —
+outcomes are still open at cut-off, so this is a snapshot of a competing-risks
+process, not a completed fatality proportion. It is recorded here so that
+nobody finds 18.8% independently and reads it as a CFR. It does not enter the
+f_cfr prior.
+
+**The more consequential point is what the same paper implies about Kratz and
+Roddy.** Hemorrhagic signs appear in only **10.4%** of confirmed patients here,
+against "more than half" in an earlier BDBV description (MacNeil 2010). The
+authors attribute the gap partly to *"case ascertainment bias in small
+outbreaks where patients with more characteristic or severe clinical
+presentations are more easily identified."* If that holds, then the 26-patient
+and 18-patient in-care cohorts our f_cfr rests on were selected toward severe
+presentation — and **42% and 50% are biased upward as estimates of in-care
+fatality in a large, better-ascertained outbreak.** The `beta(4, 5)` prior
+(mean 0.44) is centred on exactly those two numbers. This is an argument for
+widening it downward, not for tightening it.
+
 **Corrected 2026-08-22 — this evidence base is thinner and more tangled than
 the row above originally claimed.**
 
@@ -348,6 +373,30 @@ swab ascertainment above 1 even at 0.9 unisolated fatality.
 
 ### 6.3 Overall ascertainment — one external anchor, not two
 
+**Updated 2026-08-24 — still one external *fraction*, but now a within-outbreak
+*trajectory*, on the right virus and the right response.**
+
+Akilimali et al. report that since the outbreak was declared on 15 May 2026,
+confirmed cases rose **while test positivity fell from roughly 70–80% in early
+May to about 40% by early June**. Their denominators: of 2351 records in the
+individual-level database between 3 May and 8 June, 505 (21.5%) were
+laboratory-confirmed and 635 (27.0%) tested negative, the rest untested,
+pending, or unresolved.
+
+Falling positivity against rising confirmed counts is testing expanding faster
+than transmission — i.e. **ascertainment improving over the period we fit**.
+This is not an ascertainment fraction and cannot be used as one: positivity is
+a function of who gets tested, and the early 70–80% reflects a narrow, severe,
+highly selected testing pool as much as it reflects prevalence. But it does
+constrain the *shape*: a model holding ascertainment constant across May–June
+is contradicted by the source's own laboratory record. **If ascertainment is
+time-varying in the model, this is the evidence that should discipline it, and
+it is far closer to our setting than Montserrado 2014.**
+
+Note the direction of the bias this introduces if ignored: constant-ascertainment
+fits will attribute early under-detection to a smaller epidemic rather than to
+less looking, biasing the seeding estimate late and the early growth rate high.
+
 **Corrected 2026-08-22: the Beni paper is not an ascertainment estimate and
 was being used as one.**
 
@@ -383,6 +432,38 @@ evidence — but it says it alone, and we should stop presenting it as though tw
 independent studies bracketed the answer.
 
 ### 6.4 Delays and the dwell
+
+**Corrected 2026-08-24 — there is now a delay estimate from THIS outbreak, and
+it is slower than the historical BDBV figure the τ argument below leans on.**
+
+Akilimali et al., *NEJM* 395(6):610, 6 Aug 2026 (`pdfs/akilimali_et_al_2026.pdf`)
+report the interval from **symptom onset to diagnostic sample collection**,
+fitted on the laboratory line list (data as of 5 June 2026) with `epidist`,
+which corrects for **double interval censoring** — onset and sampling each
+recorded only to the day — and for **right truncation**. Gamma won on LOOIC
+against lognormal and Weibull.
+
+| population | N | median delay, d (95% CrI) | 25th pct | 75th pct |
+|---|---:|---|---:|---:|
+| laboratory-confirmed | 129 | **4.8 (3.46 – 7.84)** | 1.81 | 10.23 |
+| test-negative | 188 | 2.93 (2.22 – 4.27) | 0.91 | 7.0 |
+| all tested | 634 | 5.39 (4.21 – 7.84) | 1.69 | 12.91 |
+
+Mean delay for confirmed cases is **7.4 d (95% CrI 5.3 – 13.5)**.
+
+**This challenges the paragraph below.** That paragraph cites Van Kerkhove's
+BDBV onset→hospitalisation median of **3.5 d** and concludes BDBV reaches care
+faster than EBOV did, "which bears on τ". The current outbreak's
+onset→**sample** median is 4.8 d and its mean 7.4 d. The two are not the same
+interval — a sample can be taken at presentation, later in admission, or
+post-mortem in the community, so onset→sample is not a clean substitute for
+onset→hospitalisation — but if it is read as time-to-ascertainment, then τ in
+*this* outbreak is **slower**, not faster, than the historical anchor. The
+authors' own reading is that 7.4 d "might reflect a lack of diagnostic capacity
+early during the outbreak" or genuine delay in presenting at a facility. Either
+way, a τ prior built on 3.5 d is not in contact with the only current-outbreak
+delay measurement we have. **Do not carry the 3.5 d forward without saying
+which interval it is and why the 4.8 d does not displace it.**
 
 Van Kerkhove 2015, **BDBV-specific**: incubation mean 6.3 d (5.2–7.3), median 7
 (2–20); onset→hospitalisation median **3.5 d (0–8)**; onset→death median
@@ -423,6 +504,26 @@ proportional to the confirmed compartment.
 ---
 
 ## 8. Not verified
+
+**Added 2026-08-24 — an individual-level database for THIS outbreak exists.**
+Akilimali et al. analyse *"2351 recorded cases in the individual-level database
+for BVD between May 3 and June 8, 2026"*, and separately a **laboratory line
+list** (data as of 5 June 2026) carrying symptom-onset dates, sample-collection
+dates, Ct values and outcomes. Ethics approval from the University of Kinshasa.
+We do **not** hold either, and neither appears to be public — but the earlier
+working assumption in this project, that the 2026 outbreak offers only
+aggregate health-zone counts and no case-level data, is **wrong**. What is true
+is that the case-level data exists, is held by the response, and reaches us
+only through what papers like this one report. Worth asking whether it can be
+requested; every delay and severity prior we have would otherwise keep coming
+from 2007 and 2012.
+
+One quantity from it we cannot presently reproduce: **Ct value is associated
+with death** — median Ct lower (higher viral load) among those who died, by
+−3.4 (95% CI −6.1 to −0.7) in the Kinshasa/Altona cohort and −3.7 (−5.2 to
+−2.3) in the Bunia/RADIONE cohort. The cohorts used different assays and gene
+targets, so only the within-cohort contrast is interpretable. Nothing in our
+aggregate streams carries viral load.
 
 - ~~**Funk & Abbott ≈ 0.59 [0.46, 0.72] (22/37)** — unsourced.~~ **RESOLVED
   2026-08-22, and it is not a paper.** It is `sbfnk/bdbv-linelist-analysis`,
@@ -478,6 +579,16 @@ proportional to the confirmed compartment.
    same way as bed pressure. Three points, untested, but testable.
 
 ## Sources
+
+**Added 2026-08-24.** Akilimali et al., "Clinical Characteristics of Patients
+Infected with Bundibugyo Virus, DRC 2026", *New England Journal of Medicine*
+395(6):610, 6 August 2026 (Correspondence) — `pdfs/akilimali_et_al_2026.pdf`
+and `pdfs/akilimali_et_al_2026_supp.pdf`. The only current-outbreak clinical
+and delay data we hold. See §6.1, §6.3, §6.4 and §8, and
+`notes/2026-08-24-who-wer-and-genomic-priors.md` for the genomic dating and the
+WHO comparison of all three BDBV outbreaks.
+
+### Earlier sources
 
 - [MacNeil et al., *EID* 16(12), 2010 — BDBV proportion of deaths](https://wwwnc.cdc.gov/eid/article/16/12/10-0627_article)
 - [Roddy et al., *PLOS ONE* 2012 — BDBV clinical management, Uganda 2007–08](https://journals.plos.org/plosone/article?id=10.1371%2Fjournal.pone.0052986)
