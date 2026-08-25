@@ -34,6 +34,17 @@ below it depends on that, and because the front-page tile stops printing the
 confirmed half of the census partway through the archive while the prose does
 not.
 
+`outcomes` answers: of everyone ever confirmed, where is the record of what
+happened to them. It is the same four published counts a reader could add up
+by hand -- the case total, the death total, the cumulative recoveries and the
+isolation census -- arranged so that what NONE of them holds is the visible
+band. The point it must carry is that the residual is a count of people rather
+than a discrepancy between estimates, which is true only because the
+decomposition closes against the published case total exactly. Its second
+requirement is negative: the isolation census stops partway along, and the
+figure may not draw that as the ward emptying, nor stop there as though the
+residual stopped growing too.
+
 A FIGURE MAY NOT STATE A NUMBER IT DID NOT COMPUTE. Every count `care_ledger`
 asserts in words comes from one of the small pure functions above its drawing
 code, and each of those is pinned by a test, so the claim in the caption and
@@ -1112,6 +1123,512 @@ def draw_ascertainment(inputs: dict[str, Path], out: Path) -> None:
     ax.set_title("Every confirmed death the reports classify, by where it was "
                  f"found · $\\bf{{{bold_span}}}$",
                  loc="left", fontsize=11, color="#333333")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out, dpi=200)
+    plt.close(fig)
+
+
+#: The bands of the outcome composition, bottom to top, with the one the
+#: figure is about drawn last. Hues are the file's existing palette. The three
+#: ledgers that DO hold a record are washed out with alpha so they recede; the
+#: residual takes the vermillion at full strength -- the same hue
+#: `ascertainment` gives the quantity it exists to show.
+OUTCOME_DEAD = ("#555555", 0.45)
+OUTCOME_RECOVERED = ("#009E73", 0.42)
+#: Opaque, unlike the two beneath it: the undivided band is painted first and
+#: hatched, and a translucent ward band would let that hatching print through
+#: on exactly the days the census DOES pin the split.
+OUTCOME_WARD = ("#56B4E9", 1.00)
+OUTCOME_GONE = ("#D55E00", 1.00)
+
+#: THE THREE THINGS THAT KEEP THIS FIGURE FROM OVERSTATING, on the figure
+#: rather than in a caption someone will not have. Each is a limit on what the
+#: top band licenses anyone to conclude, and the last one is the reason the
+#: figure names no cause anywhere.
+OUTCOME_FOOTER = (
+    "“No record” means no record in these four published counts. It "
+    "is not a claim that anyone is untraced: the response works from a case "
+    "line list, which is not published, and this figure cannot see it.\n"
+    "Recorded exits from care are incomplete — a patient who absconds is "
+    "booked as neither recovered nor dead (scripts/care_ledger.py) — so the "
+    "recovery ledger is a floor and unrecorded recoveries land here.\n"
+    "Absconding, unrecorded recovery, unrecorded death and reporting lag all "
+    "sit inside the band in unknown proportion. Nothing in these four series "
+    "separates them, and nothing here asserts which it is.")
+
+
+def _fmt_day(iso: str) -> str:
+    """A published date in the deck's month-day order."""
+    return f"{dt.date.fromisoformat(iso):%b %-d}"
+
+
+def _shift(iso: str, days: int) -> str:
+    return (dt.date.fromisoformat(iso) + dt.timedelta(days=days)).isoformat()
+
+
+def _bold_span(frame: pl.DataFrame, col: str = "date") -> str:
+    """The frame's own span, escaped for mathtext so a panel title can bold it
+    without writing either date in."""
+    lo = dt.date.fromisoformat(frame[col].min())
+    hi = dt.date.fromisoformat(frame[col].max())
+    return f"{lo:%b\\ %-d}\\ to\\ {hi:%b\\ %-d,\\ %Y}"
+
+
+def outcome_ledger(zone: pl.DataFrame, banner: pl.DataFrame) -> pl.DataFrame:
+    """Every confirmed case the reports have counted, set against the three
+    published ledgers that could say what became of that person.
+
+    WHICH SOURCE, and both are ours and primary: the national row of the
+    health-zone table (`cum_cases`, `cum_deaths`) and the front-page dashboard
+    tiles (`cumul_recovered`, `patients_isolated_confirmed` -- the count of
+    confirmed patients in an isolation ward at the end of the day). All four
+    are numbers the reports print. Nothing here is fitted, nothing is a rate,
+    and no assumption about how long a patient stays in care enters, so
+
+        unaccounted = cum_cases - cum_deaths - cumul_recovered
+                      - patients_isolated_confirmed
+
+    is arithmetic over four printed counts: the people inside the
+    confirmed-case total and inside none of the other three.
+
+    ONE ROW PER REPORT DAY ON WHICH THE FIRST THREE ARE PUBLISHED, not all
+    four. The isolation census stops partway through the archive, and
+    requiring it would end the series there and hide the fact that the
+    outbreak did not. So `in_ward`, `unaccounted` and `unaccounted_share` are
+    null wherever the census is missing, while `residual` -- cases minus dead
+    minus recovered, the ward and the unaccounted undivided -- is present on
+    every row and is an upper bound on `unaccounted`, because a ward census
+    cannot be negative.
+    """
+    nat = (zone.filter(pl.col("level") == "national")
+           .select("date", "cum_cases", "cum_deaths")
+           .drop_nulls(["cum_cases", "cum_deaths"]))
+    tiles = banner.select("date", "cumul_recovered",
+                          "patients_isolated_confirmed")
+    led = (nat.join(tiles, on="date", how="inner")
+           .drop_nulls("cumul_recovered")
+           .rename({"patients_isolated_confirmed": "in_ward"})
+           .sort("date"))
+    return led.with_columns(
+        (pl.col("cum_cases") - pl.col("cum_deaths")
+         - pl.col("cumul_recovered")).alias("residual"),
+    ).with_columns(
+        (pl.col("residual") - pl.col("in_ward")).alias("unaccounted"),
+    ).with_columns(
+        (pl.col("unaccounted") / pl.col("cum_cases")).alias("unaccounted_share"),
+        (pl.col("residual") / pl.col("cum_cases")).alias("residual_share"),
+    )
+
+
+def outcome_headline(led: pl.DataFrame) -> dict:
+    """The numbers this figure states in words, every one of them read off the
+    ledger above rather than written in.
+
+    Two moments matter and they are different moments. `census` is the last
+    report day on which all four counts exist -- the last day the decomposition
+    can be completed at all, and the day the headline count belongs to.
+    `last` is the final row of the ledger, where only the undivided residual
+    survives, and is what says the quantity kept growing after the census
+    stopped rather than stopping with it.
+
+    `run_*` covers the final unbroken run of report days carrying a census. A
+    single day's share could be an artefact of one report; the run is what
+    licenses calling the share steady, and its endpoints give the growth in the
+    count over exactly the window the share was flat across.
+    """
+    full = led.drop_nulls("unaccounted")
+    if not full.height:
+        raise ValueError("no report day carries all four published counts")
+    c = full.row(-1, named=True)
+
+    # The final unbroken run of consecutive REPORT DAYS carrying a census --
+    # consecutive in the ledger, not in the calendar. A weekend INSP published
+    # nothing over is not the census going missing, and counting it as one
+    # would cut this run at 28 July and report four days where there are
+    # fourteen. A day the reports DID appear on and printed no census is a
+    # genuine break, and does cut it.
+    dates = led["date"].to_list()
+    seen = set(full["date"].to_list())
+    i = dates.index(c["date"])
+    while i > 0 and dates[i - 1] in seen:
+        i -= 1
+    run = full.filter(pl.col("date") >= dates[i])
+    run0 = run.row(0, named=True)
+    last = led.row(-1, named=True)
+
+    return {
+        "census_date": c["date"], "cum_cases": c["cum_cases"],
+        "cum_deaths": c["cum_deaths"], "cumul_recovered": c["cumul_recovered"],
+        "in_ward": c["in_ward"], "unaccounted": c["unaccounted"],
+        "share": c["unaccounted_share"],
+        "census_residual": c["residual"],
+        "census_residual_share": c["residual_share"],
+        "ward_share": c["in_ward"] / c["cum_cases"],
+        "n_census_days": full.height,
+        "run_start": run0["date"], "run_days": run.height,
+        "run_start_unaccounted": run0["unaccounted"],
+        "run_share_min": run["unaccounted_share"].min(),
+        "run_share_max": run["unaccounted_share"].max(),
+        "last_date": last["date"], "last_cum_cases": last["cum_cases"],
+        "last_residual": last["residual"],
+        "last_residual_share": last["residual_share"],
+    }
+
+
+#: Why a report day inside the ledger's span carries no national cumulative,
+#: keyed by the health-zone table's own status for that report. Three
+#: different claims, and absence alone cannot tell them apart: a report that
+#: was never published, a report that printed no health-zone table at all, and
+#: a table that printed only its 24-hour columns.
+OUTCOME_GAP_WHY = {
+    None: "no report\npublished",
+    "no_matching_table": "no health-zone\ntable printed",
+}
+OUTCOME_GAP_DEFAULT = "no cumulative\ncolumns printed"
+
+
+def outcome_gaps(led: pl.DataFrame, status: pl.DataFrame) -> list[dict]:
+    """Runs of report days inside the ledger's span that the composition cannot
+    be drawn on, each carrying the reason it cannot.
+
+    `zone_table_status` holds exactly one row per report, so it IS the
+    calendar: a date absent from it is a day INSP published nothing, which is a
+    different failure from a report that appeared and printed no table. The
+    composition is drawn segment by segment between these runs rather than
+    across them, because a cumulative band carried over a hole is an observed
+    value the source never printed.
+    """
+    published = {r["date"]: str(r["status"]) for r in status.iter_rows(named=True)}
+    have = set(led["date"].to_list())
+    lo = dt.date.fromisoformat(led["date"].min())
+    hi = dt.date.fromisoformat(led["date"].max())
+
+    runs: list[dict] = []
+    cur: dict | None = None
+    probe = lo
+    while probe <= hi:
+        key = probe.isoformat()
+        if key not in have:
+            st = published.get(key)
+            why = OUTCOME_GAP_WHY.get(st, OUTCOME_GAP_DEFAULT)
+            if cur and cur["why"] == why and cur["hi"] + dt.timedelta(1) == probe:
+                cur["hi"] = probe
+            else:
+                if cur:
+                    runs.append(cur)
+                cur = {"lo": probe, "hi": probe, "why": why}
+        probe += dt.timedelta(days=1)
+    if cur:
+        runs.append(cur)
+    for r in runs:
+        r["days"] = (r["hi"] - r["lo"]).days + 1
+    return runs
+
+
+def _outcome_segments(led: pl.DataFrame) -> list[pl.DataFrame]:
+    """The ledger split at every hole, so nothing is drawn across one."""
+    days = [dt.date.fromisoformat(d) for d in led["date"].to_list()]
+    cuts = [0] + [i for i in range(1, len(days))
+                  if days[i - 1] + dt.timedelta(days=1) != days[i]] + [len(days)]
+    return [led[a:b] for a, b in zip(cuts, cuts[1:]) if b > a]
+
+
+#: Half-width, in days, given to the end of every drawn run. A published count
+#: is a reading for ITS day, so a run of one -- 29 May, and the two isolated
+#: census days in early July -- has to be drawn with the width of a day or it
+#: is a zero-width polygon and silently disappears. Smaller than half a day, so
+#: two runs either side of a one-day hole still leave the hole open.
+OUTCOME_PAD = 0.4
+
+
+def _outcome_pad(xs: list[float], *series: list[float]):
+    """A run widened to cover its end days, holding the endpoint values."""
+    out = [[xs[0] - OUTCOME_PAD] + list(xs) + [xs[-1] + OUTCOME_PAD]]
+    out += [[s[0]] + list(s) + [s[-1]] for s in series]
+    return out
+
+
+def draw_outcomes(inputs: dict[str, Path], out: Path) -> None:
+    """Of everyone confirmed with Ebola, where is the record of what happened
+    to them -- at slide proportions.
+
+    ONE FACT. On the last day all four published counts exist, more than a
+    quarter of everyone ever confirmed appears in none of them: not in the
+    death total, not in the cumulative recoveries, not in the ward census. The
+    count is not steady either; it grows through the whole window over which
+    its share is flat.
+
+    THE COMPOSITION IS AN IDENTITY, NOT A MODEL. Its four bands sum to the
+    published cumulative case total by construction, which is why the top band
+    can be read as a count of people rather than as a discrepancy between two
+    estimates.
+
+    WHY THE COMPOSITION CHANGES SHAPE PARTWAY ALONG. The national census of
+    confirmed patients in isolation is published for the last time on the
+    report of 2 August; both routes this repository reads it by -- the
+    front-page tile and the care pillar's whole-response sentence -- stop on
+    that same report, and the per-province bullets that continue do not sum to
+    a country (see `census_agreement`, `province_census_is_not_national`). So
+    after that day the boundary BETWEEN the ward band and the residual is not
+    drawn, because nothing published locates it, and the two are shown as one
+    hatched band. Continuing the ward band at zero would draw every patient in
+    a bed as unaccounted for; ending the figure there would imply the residual
+    stopped growing. Neither is true and neither is drawn.
+
+    WHAT THE BAND IS NOT. It is not a count of untraced people. These are the
+    four ledgers INSP publishes; the response works from a case line list that
+    is not published and that this figure cannot see. Recorded exits from care
+    are also incomplete -- a patient who absconds is booked as neither
+    recovered nor dead (`scripts/care_ledger.py`) -- so the recovery ledger is
+    a floor and unrecorded recoveries land in this band instead. Absconding,
+    unrecorded recovery, unrecorded death and reporting lag all sit inside it
+    in unknown proportion, and nothing in these four series separates them.
+    The figure therefore asserts no cause, on the figure itself as well as
+    here.
+    """
+    zone = pl.read_csv(inputs["zone_table"], infer_schema_length=None)
+    banner = pl.read_csv(inputs["banner"], infer_schema_length=None)
+    status = pl.read_csv(inputs["zone_status"], infer_schema_length=None)
+
+    led = outcome_ledger(zone, banner)
+    h = outcome_headline(led)
+    gaps = outcome_gaps(led, status)
+    census_x = mdates.datestr2num(h["census_date"])
+
+    dead_c, dead_a = OUTCOME_DEAD
+    rec_c, rec_a = OUTCOME_RECOVERED
+    ward_c, ward_a = OUTCOME_WARD
+    gone_c, gone_a = OUTCOME_GONE
+
+    fig, (ax, sh) = plt.subplots(
+        2, 1, figsize=(13.333, 7.5), height_ratios=[1.72, 1],
+        sharex=True, constrained_layout=True)
+
+    top = h["last_cum_cases"] * 1.17
+    for seg in _outcome_segments(led):
+        base = [a + b for a, b in zip(seg["cum_deaths"].to_list(),
+                                      seg["cumul_recovered"].to_list())]
+        xs, dead, rec, cases = _outcome_pad(
+            _dates(seg["date"]), seg["cum_deaths"].to_list(), base,
+            seg["cum_cases"].to_list())
+        ax.fill_between(xs, 0, dead, facecolor=dead_c, alpha=dead_a, linewidth=0)
+        ax.fill_between(xs, dead, rec, facecolor=rec_c, alpha=rec_a, linewidth=0)
+        # THE TOP REGION IS DRAWN UNDIVIDED FIRST, everywhere. Its outer
+        # boundary is the published case total and its inner one the published
+        # dead-plus-recovered, so it is always a real quantity; what is not
+        # always known is where the line inside it falls. Painting it first
+        # means a day the census skipped is a day the split is not asserted --
+        # never a hole, which would read as a collapse in the case total.
+        ax.fill_between(xs, rec, cases, facecolor=gone_c, alpha=0.18,
+                        hatch="///", edgecolor=gone_c, linewidth=0.0)
+        # AND THE SPLIT IS OVERPAINTED ONLY WHERE THE CENSUS IS PUBLISHED, run
+        # by contiguous run. Every other boundary here joins two days the
+        # source printed a number on; this one would otherwise be interpolated
+        # across the twenty days after the census ends, out of nothing.
+        for run in _outcome_segments(seg.drop_nulls("in_ward")):
+            rbase = [a + b for a, b in zip(run["cum_deaths"].to_list(),
+                                           run["cumul_recovered"].to_list())]
+            rx, rb, rw, rc = _outcome_pad(
+                _dates(run["date"]), rbase,
+                [a + b for a, b in zip(rbase, run["in_ward"].to_list())],
+                run["cum_cases"].to_list())
+            ax.fill_between(rx, rb, rw, facecolor=ward_c, alpha=ward_a,
+                            linewidth=0)
+            ax.fill_between(rx, rw, rc, facecolor=gone_c, alpha=gone_a,
+                            linewidth=0)
+        ax.plot(xs, cases, color="#3d3d3d", linewidth=1.0)
+
+    # GAPS ARE HOLES, LABELLED WITH WHY, never a band drawn through them. The
+    # label rides in the empty space ABOVE the case curve at that date, which
+    # is where there is room for it; anchoring every label to one height would
+    # print the August ones through the composition.
+    at_case = dict(zip(led["date"].to_list(), led["cum_cases"].to_list()))
+    for g in gaps:
+        lo_x = mdates.date2num(g["lo"]) - (1 - OUTCOME_PAD)
+        hi_x = mdates.date2num(g["hi"]) + (1 - OUTCOME_PAD)
+        ax.axvspan(lo_x, hi_x, color="#f4f4f4", zorder=0)
+        near = max((v for d, v in at_case.items()
+                    if abs((dt.date.fromisoformat(d) - g["lo"]).days) <= 4),
+                   default=0)
+        ax.text((lo_x + hi_x) / 2, (near + top) / 2, g["why"], rotation=90,
+                ha="center", va="center", fontsize=6.5, color="#8a8a8a",
+                linespacing=1.25)
+
+    ax.axvline(census_x, color="#3d3d3d", linewidth=1.0, linestyle=(0, (4, 3)),
+               zorder=5)
+
+    # DIRECT LABELS, NOT A LEGEND. A legend box on a slide sends the eye off
+    # the data and back; and the box would have to sit over the composition,
+    # because the header band above it is already carrying the subtitle.
+    lab_x = mdates.datestr2num(h["last_date"]) - 9
+    lab = led.filter(pl.col("date") <= _shift(h["last_date"], -9)).row(-1, named=True)
+    ax.text(lab_x, lab["cum_deaths"] / 2, "recorded dead", ha="center",
+            va="center", fontsize=10.5, color="#2f2f2f", fontweight="bold")
+    ax.text(lab_x, lab["cum_deaths"] + lab["cumul_recovered"] / 2,
+            "recorded recovered", ha="center", va="center", fontsize=10.5,
+            color="#00503a", fontweight="bold")
+    # The ward band is nine percent of the composition at its widest, so it
+    # takes a leader rather than a label sitting inside it. It is pointed at in
+    # early July rather than at the census's last day, to keep it off the line
+    # the callout's arrow travels.
+    ward_mid = led.drop_nulls("in_ward")
+    ward_row = ward_mid.row(ward_mid.height // 2, named=True)
+    ax.annotate("confirmed and in a ward",
+                xy=(mdates.datestr2num(ward_row["date"]),
+                    ward_row["cum_deaths"] + ward_row["cumul_recovered"]
+                    + ward_row["in_ward"] / 2),
+                xytext=(-8, 46), textcoords="offset points",
+                ha="center", va="bottom", fontsize=9.5, color="#0f5c86",
+                arrowprops=dict(arrowstyle="->", color="#0f5c86",
+                                linewidth=1.0, shrinkA=3, shrinkB=2))
+
+    # THE CALLOUT AND ITS ARROW ARE DRAWN SEPARATELY. `annotate` starts the
+    # arrow at the text's anchor point, which for a left-aligned headline is
+    # its first character, so a single call would run the arrow straight
+    # through its own text.
+    ax.text(0.022, 0.935, f"{h['unaccounted']:,} people with no record",
+            transform=ax.transAxes, ha="left", va="center", fontsize=17.5,
+            fontweight="bold", color=gone_c)
+    ax.text(0.024, 0.862,
+            f"{h['share']:.0%} of all {h['cum_cases']:,} people ever confirmed,"
+            f" on {_fmt_day(h['census_date'])} — not in the death\ntotal, not "
+            "in the cumulative recoveries, and not in a bed",
+            transform=ax.transAxes, ha="left", va="top", fontsize=10.5,
+            color="#333333", linespacing=1.5)
+    ax.annotate("", xy=(census_x - 1.5,
+                        (h["cum_deaths"] + h["cumul_recovered"] + h["in_ward"]
+                         + h["cum_cases"]) / 2),
+                xytext=(0.445, 0.715), textcoords="axes fraction",
+                arrowprops=dict(arrowstyle="->", color=gone_c, linewidth=1.6,
+                                shrinkA=2, shrinkB=3))
+
+    band = led.filter(pl.col("date") <= _shift(h["last_date"], -6)).row(
+        -1, named=True)
+    band_lo = band["cum_deaths"] + band["cumul_recovered"]
+    ax.text(mdates.datestr2num(h["last_date"]) - 6,
+            band_lo + 0.45 * (band["cum_cases"] - band_lo),
+            "in a ward OR with\nno record, undivided",
+            ha="center", va="center", fontsize=9, color="#8a3b00",
+            linespacing=1.5)
+    ax.text(census_x - 1.2, top * 0.965, "last national ward census",
+            ha="right", va="center", fontsize=8.5, color="#555555")
+
+    ax.set_ylim(0, top)
+    ax.set_xlim(mdates.datestr2num(led["date"].min()) - 1.4,
+                mdates.datestr2num(led["date"].max()) + 1.4)
+    ticks = [t for t in range(0, int(top) + 1, 1000)]
+    ax.set_yticks(ticks)
+    ax.set_yticklabels([f"{t:,}" for t in ticks])
+    ax.set_ylabel("cumulative confirmed cases", fontsize=10)
+    ax.set_axisbelow(True)
+    ax.grid(axis="y", **GRID)
+    ax.set_title(
+        "Every confirmed case ever counted, against the ledgers that say what "
+        f"became of the person · $\\bf{{{_bold_span(led)}}}$\nHatched: no ward "
+        "census that day, so the top two bands are not separable. Grey: report "
+        f"days with no national cumulative — {len(gaps)} of them, each "
+        "labelled with why.",
+        loc="left", fontsize=10, color="#333333", linespacing=1.45)
+
+    # THE SHARE, PER REPORT DAY AND UNSMOOTHED, for the reason `ascertainment`
+    # draws its share the same way: the flatness is the finding, and a smoother
+    # would manufacture it.
+    for seg in _outcome_segments(led):
+        c = seg.drop_nulls("unaccounted_share")
+        if c.height:
+            sh.plot(_dates(c["date"]), c["unaccounted_share"].to_list(),
+                    marker="o", markersize=4.0, linewidth=1.5, color=gone_c)
+    tail = led.filter(pl.col("date") >= h["census_date"])
+    sh.plot(_dates(tail["date"]), tail["residual_share"].to_list(),
+            linewidth=1.2, linestyle=(0, (4, 3)), color="#9a6a4a")
+    sh.plot([census_x], [h["census_residual_share"]], marker="o",
+            markersize=4.0, markerfacecolor="white", markeredgecolor="#9a6a4a",
+            markeredgewidth=1.2, linestyle="none")
+    # THE STEP AT THIS DATE IS THE WARD CENSUS ITSELF -- the last quantity that
+    # could be subtracted. Drawing the two points unjoined would read as a
+    # break in one series rather than as the handover from a measurement to a
+    # bound.
+    sh.plot([census_x, census_x], [h["share"], h["census_residual_share"]],
+            linewidth=0.9, linestyle=(0, (1, 2)), color="#9a6a4a")
+    sh.axvline(census_x, color="#3d3d3d", linewidth=1.0, linestyle=(0, (4, 3)))
+    sh.annotate(f"{h['share']:.0%}", xy=(census_x, h["share"]),
+                xytext=(11, -12), textcoords="offset points", ha="left",
+                va="center", fontsize=13, fontweight="bold", color=gone_c)
+    # THE STEP IS THE WARD CENSUS, and unlabelled it reads as a break in one
+    # series. Its height is the last quantity that could be subtracted, so
+    # naming it says exactly how much of the bound above is still accounted
+    # for on the day the accounting stops.
+    sh.annotate(f"the step is the ward census — {h['in_ward']:,} confirmed "
+                f"patients in a bed, {h['ward_share']:.0%} of all cases",
+                xy=(census_x, (h["share"] + h["census_residual_share"]) / 2),
+                xytext=(-13, 34), textcoords="offset points", ha="right",
+                va="center", fontsize=8.5, color="#8a5a3a", linespacing=1.5,
+                arrowprops=dict(arrowstyle="->", color="#9a6a4a",
+                                linewidth=1.0, shrinkA=3, shrinkB=3))
+    sh.annotate("after this day only an upper bound survives:\nin a ward or "
+                f"with no record — {h['last_residual_share']:.0%} on "
+                f"{_fmt_day(h['last_date'])}",
+                xy=(mdates.datestr2num(h["last_date"]) - 3,
+                    h["last_residual_share"]),
+                xytext=(-14, 72), textcoords="offset points", ha="right",
+                va="center", fontsize=8.5, color="#8a5a3a", linespacing=1.5,
+                arrowprops=dict(arrowstyle="->", color="#9a6a4a",
+                                linewidth=1.0, shrinkA=2, shrinkB=3))
+    # WHY THE FIRST HALF OF THIS CURVE MAY NOT BE READ AS AN IMPROVEMENT. Two
+    # things unrelated to the response push the early share up: a case
+    # confirmed last week has no outcome to record yet whatever happens to it,
+    # and the recovery and ward ledgers themselves begin inside this window. A
+    # slope out of that is not a slope out of people being found.
+    sh.text(0.004, 0.025,
+            "Through June most confirmed cases were recent and had no outcome "
+            "yet, and the recovery and ward counts had only just begun to be "
+            "published —\nso the early share is not comparable with the later "
+            "one. What the panel argues is the flat stretch, not the slope "
+            "into it.",
+            transform=sh.transAxes, ha="left", va="bottom", fontsize=8.5,
+            color="#4a4a4a", linespacing=1.5)
+    sh.set_ylim(0, 0.92)
+    sh.set_yticks([0, 0.2, 0.4, 0.6, 0.8])
+    sh.set_yticklabels([f"{v:.0%}" for v in (0, .2, .4, .6, .8)])
+    sh.set_ylabel("share with no record", fontsize=10)
+    sh.set_axisbelow(True)
+    sh.grid(axis="y", **GRID)
+    sh.set_title(
+        "The share of all confirmed cases with no record — "
+        f"{h['run_share_min']:.0%} to {h['run_share_max']:.0%} on every one of "
+        f"the {h['run_days']} report days from {_fmt_day(h['run_start'])}, "
+        f"while the count itself went {h['run_start_unaccounted']:,} → "
+        f"{h['unaccounted']:,}",
+        loc="left", fontsize=10.5, color="#333333")
+    sh.xaxis.set_major_locator(mdates.WeekdayLocator(byweekday=mdates.MO))
+    sh.xaxis.set_major_formatter(mdates.DateFormatter("%b %-d"))
+
+    for a in (ax, sh):
+        for s in ("top", "right"):
+            a.spines[s].set_visible(False)
+        a.spines["left"].set_color("#999999")
+        a.spines["bottom"].set_color("#999999")
+
+    _header(fig,
+            "Of everyone confirmed with Ebola, where is the record of what "
+            "happened to them?",
+            "Cumulative confirmed cases split across the ledgers the reports "
+            "publish — the death total, the cumulative recoveries, and the "
+            "census of confirmed patients in an isolation ward.\nWhat those "
+            "three do not account for is drawn on top. It is an arithmetic "
+            "residual over four printed counts: no model, no rate, no "
+            "assumption about how long a patient stays in care.",
+            title_size=15, sub_size=9.5)
+    # `rect` IS (left, bottom, WIDTH, HEIGHT). The footer carries the three
+    # things that keep this figure from overstating, so it gets reserved space
+    # rather than being squeezed into the share panel.
+    foot_in = 0.70
+    fh = fig.get_figheight()
+    fig.get_layout_engine().set(
+        rect=(0, foot_in / fh, 1, 1 - (HEADER_IN + foot_in) / fh))
+    fig.text(0.006, 0.012, OUTCOME_FOOTER, ha="left", va="bottom",
+             fontsize=8.2, color="#4a4a4a", linespacing=1.5)
+
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, dpi=200)
     plt.close(fig)
@@ -2328,6 +2845,10 @@ FIGURES = {
                          "summary": "data/build/series/province_summary.csv",
                          "prose": "data/build/series/prose_provinces.csv",
                          "banner": "data/build/series/banner.csv"}),
+    "outcomes": (draw_outcomes,
+                 {"zone_table": "data/build/series/zone_table.csv",
+                  "banner": "data/build/series/banner.csv",
+                  "zone_status": "data/build/series/zone_table_status.csv"}),
     "care_ledger": (draw_care_ledger,
                     {"care": "data/build/series/care_prose.csv",
                      "banner": "data/build/series/banner.csv",

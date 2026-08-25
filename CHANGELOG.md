@@ -16,6 +16,54 @@ carries the rest.
 
 ---
 
+## `data/2026-08-22-r6` — 2026-08-25 — where the record of a confirmed case is
+
+**No stream changes and no value changes. Figures only**, so nothing a
+consumer reads moves: no file under `data/build/streams/` is added, removed,
+renamed or rewritten, and `meta.json` is untouched. A consumer pinned to `r5`
+needs to do nothing.
+
+**What is new** is a tenth committed figure, `docs/figures/outcomes.png`,
+built by `make figures` from `--figure outcomes` and gated by `release-check`
+like the other nine. It asks one question of the published series — of
+everyone ever confirmed, where is the record of what happened to them — and
+answers it as an arithmetic identity over four printed counts:
+
+    unaccounted = cum_cases − cum_deaths − cumul_recovered
+                  − patients_isolated_confirmed
+
+with the first two from the health-zone table's national row and the last two
+from the front-page dashboard tiles. Nothing is fitted, no rate enters, and no
+assumption about how long a patient stays in care enters. On **2 August**, the
+last report day all four exist, that is **1,033 people — 27% of the 3,802
+ever confirmed** — in none of the four ledgers, and the count grows over the
+same fourteen report days on which the *share* sits flat between 27% and 29%
+(676 on 18 July to 1,033 on 2 August).
+
+**The one thing worth a consumer's attention** is not the figure but what it
+draws attention to in the series: `patients_isolated_confirmed` **stops on
+2026-08-02** and the other three run to the end of the archive. Any
+decomposition of confirmed cases by outcome therefore has a different arity
+before and after that date, and code that carries the census forward as zero
+would show every patient in a bed as unaccounted for. Past 2 August only the
+undivided residual `cum_cases − cum_deaths − cumul_recovered` is available:
+1,672 on 22 August, against 1,368 when the census stopped. This was already
+pinned by
+`test_the_confirmed_tile_and_the_national_sentence_stop_on_the_same_day`;
+three further tests now pin the decomposition's closure and its headline
+values.
+
+**Read the band for what it is.** "No record" means no record in these four
+published counts. It is not a claim that anyone is untraced — the response
+works from a case line list that is not published. Recorded exits from care
+are incomplete (an absconder is booked as neither recovered nor dead, per
+`scripts/care_ledger.py`), so the recovery ledger is a floor and unrecorded
+recoveries inflate this residual by an unknown amount. Absconding, unrecorded
+recovery, unrecorded death and reporting lag all sit inside it in unknown
+proportion, and nothing in these four series separates them.
+
+---
+
 ## `data/2026-08-22-r5` — 2026-08-25 — every flow stream claims the window it sits in
 
 **Breaking for a reader, not for a value.** Twenty-seven files change: 22 gain
