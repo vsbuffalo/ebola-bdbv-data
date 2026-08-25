@@ -3284,3 +3284,33 @@ def test_the_same_build_passes_with_the_report_day_rows_present(monkeypatch,
     # The stock is untouched: two rows, the two the source stated.
     c = BS.read_stream(out / "care_census_ituri.tsv")
     assert c["time"].to_list() == ["2026-05-20", "2026-05-22"]
+
+
+@needs_pdfs
+def test_the_care_census_worked_example_is_still_true():
+    """The `care_census` interpretation cites a specific pair of report days to
+    show that the TOTAL census moves on suspect churn while the confirmed half
+    moves the other way. A worked example in a document nothing checks is a
+    number waiting to rot, so it is pinned here: if the extraction changes,
+    this fails and the register is corrected rather than quietly disagreeing
+    with the data it describes.
+    """
+    cp = pl.read_csv(ROOT / "data/build/series/care_prose.csv",
+                     infer_schema_length=20000)
+    d = {r["date"]: r for r in cp.filter(
+        (pl.col("province") == "Ituri")
+        & pl.col("date").is_in(["2026-07-25", "2026-07-26"])).iter_rows(named=True)}
+    a, b = d["2026-07-25"], d["2026-07-26"]
+    assert (a["census"], a["census_confirmed"], a["census_suspect"]) == (602, 287, 315)
+    assert (b["census"], b["census_confirmed"], b["census_suspect"]) == (531, 304, 227)
+    # the point of the example: total DOWN, confirmed UP, and the split closes
+    assert b["census"] - a["census"] == -71
+    assert b["census_confirmed"] - a["census_confirmed"] == +17
+    assert b["census_suspect"] - a["census_suspect"] == -88
+    assert ((b["census_confirmed"] - a["census_confirmed"])
+            + (b["census_suspect"] - a["census_suspect"])
+            == b["census"] - a["census"])
+    # and the register must still carry it
+    reg = FAMILIES.read_text()
+    for frag in ("602 to 531", "287 to 304", "315 to 227"):
+        assert frag in reg, f"the worked example lost {frag!r} from the register"
