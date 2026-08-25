@@ -1549,15 +1549,20 @@ def draw_outcomes(inputs: dict[str, Path], out: Path) -> None:
     # draws its share the same way: the flatness is the finding, and a smoother
     # would manufacture it.
     #
-    # DRAWN FROM `run_start` ONLY, on the shared calendar rather than on a
-    # calendar of its own. Before that day the share falls from two thirds to
-    # under a third for reasons unrelated to how many people the response was
-    # locating -- recent cases have no outcome recorded yet, and the recovery
-    # and ward ledgers begin inside that window -- so a slope drawn there
-    # reads as an improvement it is not. Not drawing it asserts nothing, which
-    # is the cheapest way to be right. The axis is still panel A's, so the
-    # rule at the census's last day stands in the same place on both.
-    shown = led.filter(pl.col("date") >= pl.lit(h["run_start"]))
+    # EVERY REPORT DAY THAT CARRIES ALL FOUR COUNTS IS DRAWN, and the line is
+    # broken across the days that do not rather than truncated back to the
+    # last unbroken run. Truncating kept 4 of the 48 such days: the nine
+    # breaks in this span are report days with no bulletin or no census, which
+    # panel A already marks, and dropping two months of a good series to avoid
+    # joining across them trades a real observation for a cosmetic one.
+    #
+    # The early share IS high -- around two thirds in June, falling to under a
+    # third -- and that fall is not an improvement in how many people the
+    # response was locating: recent cases have no outcome recorded yet, and
+    # the recovery and ward ledgers begin inside that window. That belongs in
+    # the caption, where it can be said in a sentence, rather than being
+    # enforced by deleting the data. `docs/figures/README.md` says it.
+    shown = led
     for seg in _outcome_segments(shown):
         c = seg.drop_nulls("unaccounted_share")
         if c.height:

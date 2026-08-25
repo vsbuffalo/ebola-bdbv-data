@@ -107,15 +107,19 @@ Three things the figure draws that the legend can only name:
   handover is why the lower panel switches from a solid measured share to a
   dashed upper bound at that date: after it, only *in a ward **or** with no
   record* can be asserted.
-- **The share panel starts late, and that is deliberate.** It is drawn from the
-  first day of the final unbroken run of report days carrying all four counts.
-  Earlier the share falls steeply, from about two thirds to under a third, for
-  two reasons unrelated to how many people the response was locating: a case
-  confirmed last week has no outcome recorded yet whatever happens to it, and
-  the recovery and ward ledgers themselves begin inside that window. A slope
-  drawn out of that reads as improvement and is not one, so it is not drawn.
-  The panel keeps the full shared calendar, so the rule at the census's last
-  day stands in the same place in both panels.
+- **DO NOT READ THE JUNE FALL AS AN IMPROVEMENT.** The share drops from about
+  two thirds to under a third across June and early July, for two reasons that
+  have nothing to do with how many people the response was locating: a case
+  confirmed last week has no outcome recorded yet whatever eventually happens
+  to it, and the recovery and ward ledgers themselves only begin inside that
+  window. What the panel argues is the FLAT STRETCH at the end — 14 report
+  days at 27–29% while the count itself went 676 to 1,033 — not the slope into
+  it.
+- **The share line is broken, not truncated.** Every one of the 48 report days
+  carrying all four counts is drawn; the line is cut where a day carries none,
+  which is a day with no bulletin or no census and is marked in the panel
+  above. The panel shares panel A's calendar, so the rule at the census's last
+  day stands in the same place in both.
 
 ## `ascertainment.png`
 
