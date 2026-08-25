@@ -82,8 +82,10 @@ def main() -> None:
     args = ap.parse_args()
 
     s = args.scope
-    c = pl.read_csv(args.streams / f"community_deaths_{s}.tsv", separator="\t")
-    d = pl.read_csv(args.streams / f"deaths_{s}.tsv", separator="\t")
+    c = pl.read_csv(args.streams / f"community_deaths_{s}.tsv",
+                    separator="\t", null_values="NA")
+    d = pl.read_csv(args.streams / f"deaths_{s}.tsv", separator="\t",
+                    null_values="NA")
     j = c.join(d, on="time", how="left")
     comm = int(c[f"community_deaths_{s}"].sum())
     split = int(c[f"deaths_split_{s}"].sum())

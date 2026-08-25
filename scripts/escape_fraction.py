@@ -68,8 +68,12 @@ BACKLOG_DUMPS = (dt.date(2026, 7, 22),)
 
 def load(streams: Path, slug: str) -> pl.DataFrame:
     """Same-day community deaths beside new confirmed cases, with both spans."""
+    # `null_values="NA"`: the daily flow files hole the report days the source
+    # said nothing on, and the `drop_nulls` below removes them only if they
+    # are read as nulls rather than as the string "NA".
     deaths = pl.read_csv(
-        streams / f"community_deaths_daily_{slug}.tsv", separator="\t", try_parse_dates=True
+        streams / f"community_deaths_daily_{slug}.tsv", separator="\t",
+        try_parse_dates=True, null_values="NA"
     )
     cases = pl.read_csv(
         streams / f"cases_daily_{slug}.tsv", separator="\t", try_parse_dates=True

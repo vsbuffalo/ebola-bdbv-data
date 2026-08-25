@@ -347,8 +347,21 @@ def draw_release_grid(inputs: dict[str, Path], out: Path) -> None:
       * event ticks   -- the reconciliation exception register, i.e. the days
                          the page's own arithmetic does not close.
     """
-    streams = {name: pl.read_csv(p, separator="\t", infer_schema_length=None)
+    # A CELL IS AN OBSERVATION, NOT A ROW. The flow files carry a row on every
+    # report day they span, holding `NA` where the source said nothing of that
+    # quantity -- the row is there so that a model accumulating between
+    # observations closes its interval on schedule, and painting it would
+    # claim a datum the release does not contain. `n_report_days` is 0 on
+    # exactly those rows. `NA` is also declared as the null token here for the
+    # second half of the same trap: polars does not parse it as null by
+    # default, so one hole turns a count column into a string column and a
+    # plotting library draws the strings at the axis baseline.
+    streams = {name: pl.read_csv(p, separator="\t", infer_schema_length=None,
+                                 null_values="NA")
                for name, p in inputs.items() if name.startswith("stream_")}
+    streams = {n: (d.filter(pl.col("n_report_days") > 0)
+                   if "n_report_days" in d.columns else d)
+               for n, d in streams.items()}
     zone = pl.read_csv(inputs["zone_table"], infer_schema_length=None)
     exc = pl.read_csv(inputs["exceptions"], separator="\t", comment_prefix="#",
                       infer_schema_length=None)
@@ -928,22 +941,29 @@ def draw_ascertainment(inputs: dict[str, Path], out: Path) -> None:
     extraction defect that made it climb toward 1.0 would read as collapsing
     isolation rather than as a parsing artifact.
     """
-    d = pl.read_csv(inputs["split"], separator="\t", try_parse_dates=True)
-    deaths = pl.read_csv(inputs["deaths"], separator="\t", try_parse_dates=True)
+    # `null_values="NA"`: the daily split carries a row on every report day it
+    # spans, holding `NA` where no page classified a death that way, so that a
+    # model accumulating between observations closes its interval on schedule.
+    # Read without the token those rows come back as the STRING "NA", the
+    # `drop_nulls` below does not remove them, and matplotlib draws them as
+    # categorical values at the axis baseline -- a hole rendered as an
+    # observed zero.
+    d = pl.read_csv(inputs["split"], separator="\t", try_parse_dates=True,
+                    null_values="NA")
+    deaths = pl.read_csv(inputs["deaths"], separator="\t", try_parse_dates=True,
+                         null_values="NA")
     d = (d.drop_nulls(["community_deaths_national", "deaths_split_national"])
          .filter(pl.col("deaths_split_national") > 0)
          .join(deaths.select("time", "deaths_national"), on="time", how="left")
          .sort("time"))
 
-    # DO NOT DIVIDE THESE BY days_covered. The column means two different
-    # things across this repo's streams, and here it is the WRONG one. The
-    # split is flow-summed -- it is the report's own 24-hour figure -- so
-    # `days_covered` records the gap since the previous observation, not the
-    # span the count covers. Sitrep 089 (9 Aug) carries 51 classified deaths
-    # with days_covered = 4 while its neighbours run 50 to 67 in a single day;
-    # dividing by 4 would draw 13 and invent a collapse that did not happen.
-    # The national total below IS cumulative-differenced, so it divides. The
-    # asymmetry is real and it is the reason this comment exists.
+    # DO NOT DIVIDE THESE BY days_covered, even though it is now the true span.
+    # The split is the report's own 24-hour figure, and the file's rows sit on
+    # the report-day grid, so `days_covered` is 1 on all but the one row after
+    # the 28-29 July silence. Drawing a per-day rate would still be the wrong
+    # picture here: these bars are counts of classified deaths per report, and
+    # the point of the panel is the SHARE, which is scale-free. The national
+    # total below IS cumulative-differenced over its own window.
     t = [mdates.date2num(x) for x in d["time"].to_list()]
     comm_n = comm = d["community_deaths_national"].to_list()
     total_n = total = d["deaths_split_national"].to_list()

@@ -16,6 +16,195 @@ carries the rest.
 
 ---
 
+## `data/2026-08-22-r5` — 2026-08-25 — every flow stream claims the window it sits in
+
+**Breaking for a reader, not for a value.** Twenty-seven files change: 22 gain
+rows carrying the literal token `NA` in their observation columns, and five
+gain no row but restate one `days_covered`. **No
+scored observation changed its value and none changed its `time`**, measured
+rather than asserted: the `r4` vintage was rebuilt from this commit's base
+against the same `data/build/series/`, and joined file by file on `time` the
+two agree on every observation, every file, with no row present before and
+absent now. `revisions.tsv` is byte-identical. So is every stock file, every
+weekly file, and every `cases_*` and `deaths_*` file at both resolutions.
+
+**What a consumer must do**, in one line: **read these files with `NA`
+declared as the null token** — in polars, `pl.read_csv(..., separator="\t",
+null_values="NA")`. `NA` is not a null token by default there, so one hole
+turns an integer column into a string column; a reader asserting `Int64`
+fails, and a plotting library draws the strings at the axis baseline, which
+renders a hole as an observed zero in a figure that looks entirely plausible.
+Beyond that, a model reading only the columns it names keeps working: no file
+is renamed or removed, no observation column is renamed, and the one column
+added is metadata.
+
+### The defect
+
+An engine accumulates a modelled flow **from the previous row of that stream**
+to this one, and a row carrying no observation still resets the accumulator,
+because what resets it is the row being present and not the row being scored.
+`r4` published the care ledger's flows, the daily laboratory files and the
+daily community-death split holding **only the report days the source stated
+the quantity on**. Each next row's accumulation window was therefore as wide
+as the silence behind it, while its count still covered a single day. Nothing
+in the release said so: the counts were right, every stream's total still
+equalled what the source's cumulative moved, no value was negative, and every
+column was populated. `days_covered = 1` was documented as the protection and
+protected nothing, because no engine reads that column to decide the window.
+
+`care_admissions_nord_kivu.tsv` carried 1 June and 19 July in **consecutive
+rows** — 48 days of modelled admissions to be explained by one day of observed
+ones. `lab_daily_haut_uele.tsv` held nine observations up to 20 days apart.
+The same defect at 13 days, measured downstream on a stream built there,
+refused 23 of 24 chains at initialisation.
+
+### The invariant, now a build gate
+
+```
+for every SCORED row:  time - (time of the previous ROW, NA or scored) == days_covered
+```
+
+`make streams` fails and names every offending row if it does not hold on any
+flow file. A scored row whose `days_covered` understates its gap makes the
+model accumulate over a window the row does not claim. It is stated in the
+"Reading any row" section of `data/build/streams/README.md` as a property of
+every published flow file, and enforced in the same spirit as the existing
+non-negativity and carry-discharge gates — read back off disk, because what a
+consumer fits is the file. Two further gates ship with it: an unscored row is
+unscored in **every** observation cell (nothing half-scored), and a file
+publishing two observation columns must have declared which of them is the
+denominator before it can ship.
+
+### What changed in the files
+
+The three families the source states as **a single 24-hour figure per report**
+now carry a row on every report day they span. The days the source stated the
+quantity carry it unchanged; the days it did not carry `NA` with
+`n_report_days` **0**, which is what marks a row as unscored.
+
+| family | files | rows gained | widest gap between consecutive rows, before → after |
+|---|---:|---:|---|
+| care ledger flows (`care_admissions_*`, `care_exits*`) | 20 | +219 | 48 d → 3 d |
+| `lab_daily_*` | 4 | +64 | 20 d → 3 d |
+| `community_deaths_daily_*` | 4 | +25 | 8 d → 3 d |
+
+308 rows in total, across 27 changed files. Per file:
+
+| file | scored obs | rows before | rows after | widest gap before → after |
+|---|---:|---:|---:|---|
+| `care_admissions_nord_kivu.tsv` | 24 | 24 | 78 | 48 d → 3 d |
+| `care_exits_absconded_ituri.tsv` | 8 | 8 | 36 | 14 d → 3 d |
+| `care_exits_deaths_ituri.tsv` | 19 | 19 | 44 | 11 d → 3 d |
+| `care_exits_noncase_ituri.tsv` | 6 | 6 | 29 | 14 d → 3 d |
+| `lab_daily_haut_uele.tsv` | 9 | 9 | 31 | 20 d → 3 d |
+| `lab_daily_nord_kivu.tsv` | 50 | 50 | 67 | 12 d → 3 d |
+| `lab_daily_ituri.tsv` | 60 | 60 | 76 | 9 d → 3 d |
+| `care_exits_nord_kivu.tsv` | 18 | 18 | 33 | 11 d → 3 d |
+| `care_admissions_haut_uele.tsv` | 7 | 7 | 21 | 10 d → 1 d |
+| `care_exits_ituri.tsv` | 23 | 23 | 36 | 8 d → 3 d |
+| `community_deaths_daily_haut_uele.tsv` | 26 | 26 | 39 | 8 d → 3 d |
+| `care_exits_deaths_haut_uele.tsv` | 2 | 2 | 12 | 11 d → 1 d |
+| `care_exits_noncase_nord_kivu.tsv` | 10 | 10 | 20 | 7 d → 3 d |
+| `lab_daily_national.tsv` | 67 | 67 | 76 | 6 d → 3 d |
+| `care_admissions_ituri.tsv` | 28 | 28 | 35 | 4 d → 3 d |
+| `care_exits_deaths_nord_kivu.tsv` | 16 | 16 | 22 | 6 d → 3 d |
+| `care_exits_recovered_nord_kivu.tsv` | 21 | 21 | 27 | 5 d → 3 d |
+| `care_exits_recovered_haut_uele.tsv` | 5 | 5 | 10 | 4 d → 1 d |
+| `community_deaths_daily_{ituri,nord_kivu,national}.tsv` | 35 each | 35 | 39 | 4 d → 3 d |
+| `care_exits_recovered_ituri.tsv` | 36 | 36 | 39 | 3 d → 3 d |
+
+Five files gain no row and still change: `care_exits_national.tsv`,
+`care_exits_{absconded,deaths,noncase,recovered}_national.tsv` already had a
+row on every report day they span, and their `days_covered` at 30 July moves
+from 1 to 3 — see the residual below.
+
+`care_exits_absconded_nord_kivu.tsv` is byte-identical and still holds a single
+scored row. **It has no predecessor at all**, so its accumulation window runs
+from wherever the model's conditioning boundary sits; no grid can fix that,
+because the source states the quantity once.
+
+### The grid is report days, never calendar days
+
+A row asserts a bin. A row on a day the archive holds no report for would
+assert a bin the source never licensed — and, the reset being row-based, would
+manufacture a reset point out of nothing. The grid is therefore the report
+days the archive holds, bounded by the stream's own first and last
+observation: a row before the first would claim the quantity was under
+observation and empty, a row after the last would claim the series is still
+running.
+
+**The residual, stated because it is real.** Where the source published no
+report at all the gap widens and `days_covered` widens with it — an honest
+wide bin rather than a silent one. The archive holds no report for 28 and 29
+July, so **25 of 611 scored rows (4.1%)** on these families claim a window of
+2 or 3 days while the figure they carry covers 24 hours; `n_report_days` is 1
+on every one of them, and says so. That is the whole of the remaining
+mismatch, down from a factor of 48.
+
+### `NA`, zeros, and denominators
+
+An `NA` contributes no likelihood term and **is not an observed zero**. A
+report that does not mention absconders is silent about them, not reporting
+none; a published `0` is the source having looked and counted none, and those
+are still there and still scored.
+
+An unscored row keeps everything that describes it — `n_report_days_silent`,
+`checks` and `flags` are populated, because a row that says why it is empty is
+strictly better than a bare hole. `n_report_days_silent` changes meaning
+slightly as a consequence: a scored row now reads 0 where it used to carry the
+tally of the silence behind it, because each silent report day is a row of its
+own reading 1.
+
+Two denominator columns exist in the release, and they are treated
+differently, which is deliberate:
+
+| column | what a model does with it | on an unscored row |
+|---|---|---|
+| `tests_{national,ituri,nord_kivu,haut_uele}` | **divides by it** | a placeholder of **1**, never empty and never 0 |
+| `deaths_split_{national,ituri,nord_kivu,haut_uele}` | passes it as a **binomial size**, never divides | empty, together with the `community_deaths_*` beside it |
+
+A division can be evaluated on a row that is never scored, so an empty or zero
+`tests_*` would be a division by zero in a term nobody meant to compute.
+`binomial(n = NA)` cannot be constructed at all, so an engine turns such a row
+into a hole — which is what an unscored row should be — and a placeholder
+there would be a fabricated trial count for no gain. **A pre-existing hazard
+worth naming while you are here:** `deaths_split_haut_uele` is `0` on five
+*scored* rows of `community_deaths_daily_haut_uele.tsv`. Those are real
+observations (0 classified deaths of 0), unchanged by this release, and a
+model dividing by that column rather than passing it as a size will divide by
+zero on them.
+
+### Schema
+
+| file | column added | position |
+|---|---|---|
+| `community_deaths_daily_{ituri,nord_kivu,haut_uele,national}.tsv` | `n_report_days_silent` | between `n_report_days` and `flags`, matching every other file that carries it |
+
+Nothing is renamed or removed. `n_report_days` takes the new value **0** on
+unscored rows; it was always 1 on these files before. The new column is
+inserted rather than appended, so a reader indexing columns by POSITION rather
+than by name needs its offsets moved on those four files; a reader looking
+columns up by name needs nothing.
+
+`meta.json` gains `n_rows` beside `n_obs` on every gridded stream's
+reconciliation entry — `n_obs` is the scored count and `n_rows` the file's
+height, and the two differing by exactly the number of holes is the property
+this release exists to protect. `data/build/streams/README.md` gains an `NA
+rows` column beside `Obs` for the same reason, and its stated spans are now
+measured over scored times.
+
+### Stocks are untouched, and that is a decision
+
+`care_census_*`, `care_census_confirmed_*`, `care_census_suspect_*`,
+`patients_isolated`, `patients_isolated_confirmed` and `cumul_recovered` carry
+no `days_covered` and accumulate over no window, so a gap in one is a reading
+taken later and costs nothing. `care_census_confirmed_nord_kivu.tsv` still has
+its 46-day gap, deliberately: rows across it would assert that a census was
+taken and came back empty, which no report says. Every one of these files is
+byte-identical to `r4`.
+
+---
+
 ## `data/2026-08-22-r4` — 2026-08-24 — the care ledger published, and coverage stated on every prose-derived stream
 
 **Additive, and not breaking.** No stream file is renamed or removed, no
