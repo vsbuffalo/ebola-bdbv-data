@@ -398,7 +398,11 @@ disagreements, signed, over time.](docs/figures/comparison.png)
 
 These figures are committed copies (`docs/figures/`), refreshed by
 `make compare` so they always show the current build's comparison; a diff in
-them is a change in what the comparison shows.
+them is a change in what the comparison shows. Every committed figure carries a
+caption in [`docs/figures/README.md`](docs/figures/README.md) — what it shows,
+and the caveats that belong with it wherever it is used. That is where to look
+before putting one of these on a slide; a test fails if a committed figure has
+no section there.
 
 **6. The archive itself.** The PDFs are not committed (~145 MB); what pins them
 is a committed SHA-256 manifest, and `make verify` proves the copy on disk is

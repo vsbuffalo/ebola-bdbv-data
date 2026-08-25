@@ -62,6 +62,31 @@ recoveries inflate this residual by an unknown amount. Absconding, unrecorded
 recovery, unrecorded death and reporting lag all sit inside it in unknown
 proportion, and nothing in these four series separates them.
 
+**Where those limits are now written down: `docs/figures/README.md`**, new in
+this release. It holds one section per committed figure — what the figure
+shows, and the caveats that must travel with it wherever it is used. Two tests
+make it fail-closed, in the same shape as the stream register that gates the
+data dictionary: a committed figure with no section fails the suite, and a
+section naming no figure fails it too. A new published figure can no longer
+ship uncaptioned.
+
+`outcomes.png` was then cut back to what a room can read in three seconds and
+**changes bytes in this release**; the other nine committed figures do not. It
+loses a two-line subtitle, a two-line panel header, a two-line headline
+explainer, eight rotated labels on the breaks, three inline band labels with
+their leader arrows, a two-line note inside the share panel, and a three-line
+footer — all of which moved to `docs/figures/README.md`. It gains **a legend**,
+which is what it was actually missing: the four bands, the hatch that means no
+ward census was published that day (so the top two bands are not separable),
+and the pale span that means no national cumulative was published. The share
+panel now starts at the first day of the final unbroken run of report days
+carrying all four counts, because the earlier slope falls for reasons that are
+not the response finding people — recent cases have no outcome recorded yet,
+and the recovery and ward ledgers begin inside that window — and a slope drawn
+out of that reads as improvement. Everything that would make the figure
+mislead if removed stayed: the hatching, the rule at 2 August, and the share
+panel's switch from a measured share to an upper bound there.
+
 ---
 
 ## `data/2026-08-22-r5` — 2026-08-25 — every flow stream claims the window it sits in

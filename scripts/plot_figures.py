@@ -50,6 +50,15 @@ asserts in words comes from one of the small pure functions above its drawing
 code, and each of those is pinned by a test, so the claim in the caption and
 the claim in the test suite cannot drift apart.
 
+AND A COMMITTED FIGURE MAY NOT SHIP WITHOUT A CAPTION. `docs/figures/README.md`
+holds one section per figure in `docs/figures/`, naming what it shows and the
+caveats that travel with it wherever it is used; a test fails if a committed
+figure has no section, or a section names no figure. What belongs there rather
+than on the figure is anything a reader can consult at leisure -- the limits on
+what a band licenses, the causes of a break, why one stretch of a series is not
+comparable with another. What stays on the figure is only what would make it
+MISLEAD if removed.
+
 COLOUR
 Provinces are identities, so they take a fixed categorical assignment in
 population order -- the Okabe-Ito palette, validated for colour-vision
@@ -75,6 +84,8 @@ matplotlib.use("Agg")
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import polars as pl
+from matplotlib.lines import Line2D
+from matplotlib.patches import Patch
 from matplotlib.ticker import MaxNLocator, MultipleLocator
 
 #: Fixed identity -> colour, in outbreak-size order. Colour follows the
@@ -1141,20 +1152,18 @@ OUTCOME_RECOVERED = ("#009E73", 0.42)
 OUTCOME_WARD = ("#56B4E9", 1.00)
 OUTCOME_GONE = ("#D55E00", 1.00)
 
-#: THE THREE THINGS THAT KEEP THIS FIGURE FROM OVERSTATING, on the figure
-#: rather than in a caption someone will not have. Each is a limit on what the
-#: top band licenses anyone to conclude, and the last one is the reason the
-#: figure names no cause anywhere.
-OUTCOME_FOOTER = (
-    "“No record” means no record in these four published counts. It "
-    "is not a claim that anyone is untraced: the response works from a case "
-    "line list, which is not published, and this figure cannot see it.\n"
-    "Recorded exits from care are incomplete — a patient who absconds is "
-    "booked as neither recovered nor dead (scripts/care_ledger.py) — so the "
-    "recovery ledger is a floor and unrecorded recoveries land here.\n"
-    "Absconding, unrecorded recovery, unrecorded death and reporting lag all "
-    "sit inside the band in unknown proportion. Nothing in these four series "
-    "separates them, and nothing here asserts which it is.")
+#: The two marks that stand for something the source did NOT publish, and so
+#: must be legible as absences rather than as values: the pale span over a
+#: report day carrying no national cumulative, and the line style the share
+#: panel switches to once the ward census stops and only a bound survives.
+OUTCOME_BREAK = "#f4f4f4"
+OUTCOME_BOUND = "#9a6a4a"
+
+#: Inches reserved above the axes for the title, the one-line subtitle and the
+#: two-row legend beneath them. Wider than HEADER_IN because the legend lives
+#: in that band: a legend box laid over the composition would cover the very
+#: band the figure is about.
+OUTCOME_HEADER_IN = 1.34
 
 
 def _fmt_day(iso: str) -> str:
@@ -1162,16 +1171,12 @@ def _fmt_day(iso: str) -> str:
     return f"{dt.date.fromisoformat(iso):%b %-d}"
 
 
-def _shift(iso: str, days: int) -> str:
-    return (dt.date.fromisoformat(iso) + dt.timedelta(days=days)).isoformat()
-
-
-def _bold_span(frame: pl.DataFrame, col: str = "date") -> str:
-    """The frame's own span, escaped for mathtext so a panel title can bold it
-    without writing either date in."""
+def _span(frame: pl.DataFrame, col: str = "date") -> str:
+    """The frame's own span, in the deck's month-day order, so a subtitle can
+    carry the dates without either of them being written in."""
     lo = dt.date.fromisoformat(frame[col].min())
     hi = dt.date.fromisoformat(frame[col].max())
-    return f"{lo:%b\\ %-d}\\ to\\ {hi:%b\\ %-d,\\ %Y}"
+    return f"{lo:%b %-d} to {hi:%b %-d, %Y}"
 
 
 def outcome_ledger(zone: pl.DataFrame, banner: pl.DataFrame) -> pl.DataFrame:
@@ -1383,8 +1388,25 @@ def draw_outcomes(inputs: dict[str, Path], out: Path) -> None:
     a floor and unrecorded recoveries land in this band instead. Absconding,
     unrecorded recovery, unrecorded death and reporting lag all sit inside it
     in unknown proportion, and nothing in these four series separates them.
-    The figure therefore asserts no cause, on the figure itself as well as
-    here.
+    The figure therefore asserts no cause.
+
+    WHERE THOSE LIMITS ARE WRITTEN DOWN. In `docs/figures/README.md`, the
+    caption every use of this figure carries, along with the three distinct
+    causes of the breaks and the reason the June share is not comparable with
+    the August one. They are not on the figure: this is a slide, read in
+    seconds, and the paragraph that used to sit under it was read by nobody.
+    What stays on the figure is only what would make it MISLEAD if removed --
+    the hatching where no ward census exists, the rule at the census's last
+    day, and the share panel's switch from a measurement to a bound there.
+
+    WHY THE SHARE PANEL STARTS LATE. It is drawn from `run_start`, the first
+    day of the final unbroken run of report days carrying all four counts.
+    Before that the share falls steeply for two reasons that have nothing to
+    do with the response -- a case confirmed last week has no outcome to
+    record yet, and the recovery and ward ledgers themselves begin inside that
+    window -- so a slope drawn there reads as improvement and is not one.
+    Starting where the ledgers are established removes the misreading instead
+    of arguing with it.
     """
     zone = pl.read_csv(inputs["zone_table"], infer_schema_length=None)
     banner = pl.read_csv(inputs["banner"], infer_schema_length=None)
@@ -1401,10 +1423,24 @@ def draw_outcomes(inputs: dict[str, Path], out: Path) -> None:
     gone_c, gone_a = OUTCOME_GONE
 
     fig, (ax, sh) = plt.subplots(
-        2, 1, figsize=(13.333, 7.5), height_ratios=[1.72, 1],
+        2, 1, figsize=(13.333, 7.5), height_ratios=[2.35, 1],
         sharex=True, constrained_layout=True)
+    fh = fig.get_figheight()
+    # ONE TITLE LINE AND ONE SUBTITLE LINE. `_header` sets the axes rect from
+    # HEADER_IN, which clears two lines of text and nothing else; this figure
+    # needs the legend in that band too, so the rect is set again afterwards.
+    # `rect` IS (left, bottom, WIDTH, HEIGHT), not (left, bottom, right, top).
+    _header(fig,
+            "Of everyone confirmed with Ebola, where is the record of what "
+            "happened to them?",
+            "Cumulative confirmed cases against the four counts the reports "
+            f"publish, {_span(led)} — arithmetic over printed numbers, not a "
+            "model.",
+            title_size=15, sub_size=9.5)
+    fig.get_layout_engine().set(rect=(0, 0, 1, 1 - OUTCOME_HEADER_IN / fh),
+                                hspace=0.05)
 
-    top = h["last_cum_cases"] * 1.17
+    top = h["last_cum_cases"] * 1.12
     for seg in _outcome_segments(led):
         base = [a + b for a, b in zip(seg["cum_deaths"].to_list(),
                                       seg["cumul_recovered"].to_list())]
@@ -1438,79 +1474,62 @@ def draw_outcomes(inputs: dict[str, Path], out: Path) -> None:
                             linewidth=0)
         ax.plot(xs, cases, color="#3d3d3d", linewidth=1.0)
 
-    # GAPS ARE HOLES, LABELLED WITH WHY, never a band drawn through them. The
-    # label rides in the empty space ABOVE the case curve at that date, which
-    # is where there is room for it; anchoring every label to one height would
-    # print the August ones through the composition.
-    at_case = dict(zip(led["date"].to_list(), led["cum_cases"].to_list()))
+    # GAPS ARE HOLES, never a band drawn through them, and they are marked
+    # rather than captioned. A rotated label in each span is a row of small
+    # rotated text at slide size, which nobody reads; the legend says what a
+    # pale span means, and `docs/figures/README.md` names the three causes
+    # `outcome_gaps` distinguishes.
     for g in gaps:
         lo_x = mdates.date2num(g["lo"]) - (1 - OUTCOME_PAD)
         hi_x = mdates.date2num(g["hi"]) + (1 - OUTCOME_PAD)
-        ax.axvspan(lo_x, hi_x, color="#f4f4f4", zorder=0)
-        near = max((v for d, v in at_case.items()
-                    if abs((dt.date.fromisoformat(d) - g["lo"]).days) <= 4),
-                   default=0)
-        ax.text((lo_x + hi_x) / 2, (near + top) / 2, g["why"], rotation=90,
-                ha="center", va="center", fontsize=6.5, color="#8a8a8a",
-                linespacing=1.25)
+        ax.axvspan(lo_x, hi_x, color=OUTCOME_BREAK, zorder=0)
 
     ax.axvline(census_x, color="#3d3d3d", linewidth=1.0, linestyle=(0, (4, 3)),
                zorder=5)
 
-    # DIRECT LABELS, NOT A LEGEND. A legend box on a slide sends the eye off
-    # the data and back; and the box would have to sit over the composition,
-    # because the header band above it is already carrying the subtitle.
-    lab_x = mdates.datestr2num(h["last_date"]) - 9
-    lab = led.filter(pl.col("date") <= _shift(h["last_date"], -9)).row(-1, named=True)
-    ax.text(lab_x, lab["cum_deaths"] / 2, "recorded dead", ha="center",
-            va="center", fontsize=10.5, color="#2f2f2f", fontweight="bold")
-    ax.text(lab_x, lab["cum_deaths"] + lab["cumul_recovered"] / 2,
-            "recorded recovered", ha="center", va="center", fontsize=10.5,
-            color="#00503a", fontweight="bold")
-    # The ward band is nine percent of the composition at its widest, so it
-    # takes a leader rather than a label sitting inside it. It is pointed at in
-    # early July rather than at the census's last day, to keep it off the line
-    # the callout's arrow travels.
-    ward_mid = led.drop_nulls("in_ward")
-    ward_row = ward_mid.row(ward_mid.height // 2, named=True)
-    ax.annotate("confirmed and in a ward",
-                xy=(mdates.datestr2num(ward_row["date"]),
-                    ward_row["cum_deaths"] + ward_row["cumul_recovered"]
-                    + ward_row["in_ward"] / 2),
-                xytext=(-8, 46), textcoords="offset points",
-                ha="center", va="bottom", fontsize=9.5, color="#0f5c86",
-                arrowprops=dict(arrowstyle="->", color="#0f5c86",
-                                linewidth=1.0, shrinkA=3, shrinkB=2))
+    # A LEGEND, NOT DIRECT LABELS. Six marks carry meaning here -- four bands,
+    # the hatch, and the pale span -- and two of the six stand for an ABSENCE,
+    # which no label placed inside the composition can name because there is
+    # nothing there to place it on. One legend names all six in one place. It
+    # lives in the header band rather than over the data, because the region it
+    # would otherwise have to cover is the band the figure is about.
+    marks = [
+        Patch(facecolor=dead_c, alpha=dead_a, linewidth=0,
+              label="recorded dead"),
+        Patch(facecolor=rec_c, alpha=rec_a, linewidth=0,
+              label="recorded recovered"),
+        Patch(facecolor=ward_c, alpha=ward_a, linewidth=0,
+              label="confirmed and in a ward"),
+        Patch(facecolor=gone_c, alpha=gone_a, linewidth=0, label="no record"),
+        Patch(facecolor=gone_c, alpha=0.18, hatch="///", edgecolor=gone_c,
+              linewidth=0.0,
+              label="no ward census that day — top two bands not separable"),
+        Patch(facecolor=OUTCOME_BREAK, edgecolor="#cbcbcb", linewidth=0.7,
+              label="no national cumulative published"),
+    ]
+    # Column-major in three columns, which is what puts the two bottom bands
+    # in the first column, the two top bands in the second and the two
+    # absences in the third.
+    leg = ax.legend(handles=marks, ncols=3, loc="upper left",
+                    bbox_to_anchor=(0.008, 1 - 0.63 / fh),
+                    bbox_transform=fig.transFigure, frameon=False,
+                    fontsize=9, handlelength=1.7, handleheight=1.0,
+                    handletextpad=0.6, columnspacing=2.2, labelspacing=0.5,
+                    borderaxespad=0.0, borderpad=0.0)
+    leg.set_in_layout(False)
 
-    # THE CALLOUT AND ITS ARROW ARE DRAWN SEPARATELY. `annotate` starts the
-    # arrow at the text's anchor point, which for a left-aligned headline is
-    # its first character, so a single call would run the arrow straight
-    # through its own text.
-    ax.text(0.022, 0.935, f"{h['unaccounted']:,} people with no record",
+    # THE ONE LINE THE ROOM HAS TIME FOR. Both numbers are read off the
+    # ledger; the date they belong to is the one the dashed rule is labelled
+    # with, so it is not repeated here.
+    ax.text(0.021, 0.925,
+            f"{h['unaccounted']:,} people with no record — {h['share']:.0%} of "
+            "everyone confirmed",
             transform=ax.transAxes, ha="left", va="center", fontsize=17.5,
             fontweight="bold", color=gone_c)
-    ax.text(0.024, 0.862,
-            f"{h['share']:.0%} of all {h['cum_cases']:,} people ever confirmed,"
-            f" on {_fmt_day(h['census_date'])} — not in the death\ntotal, not "
-            "in the cumulative recoveries, and not in a bed",
-            transform=ax.transAxes, ha="left", va="top", fontsize=10.5,
-            color="#333333", linespacing=1.5)
-    ax.annotate("", xy=(census_x - 1.5,
-                        (h["cum_deaths"] + h["cumul_recovered"] + h["in_ward"]
-                         + h["cum_cases"]) / 2),
-                xytext=(0.445, 0.715), textcoords="axes fraction",
-                arrowprops=dict(arrowstyle="->", color=gone_c, linewidth=1.6,
-                                shrinkA=2, shrinkB=3))
-
-    band = led.filter(pl.col("date") <= _shift(h["last_date"], -6)).row(
-        -1, named=True)
-    band_lo = band["cum_deaths"] + band["cumul_recovered"]
-    ax.text(mdates.datestr2num(h["last_date"]) - 6,
-            band_lo + 0.45 * (band["cum_cases"] - band_lo),
-            "in a ward OR with\nno record, undivided",
-            ha="center", va="center", fontsize=9, color="#8a3b00",
-            linespacing=1.5)
-    ax.text(census_x - 1.2, top * 0.965, "last national ward census",
+    # The dashed rule is the only thing on this panel that is neither a band
+    # nor a legend entry, so it is the only thing still labelled in place.
+    ax.text(census_x - 1.2, top * 0.965,
+            f"last national ward census · {_fmt_day(h['census_date'])}",
             ha="right", va="center", fontsize=8.5, color="#555555")
 
     ax.set_ylim(0, top)
@@ -1522,84 +1541,86 @@ def draw_outcomes(inputs: dict[str, Path], out: Path) -> None:
     ax.set_ylabel("cumulative confirmed cases", fontsize=10)
     ax.set_axisbelow(True)
     ax.grid(axis="y", **GRID)
-    ax.set_title(
-        "Every confirmed case ever counted, against the ledgers that say what "
-        f"became of the person · $\\bf{{{_bold_span(led)}}}$\nHatched: no ward "
-        "census that day, so the top two bands are not separable. Grey: report "
-        f"days with no national cumulative — {len(gaps)} of them, each "
-        "labelled with why.",
-        loc="left", fontsize=10, color="#333333", linespacing=1.45)
+    # NO PANEL HEADER. It carried the span, which the subtitle now carries and
+    # the date axis shows, and the two sentences about the hatch and the pale
+    # spans, which are legend entries.
 
     # THE SHARE, PER REPORT DAY AND UNSMOOTHED, for the reason `ascertainment`
     # draws its share the same way: the flatness is the finding, and a smoother
     # would manufacture it.
-    for seg in _outcome_segments(led):
+    #
+    # DRAWN FROM `run_start` ONLY, on the shared calendar rather than on a
+    # calendar of its own. Before that day the share falls from two thirds to
+    # under a third for reasons unrelated to how many people the response was
+    # locating -- recent cases have no outcome recorded yet, and the recovery
+    # and ward ledgers begin inside that window -- so a slope drawn there
+    # reads as an improvement it is not. Not drawing it asserts nothing, which
+    # is the cheapest way to be right. The axis is still panel A's, so the
+    # rule at the census's last day stands in the same place on both.
+    shown = led.filter(pl.col("date") >= pl.lit(h["run_start"]))
+    for seg in _outcome_segments(shown):
         c = seg.drop_nulls("unaccounted_share")
         if c.height:
             sh.plot(_dates(c["date"]), c["unaccounted_share"].to_list(),
                     marker="o", markersize=4.0, linewidth=1.5, color=gone_c)
     tail = led.filter(pl.col("date") >= h["census_date"])
     sh.plot(_dates(tail["date"]), tail["residual_share"].to_list(),
-            linewidth=1.2, linestyle=(0, (4, 3)), color="#9a6a4a")
+            linewidth=1.2, linestyle=(0, (4, 3)), color=OUTCOME_BOUND)
     sh.plot([census_x], [h["census_residual_share"]], marker="o",
-            markersize=4.0, markerfacecolor="white", markeredgecolor="#9a6a4a",
-            markeredgewidth=1.2, linestyle="none")
+            markersize=4.0, markerfacecolor="white",
+            markeredgecolor=OUTCOME_BOUND, markeredgewidth=1.2,
+            linestyle="none")
     # THE STEP AT THIS DATE IS THE WARD CENSUS ITSELF -- the last quantity that
     # could be subtracted. Drawing the two points unjoined would read as a
     # break in one series rather than as the handover from a measurement to a
     # bound.
     sh.plot([census_x, census_x], [h["share"], h["census_residual_share"]],
-            linewidth=0.9, linestyle=(0, (1, 2)), color="#9a6a4a")
+            linewidth=0.9, linestyle=(0, (1, 2)), color=OUTCOME_BOUND)
     sh.axvline(census_x, color="#3d3d3d", linewidth=1.0, linestyle=(0, (4, 3)))
     sh.annotate(f"{h['share']:.0%}", xy=(census_x, h["share"]),
-                xytext=(11, -12), textcoords="offset points", ha="left",
+                xytext=(-9, -15), textcoords="offset points", ha="right",
                 va="center", fontsize=13, fontweight="bold", color=gone_c)
-    # THE STEP IS THE WARD CENSUS, and unlabelled it reads as a break in one
-    # series. Its height is the last quantity that could be subtracted, so
-    # naming it says exactly how much of the bound above is still accounted
-    # for on the day the accounting stops.
-    sh.annotate(f"the step is the ward census — {h['in_ward']:,} confirmed "
-                f"patients in a bed, {h['ward_share']:.0%} of all cases",
-                xy=(census_x, (h["share"] + h["census_residual_share"]) / 2),
-                xytext=(-13, 34), textcoords="offset points", ha="right",
-                va="center", fontsize=8.5, color="#8a5a3a", linespacing=1.5,
-                arrowprops=dict(arrowstyle="->", color="#9a6a4a",
-                                linewidth=1.0, shrinkA=3, shrinkB=3))
-    sh.annotate("after this day only an upper bound survives:\nin a ward or "
-                f"with no record — {h['last_residual_share']:.0%} on "
-                f"{_fmt_day(h['last_date'])}",
-                xy=(mdates.datestr2num(h["last_date"]) - 3,
-                    h["last_residual_share"]),
-                xytext=(-14, 72), textcoords="offset points", ha="right",
-                va="center", fontsize=8.5, color="#8a5a3a", linespacing=1.5,
-                arrowprops=dict(arrowstyle="->", color="#9a6a4a",
-                                linewidth=1.0, shrinkA=2, shrinkB=3))
-    # WHY THE FIRST HALF OF THIS CURVE MAY NOT BE READ AS AN IMPROVEMENT. Two
-    # things unrelated to the response push the early share up: a case
-    # confirmed last week has no outcome to record yet whatever happens to it,
-    # and the recovery and ward ledgers themselves begin inside this window. A
-    # slope out of that is not a slope out of people being found.
-    sh.text(0.004, 0.025,
-            "Through June most confirmed cases were recent and had no outcome "
-            "yet, and the recovery and ward counts had only just begun to be "
-            "published —\nso the early share is not comparable with the later "
-            "one. What the panel argues is the flat stretch, not the slope "
-            "into it.",
-            transform=sh.transAxes, ha="left", va="bottom", fontsize=8.5,
-            color="#4a4a4a", linespacing=1.5)
-    sh.set_ylim(0, 0.92)
-    sh.set_yticks([0, 0.2, 0.4, 0.6, 0.8])
-    sh.set_yticklabels([f"{v:.0%}" for v in (0, .2, .4, .6, .8)])
+    # WHAT THE DASHED CONTINUATION IS, said in a legend rather than in an
+    # arrowed sentence. Solid and dashed are two different quantities and the
+    # panel would mislead without that; a legend says it in four words and
+    # sits in the space the late start leaves empty.
+    lines = [
+        Line2D([], [], color=gone_c, linewidth=1.5, marker="o", markersize=4.0,
+               label="share with no record"),
+        Line2D([], [], color=OUTCOME_BOUND, linewidth=1.2,
+               linestyle=(0, (4, 3)),
+               label="upper bound: in a ward or with no record"),
+    ]
+    shleg = sh.legend(handles=lines, loc="center left", frameon=False,
+                      fontsize=9, handlelength=2.6, handletextpad=0.6,
+                      labelspacing=0.6, borderaxespad=1.2)
+    shleg.set_in_layout(False)
+
+    # THE PANEL'S ONE ANNOTATION, and it is the finding: the share does not
+    # move while the count it is a share OF nearly doubles. Every number in it
+    # comes off `outcome_headline`. It ends where the run ends rather than
+    # being centred on it, so it stays clear of the rule and of the open
+    # marker that opens the bound.
+    sh.annotate(f"{h['run_days']} report days at {h['run_share_min']:.0%}–"
+                f"{h['run_share_max']:.0%}, while the count went "
+                f"{h['run_start_unaccounted']:,} → {h['unaccounted']:,}",
+                xy=(census_x, h["share"]), xytext=(-16, 15),
+                textcoords="offset points", ha="right", va="bottom",
+                fontsize=8.5, color="#8a3b00")
+
+    # The y range is read off what is actually drawn, so the flat stretch is
+    # not squashed against the axis by an early value this panel does not
+    # show.
+    sh_max = max(shown["unaccounted_share"].max(),
+                 tail["residual_share"].max())
+    sh_top = math.ceil(sh_max * 1.1 * 10) / 10
+    sh.set_ylim(0, sh_top)
+    sh_ticks = [i / 10 for i in range(int(round(sh_top * 10)) + 1)]
+    sh.set_yticks(sh_ticks)
+    sh.set_yticklabels([f"{v:.0%}" for v in sh_ticks])
     sh.set_ylabel("share with no record", fontsize=10)
     sh.set_axisbelow(True)
     sh.grid(axis="y", **GRID)
-    sh.set_title(
-        "The share of all confirmed cases with no record — "
-        f"{h['run_share_min']:.0%} to {h['run_share_max']:.0%} on every one of "
-        f"the {h['run_days']} report days from {_fmt_day(h['run_start'])}, "
-        f"while the count itself went {h['run_start_unaccounted']:,} → "
-        f"{h['unaccounted']:,}",
-        loc="left", fontsize=10.5, color="#333333")
     sh.xaxis.set_major_locator(mdates.WeekdayLocator(byweekday=mdates.MO))
     sh.xaxis.set_major_formatter(mdates.DateFormatter("%b %-d"))
 
@@ -1608,26 +1629,6 @@ def draw_outcomes(inputs: dict[str, Path], out: Path) -> None:
             a.spines[s].set_visible(False)
         a.spines["left"].set_color("#999999")
         a.spines["bottom"].set_color("#999999")
-
-    _header(fig,
-            "Of everyone confirmed with Ebola, where is the record of what "
-            "happened to them?",
-            "Cumulative confirmed cases split across the ledgers the reports "
-            "publish — the death total, the cumulative recoveries, and the "
-            "census of confirmed patients in an isolation ward.\nWhat those "
-            "three do not account for is drawn on top. It is an arithmetic "
-            "residual over four printed counts: no model, no rate, no "
-            "assumption about how long a patient stays in care.",
-            title_size=15, sub_size=9.5)
-    # `rect` IS (left, bottom, WIDTH, HEIGHT). The footer carries the three
-    # things that keep this figure from overstating, so it gets reserved space
-    # rather than being squeezed into the share panel.
-    foot_in = 0.70
-    fh = fig.get_figheight()
-    fig.get_layout_engine().set(
-        rect=(0, foot_in / fh, 1, 1 - (HEADER_IN + foot_in) / fh))
-    fig.text(0.006, 0.012, OUTCOME_FOOTER, ha="left", va="bottom",
-             fontsize=8.2, color="#4a4a4a", linespacing=1.5)
 
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, dpi=200)
