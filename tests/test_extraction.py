@@ -2148,3 +2148,254 @@ def test_sitrep_004_is_the_first_report_to_place_cases_outside_ituri():
     rows, _ = E.extract(pdf(4))
     got = {r["zone_reported"] for r in rows} & {"Goma", "Katwa", "Butembo"}
     assert got == {"Goma", "Katwa", "Butembo"}
+
+
+# --------------------------------------------------------------------------
+# The care prose route
+# --------------------------------------------------------------------------
+#
+# The reports state the treatment-centre ledger in words, and the wording moves
+# under the reader every few weeks. Each case below is one report and one
+# behaviour that was arrived at by reading the page it names.
+
+
+def _care(n: int) -> dict[str, dict]:
+    import extract_care_prose as C
+    got, _ = C.extract(pdf(n))
+    return {r["province"]: r for r in got}
+
+
+def test_care_pct_tolerance_matches_the_sources_rounding():
+    """Same rule as the laboratory route: one decimal gets 0.15, a bare
+    integer percent gets 0.55, because the source both rounds and truncates.
+    Sitrep 087 prints 61 % for 508/840, which is 60.48 %."""
+    import extract_care_prose as C
+    assert C.pct_ok(508, 840, 61)          # integer percent, 0.52 away
+    assert C.pct_ok(548, 991, 55.3)        # 55.30
+    assert not C.pct_ok(536, 965, 55.2)    # 55.54 -- sitrep 098 disagrees
+    assert not C.pct_ok(53, 130, 44.6)     # 40.77 -- sitrep 097 disagrees
+    assert not C.pct_ok(5, 0, 41.7)        # no beds is not a rate
+
+
+def test_care_cumulative_clauses_leave_the_harvest_pool():
+    """The reports mix outbreak-to-date figures into the same bullets. Read as
+    the day's they are wrong by an order of magnitude -- sitrep 079's "155 cas
+    confirmés admis en CTE/CT pour 55 décès, soit une mortalité intra-CTE de
+    35 %" put 55 deaths on a day the same bullet reports four."""
+    import extract_care_prose as C
+    assert "374" not in C.pool("20 guéris, portant le cumul provincial à 374.")
+    assert "22" not in C.pool("1 évadé à Masereka (cumul des évadés : 22) et 5 décès")
+    assert "5" in C.pool("1 évadé à Masereka (cumul des évadés : 22) et 5 décès")
+    assert "55" not in C.pool(
+        "155 cas confirmés admis en CTE/CT pour 55 décès, soit une mortalité "
+        "intra-CTE de 35 %. 44 admissions du jour")
+    assert "392" not in C.pool("Au total de 392 décès sont enregistré.")
+
+
+def test_care_number_words_and_aucun_are_read():
+    """`aucun évadé` is a printed ZERO -- sitrep 100's Ituri absconder count --
+    and dropping it would bias the absconder series upward."""
+    import extract_care_prose as C
+    assert "0" in C.pool("dont 14 guéris et aucun évadé")
+    assert "4" in C.pool("Quatre patients occupent les 20 lits")
+    assert "21" in C.pool("Vingt-et-un (21) décès enregistrés parmi les sorties")
+
+
+def test_care_a_saturated_centre_count_is_not_a_bed_count():
+    """"Trois CTE dépassent la saturation pour les confirmés -- Nizi (233 %),
+    ISTM (147 %) et Bambu (140 %) -- et un pour les suspects (Logo, 150 %)"
+    (sitrep 082) counts CENTRES. Read loosely, its "un pour les suspects" put
+    one suspect bed in the Ituri row. The bed split is admitted only as the
+    parenthetical that follows the word `lits`."""
+    import extract_care_prose as C
+    assert not C.BEDS_SPLIT_LITS.search("et un pour les suspects (Logo, 150 %)")
+    m = C.BEDS_SPLIT_LITS.search(
+        "pour 84 lits montés (46 pour les confirmés et 38 pour les suspects)")
+    assert m and (m.group(1), m.group(2)) == ("46", "38")
+
+
+@needs_pdfs
+def test_care_sitrep_100_reads_every_province_bullet():
+    """The last report in the archive, and the shape the modern vintage
+    settles into: admissions, exits with their recovered and absconded
+    components, the census, the beds, and the occupancy that checks them."""
+    by = _care(100)
+    itu = by["Ituri"]
+    assert (itu["admissions"], itu["exits"]) == (94, 87)
+    assert (itu["exits_recovered"], itu["exits_absconded"]) == (14, 0)
+    assert (itu["census"], itu["beds"], itu["printed_occupancy_pct"]) == (528, 965, 54.7)
+    assert "occupancy=pass" in itu["checks"]
+    tsh = by["Tshopo"]
+    assert (tsh["census"], tsh["census_confirmed"], tsh["census_suspect"]) == (4, 1, 3)
+    assert (tsh["beds"], tsh["printed_occupancy_pct"]) == (14, 28.6)
+    assert "census_split=pass" in tsh["checks"] and tsh["census_licensed"]
+    hu = by["Haut-Uélé"]
+    assert (hu["admissions"], hu["admissions_confirmed"],
+            hu["admissions_suspect"]) == (11, 4, 7)
+    assert by["Sud-Kivu"]["census_suspect"] == 29
+
+
+@needs_pdfs
+def test_care_sitrep_093_exit_decomposition_closes():
+    """Sitrep 093's Ituri bullet is the fullest ledger in the archive: "116
+    sorties dont 34 guéris, 51 non-cas, 8 évadés et 23 décès (dont 11
+    confirmés)" sums to the exits exactly, and the census closes five more ways
+    -- the split sums to the total, the bed split sums to the beds, and all
+    three ratios reproduce their printed percentages."""
+    itu = _care(93)["Ituri"]
+    assert itu["exits"] == 116
+    assert (itu["exits_recovered"], itu["exits_noncase"],
+            itu["exits_absconded"], itu["exits_deaths"]) == (34, 51, 8, 23)
+    assert itu["exits_deaths_confirmed"] == 11
+    assert (itu["census"], itu["census_confirmed"],
+            itu["census_suspect"]) == (548, 236, 312)
+    assert (itu["beds"], itu["beds_confirmed"], itu["beds_suspect"]) == (991, 497, 494)
+    for name in ("census_split", "beds_split", "occupancy", "occupancy_confirmed",
+                 "occupancy_suspect", "exits_split"):
+        assert f"{name}=pass" in itu["checks"], name
+    assert itu["licensed"]
+
+
+@needs_pdfs
+def test_care_sitrep_097_occupancy_catches_a_carried_forward_census():
+    """Sitrep 097 reprints sitrep 096's Haut-Uélé sentence verbatim -- "53
+    patients ... (36 confirmés et 17 suspects) ... 130 lits" -- and changes
+    only the occupancy, from 40,8 % to 44,6 %. 53/130 is 40,8 %, so the census
+    is the stale half. Its Tshopo bullet does the reverse: the beds move from
+    12 to 14 and the percentage stays at the one computed on 12. Neither is
+    visible without the printed rate."""
+    by = _care(97)
+    hu = by["Haut-Uélé"]
+    assert (hu["census"], hu["beds"], hu["printed_occupancy_pct"]) == (53, 130, 44.6)
+    assert "occupancy=fail" in hu["checks"] and not hu["licensed"]
+    tsh = by["Tshopo"]
+    assert (tsh["census"], tsh["beds"], tsh["printed_occupancy_pct"]) == (5, 14, 41.7)
+    assert "occupancy=fail" in tsh["checks"]
+    # 096 prints the same Haut-Uélé numbers with the rate that fits them.
+    assert "occupancy=pass" in _care(96)["Haut-Uélé"]["checks"]
+
+
+@needs_pdfs
+def test_care_sitrep_070_summary_sentence_is_the_national_ledger():
+    """Sitreps 052-080 close the care section with one sentence covering the
+    whole response. It is the only prose source of a national absconder count,
+    and it closes three ways: the split sums to the census, the census over the
+    beds reproduces the printed rate, and the exit categories sum to the exits.
+    Its admissions figure is NOT taken -- the 893 here is the outbreak-to-date
+    total while sitrep 077's is the day's, and nothing in the sentence says
+    which."""
+    ens = _care(70)["Ensemble"]
+    assert (ens["census"], ens["census_confirmed"],
+            ens["census_suspect"]) == (766, 278, 488)
+    assert (ens["beds"], ens["printed_occupancy_pct"]) == (860, 89.1)
+    assert ens["exits"] == 127
+    assert (ens["exits_recovered"], ens["exits_deaths"],
+            ens["exits_noncase"], ens["exits_absconded"]) == (21, 24, 78, 4)
+    assert ens["admissions"] is None
+    assert ens["licensed"]
+
+
+@needs_pdfs
+def test_care_national_summary_reproduces_the_front_page_tile():
+    """The strongest evidence that this route reads what it claims to. On
+    2026-07-23 the summary sentence gives 766 patients in isolation of whom 278
+    confirmed; the front-page ISOLEMENT/CTE tile -- a different part of the
+    same document, read by a different reader in this repository -- prints the
+    same two numbers. Agreement here is evidence about transcription, not about
+    the counts: both are the same organisation's figures on the same page."""
+    import extract_banner as B
+    ens = _care(70)["Ensemble"]
+    banner, _, _ = B.extract(pdf(70))
+    assert banner.get("patients_isolated") == ens["census"] == 766
+    assert banner.get("patients_isolated_confirmed") == ens["census_confirmed"] == 278
+
+
+@needs_pdfs
+def test_care_sitrep_068_does_not_file_ituris_census_under_nord_kivu():
+    """Sitrep 068 writes "→ Ituri : 24 nouveaux guéris dont 23 en Ituri et 1au
+    Nord Kivu, 70 admissions, 556 patients en isolement, ...". The
+    mid-sentence province name is not a passage opening, and taking it as one
+    filed Ituri's census of 556 under Nord-Kivu, which held 175 that day."""
+    by = _care(68)
+    assert by["Ituri"]["census"] == 556
+    assert by["Nord-Kivu"]["census"] == 175
+    # and the report's own "16 décès parmi les sorties dont 68 confirmés" is
+    # recorded and flagged rather than quietly kept.
+    assert "deaths_conf_le_deaths=fail" in by["Ituri"]["checks"]
+
+
+@needs_pdfs
+def test_care_sitrep_079_refuses_a_passage_covering_two_provinces():
+    """"→ Haut-Uélé et Tshopo : 2 confirmés ont été admis ... pour 37 malades
+    hospitalisés en fin de journée (16 confirmés, 21 suspects)". There is no
+    way to split 37 between the two, so both are refused rather than one being
+    credited with the pair's figures."""
+    import extract_care_prose as C
+    _, refused = C.extract(pdf(79))
+    assert any(r["why"] == "two_provinces_one_passage" for r in refused)
+    by = _care(79)
+    assert "Tshopo" not in by
+    assert by["Ituri"]["census"] == 476
+
+
+def test_care_a_flattened_table_row_is_recognised_as_one():
+    """Sitreps 018-058 print the ledger as a TABLE inside the same section, and
+    once the page is flattened a province name in it opens a segment whose
+    every number belongs to a column this reader cannot see -- sitrep 021 read
+    5 186 exits out of one, and sitreps 013-014 read thirteen recoveries and
+    four transfers out of "10 39 6 2 101". Two signatures catch it: the table's
+    own header words, and four or more bare integers in a row, which is not a
+    French sentence. The table is a legitimate source and a richer one, but
+    reading it with prose patterns is not reading it."""
+    import extract_care_prose as C
+    row = ("Sud-Kivu 6 0 Ensemble 233 62 Décédés (Suspects/Conf.) 6 0 0 6 "
+           "Non-cas / Guéris 17 0 0 17 Évadés (Suspects/Conf.) 14 0 0 14 "
+           "Total sorties 37 0 0 37 Patients en isolement (Fin J) 243 9 6 258")
+    assert C.TABLE_ROW.search(row) and C.DIGIT_RUN.search(row)
+    assert C.DIGIT_RUN.search("Nord-kivu) 19 lits TOTAL et Tx d'occup 10 39 6 2 101")
+    prose = ("En Ituri, 94 nouvelles admissions ont été enregistrées pour 87 "
+             "sorties, dont 14 guéris et aucun évadé. Ainsi, 528 patients sont "
+             "hospitalisés pour 965 lits, soit un taux d'occupation de 54,7%.")
+    assert not C.TABLE_ROW.search(prose) and not C.DIGIT_RUN.search(prose)
+
+
+@needs_pdfs
+def test_care_no_report_yields_an_absurd_exit_count():
+    """The consequence of the guard above, over the whole archive: the largest
+    daily exit count the source ever prints is in the low hundreds, and a
+    reading in the thousands is a table row misread as a sentence."""
+    import extract_care_prose as C
+    for n in (13, 14, 21, 44, 49, 55):
+        got, _ = C.extract(pdf(n))
+        assert all(r["exits"] is None or r["exits"] < 500 for r in got), n
+
+
+@needs_pdfs
+def test_care_cumulative_admissions_never_enter_the_daily_column():
+    """Sitreps 084-089 open the Nord-Kivu bullet with an outbreak-to-date
+    admissions count and give the day's later in the same sentence. Sitrep 089
+    prints both: "219 admissions cumulées ... ; 52 admissions du jour (4
+    confirmés et 48 suspects)"."""
+    nk = _care(89)["Nord-Kivu"]
+    assert nk["admissions"] == 52
+    assert (nk["admissions_confirmed"], nk["admissions_suspect"]) == (4, 48)
+    assert "admissions_split=pass" in nk["checks"]
+    # Sitrep 084's Nord-Kivu bullet is cumulative from end to end -- "235
+    # admissions cumulées ... dont 187 cas confirmés, pour une mortalité
+    # intra-CTE de 39 %" -- so it yields no row at all rather than a daily
+    # admissions count of 235 on a day the province admitted a few dozen.
+    assert "Nord-Kivu" not in _care(84)
+
+
+@needs_pdfs
+def test_care_a_subset_admissions_figure_is_refused_not_guessed():
+    """THE NEGATIVE CASE. Sitrep 053 writes "Deux (2) nouvelles admissions
+    concernaient des PPL et sont incluses dans les 67 admissions enregistrées
+    au cours de la journée": two candidates, the subset printed first, and no
+    closure to choose between them. Ambiguity is refusal -- the row must not
+    report two admissions on a day with sixty-seven."""
+    import extract_care_prose as C
+    got, refused = C.extract(pdf(53))
+    assert any(r["why"] == "ambiguous_admissions" for r in refused)
+    itu = {r["province"]: r for r in got}.get("Ituri")
+    assert itu is None or itu["admissions"] is None
