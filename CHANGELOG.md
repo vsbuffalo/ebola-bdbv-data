@@ -59,9 +59,15 @@ still merge, but pieces separated by a gap must share a coordinate. Sitrep 099's
 own vertical came from a coloured band and is removed earlier, as before; this
 one is real table furniture and there was nothing to suppress.
 
-Every other report in the archive is byte-identical across the change:
-`zone_table.csv`, `province_series.csv` and `province_summary.csv` all match a
-rebuild of the previous vintage once sitrep 102's own rows are set aside.
+The change is narrow in what it moves and wide in what it touches, and the
+second is worth stating: splitting runs that used to merge alters the recovered
+rule set on nearly every page of nearly every report, and only the snapping that
+collapses rules into table edges keeps that from reaching the data. So the check
+was run at the rows rather than at the geometry — every archived PDF extracted
+under both rules and the results compared. **Exactly one report moves: sitrep
+102, 25 rows to 66.** All 95 others are identical, and `zone_table.csv`,
+`province_series.csv` and `province_summary.csv` match a rebuild of the previous
+vintage once sitrep 102's own rows are set aside.
 
 ---
 
