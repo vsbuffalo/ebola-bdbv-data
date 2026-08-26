@@ -16,6 +16,46 @@ carries the rest.
 
 ---
 
+## `data/2026-08-24-r1` — 2026-08-25 — what the reports can say about a scale-up
+
+**No stream changes and no value changes. One figure added**, so nothing a
+consumer reads moves: no file under `data/build/streams/` is added, removed,
+renamed or rewritten, and `meta.json` is untouched. A consumer pinned to
+`data/2026-08-24` needs nothing from this tag.
+
+`docs/figures/response_timeline.png`, with its caption. It exists to answer
+whether a response scale-up asserted outside this repository — beginning with
+the first situation report, complete three weeks later on 8 June — can be
+checked against the source at all.
+
+**Two findings about the source, both of which affect anyone using it.**
+
+The first situation report is **14 May**, not 18 May. SitRep 001 is dated 14 May
+and SitRep 002 17 May, and both are in the archive. Neither yields a
+machine-readable table: 001's health-zone counts sit inside an image the text
+layer does not carry, and 002's table is transposed out of any registered
+geometry, so both extract as `no_matching_table` and the national series begins
+at SitRep 004 on 18 May. **18 May is where the data starts, not where the
+response started.** A response milestone anchored there is anchored to an
+artefact of extraction, and it lands on the four observations that constrain
+seeding time.
+
+The reports **print no response capacity during the window a May scale-up would
+occupy**. Of the six response quantities extracted here, only the case count
+exists before June; beds first appear 16 July and contacts followed 9 August.
+Any statement about a May scale-up is inference from the epidemic's own
+behaviour, never a reading of reported capacity, and the figure's middle panel
+is there so that limit travels with it.
+
+The caption records what the top panel does and does not license: incidence
+climbs through the claimed window and holds near 40 cases/day for four weeks
+after it, but surveillance expands from 16 health zones to 58 over the same
+series, most steeply early, so part of the apparent slowdown is the system
+finding cases rather than the epidemic making them. There is no pre-window
+baseline, because the data begins where the ramp is claimed to begin.
+
+---
+
 ## `data/2026-08-24` — 2026-08-25 — sitrep 102
 
 **Not breaking. New observations only** — no stream added or removed, no column
