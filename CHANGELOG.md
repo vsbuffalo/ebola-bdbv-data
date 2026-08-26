@@ -16,6 +16,51 @@ carries the rest.
 
 ---
 
+## `data/2026-08-24-r3` — 2026-08-25 — the same samples, split by province
+
+**No stream changes and no value changes. One figure added**, so nothing a
+consumer reads moves: no file under `data/build/streams/` is added, removed,
+renamed or rewritten, and `meta.json` is untouched. A consumer pinned to
+`data/2026-08-24` needs nothing from this tag.
+
+`docs/figures/positivity_provinces.png`, with its caption. It is **the second
+half of a pair** with `test_positivity.png`, which is unchanged: the grey
+dashed line in the new figure is the blue line in the old one, so the two are
+read against each other.
+
+**The national positivity rate is a weighted average of provinces that differ
+three-fold, over weights that swing every week.** Ituri returns about 28%
+positive and Nord-Kivu about 9%, and Ituri's share of all samples moves between
+52% and 94% depending on the week. The pooled line follows Ituri closely in
+early June, when Ituri was almost every sample, and separates from it as
+Nord-Kivu's share grows.
+
+**Sud-Kivu returns zero positives on 129 samples across 25 report-days.** That
+is a province testing for an introduction it has not found, and those samples
+enter the national denominator exactly like Ituri's. The provinces are not one
+population and the pooled rate is not a property of either situation.
+
+**What survives pooling and what does not**, recorded so the figure is not
+oversold. Standardising to fixed province weights leaves the weekly spread
+almost unchanged — 19.7 points observed against 20.1 standardised — so the
+shape of the national line is not a composition artefact. The level is another
+matter: in the week of 29 June Ituri sits at 38.7% while the pooled line reads
+22.9%.
+
+**The finding the pooling hid**, and the reason this matters beyond
+presentation. Ituri's own rate holds between 25% and 39% from June to
+mid-August, then falls to 18.9% over the last two report-weeks against 31.2% in
+the four before — 459 positives of 2,433 samples against 1,085 of 3,478. Over
+the same period Ituri's testing rises from about 80 samples per report-day to
+about 347. Testing expanding while positivity falls is what case-finding
+catching up looks like, and none of it is visible nationally.
+
+**Province is as fine as this source goes.** The laboratory paragraph is
+written per province; there is no health-zone testing data in the reports, so a
+positivity series below province level cannot be built from them.
+
+---
+
 ## `data/2026-08-24-r2` — 2026-08-25 — test positivity, and its one denominator
 
 **No stream changes and no value changes. One figure added**, so nothing a
