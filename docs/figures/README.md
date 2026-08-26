@@ -471,3 +471,49 @@ made at or around a death.
   is its *stability*: the level has stayed near 20% since mid-June while daily
   confirmations roughly doubled, meaning testing volume grew with the epidemic
   rather than falling behind it.
+
+---
+
+## `positivity_provinces.png`
+
+The same laboratory samples as `test_positivity.png`, split by the province the
+source reports them under. **These two are a pair and the second is only
+meaningful against the first**: the grey dashed line here is the blue line
+there. Upper panel: each province's own pooled positivity, with one faint point
+per province-day sized by samples. Lower panel: samples analysed per report day,
+stacked by province.
+
+- **The national rate is a weighted average of provinces that differ
+  three-fold, over weights that swing every week.** Ituri returns about 28%
+  positive and Nord-Kivu about 9%, and Ituri's share of all samples moves
+  between 52% and 94% depending on the week. The pooled line tracks neither
+  province: it follows Ituri closely in early June, when Ituri was almost every
+  sample, and separates from it as Nord-Kivu's share grows.
+- **Sud-Kivu is the clearest case that these are not one population.** It
+  returns zero positives on 129 samples across 25 report-days. That is a
+  province testing for an introduction it has not found, and those samples
+  enter the national denominator exactly like Ituri's.
+- **The shape mostly survives pooling; the level does not.** Standardising to
+  fixed province weights leaves the weekly spread almost unchanged, 19.7 points
+  observed against 20.1 standardised — so the national line is not purely a
+  composition artefact. But in the week of 29 June Ituri sits at 38.7% while
+  the pooled line reads 22.9%. **Reading the pooled level as "the positivity in
+  this outbreak" is reading a dilution.**
+- **The finding the pooling hid.** Ituri's own rate holds between 25% and 39%
+  from June to mid-August, then falls to 18.9% over the last two report-weeks
+  against 31.2% in the four before — 459 positives of 2,433 samples against
+  1,085 of 3,478. Over the same period Ituri's testing rises from about 80
+  samples per report-day to about 347. Testing expanding while positivity falls
+  is what case-finding catching up looks like, and none of it is visible in the
+  national line.
+- **A province gets a line only with at least 15 province-days**; below that a
+  line through a handful of points would read as a trend. Tshopo prints
+  laboratory volume twice in the whole series, ten samples in total. Those
+  provinces appear as points only.
+- **The lower panel is samples *printed*, not samples taken.** A province
+  contributes zero on days its report carries no laboratory paragraph, which is
+  a silence rather than a measured absence of testing. The number of provinces
+  reporting on a day ranges from one to five.
+- **Province is as fine as this gets.** The laboratory paragraph is written per
+  province; there is no health-zone testing data anywhere in the reports, so a
+  positivity map at health-zone level cannot be built from this source.

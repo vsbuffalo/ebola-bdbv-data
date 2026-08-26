@@ -3196,6 +3196,163 @@ def draw_test_positivity(inputs: dict[str, Path], out: Path) -> None:
     plt.close(fig)
 
 
+#: Okabe-Ito, assigned to provinces in a FIXED order that does not depend on
+#: which provinces a given build happens to hold. A province that appears in a
+#: later report must not repaint the ones already drawn, or two renderings of
+#: this figure disagree about which line is Ituri.
+PROVINCE_INK = {
+    "Ituri": "#D55E00",
+    "Nord-Kivu": "#0072B2",
+    "Haut-Uélé": "#009E73",
+    "Sud-Kivu": "#CC79A7",
+    "Tshopo": "#E69F00",
+    "Bas-Uélé": "#56B4E9",
+}
+
+#: A province gets a POOLED LINE only with at least this many province-days.
+#: Below it the line would be an interpolation between a handful of points --
+#: Tshopo prints laboratory volume twice in the whole series, ten samples in
+#: total -- and a line drawn through two points reads as a trend.
+LINE_MIN_DAYS = 15
+
+
+def draw_positivity_provinces(inputs: dict[str, Path], out: Path) -> None:
+    """The same laboratory samples as `test_positivity`, split by province.
+
+    THIS IS THE SECOND HALF OF A PAIR AND ONLY WORKS AS ONE. The national
+    figure shows a rate that has sat near 20% since mid-June, which reads as a
+    surveillance system holding steady. This one shows that the national rate
+    is a weighted average of provinces that differ by a factor of three, over
+    weights that swing between weeks, and that it therefore tracks none of
+    them. The grey dashed line here is exactly the blue line there, so the two
+    slides can be read against each other.
+
+    WHY THE POOLED RATE IS NOT A PROPERTY OF THE EPIDEMIC. Ituri is an
+    established outbreak and returns about 28% positive. Nord-Kivu returns
+    about 9%. Sud-Kivu returns ZERO on 129 samples across 25 report-days --
+    that is a province looking for an introduction it has not found, and its
+    samples enter the national denominator exactly like Ituri's. Pooling them
+    produces a number that describes neither situation, and moving Ituri's
+    share of the samples from 52% to 94% moves the pooled rate without any
+    province's own rate changing at all.
+
+    WHAT SURVIVES POOLING AND WHAT DOES NOT. Standardising to fixed province
+    weights leaves the SHAPE largely intact -- the weekly spread is 19.7
+    points observed against 20.1 standardised -- so the national line is not
+    pure composition. The LEVEL is another matter: in the week of 29 June
+    Ituri sits at 38.7% while the pooled line reads 22.9%. Anyone reading the
+    pooled level as "the positivity in this outbreak" is reading a dilution.
+
+    THE FINDING THE POOLING HID. Ituri's own rate holds between 25% and 39%
+    from June through mid-August and then falls to 18.9% over the last two
+    report-weeks, against 31.2% in the four before -- 459 positives of 2,433
+    samples against 1,085 of 3,478. Over the same series Ituri's testing rises
+    from about 80 samples per report-day to about 347. Testing expanding while
+    positivity falls is the signature of case-finding catching up with an
+    epidemic, and it is invisible in the national line.
+    """
+    lab = (pl.read_csv(inputs["lab"]).drop_nulls(["samples", "positives"])
+           .filter(pl.col("samples") > 0).sort("date"))
+    caveat = pl.read_csv(inputs["caveat"])
+
+    fig, (ax_r, ax_v) = plt.subplots(
+        2, 1, figsize=(13.333, 7.5), height_ratios=[1.3, 1],
+        sharex=True, constrained_layout=True)
+
+    counts = (lab.group_by("province")
+              .agg(pl.len().alias("days"), pl.col("samples").sum().alias("s"),
+                   pl.col("positives").sum().alias("p"))
+              .sort("s", descending=True))
+    order = counts["province"].to_list()
+
+    # ---- Panel A: each province's own rate, against the pooled one --------
+    nat = (lab.group_by("date")
+           .agg(pl.col("samples").sum(), pl.col("positives").sum())
+           .sort("date"))
+    nx = _dates(nat["date"])
+    ax_r.plot(nx, _pooled_positivity(nx, nat["positives"].to_list(),
+                                     nat["samples"].to_list()),
+              color="#555555", lw=2.0, ls=(0, (5, 3)), zorder=5,
+              label="national pooled (the other slide)")
+
+    for prov in order:
+        d = lab.filter(pl.col("province") == prov)
+        ink = PROVINCE_INK.get(prov, "#999999")
+        px = _dates(d["date"])
+        pct = [100 * p / s for p, s in
+               zip(d["positives"].to_list(), d["samples"].to_list())]
+        ax_r.scatter(px, pct, s=[3 + 0.45 * math.sqrt(v)
+                                 for v in d["samples"].to_list()],
+                     color=ink, alpha=0.40, lw=0, zorder=3)
+        if d.height >= LINE_MIN_DAYS:
+            ax_r.plot(px, _pooled_positivity(px, d["positives"].to_list(),
+                                             d["samples"].to_list()),
+                      color=ink, lw=2.2, zorder=4, label=prov)
+
+    ax_r.set_ylabel("samples returning\npositive")
+    ax_r.set_ylim(-2, 72)
+    ax_r.yaxis.set_major_formatter(
+        matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:g}%"))
+    ax_r.legend(loc="upper right", frameon=False, fontsize=8, ncol=4)
+    for s in ("top", "right"):
+        ax_r.spines[s].set_visible(False)
+    ax_r.grid(axis="y", color="#ededed", lw=0.6)
+    ax_r.set_axisbelow(True)
+
+    zero = counts.filter(pl.col("p") == 0)
+    if zero.height:
+        z = zero.row(0, named=True)
+        ax_r.annotate(f"{z['province']} — {z['s']} samples over "
+                      f"{z['days']} report-days, not one positive",
+                      xy=(nx[len(nx) // 2], 2.2), ha="center", va="bottom",
+                      fontsize=8.5, color=PROVINCE_INK.get(z["province"]),
+                      bbox={"facecolor": "white", "edgecolor": "none",
+                            "pad": 1.5})
+
+    # ---- Panel B: where the samples came from ---------------------------
+    # SMOOTHED OVER 7 DAYS AND STACKED. A province is absent from the stack on
+    # days its report prints no laboratory paragraph, which is a silence and
+    # not a measured zero -- but the stack is of samples PRINTED, and on those
+    # days the source printed none, so zero is the honest height here.
+    grid = sorted({mdates.datestr2num(d) for d in lab["date"].to_list()})
+    bands, labels, inks = [], [], []
+    for prov in order:
+        d = lab.filter(pl.col("province") == prov)
+        by = dict(zip(_dates(d["date"]), d["samples"].to_list()))
+        raw = [by.get(g, 0) for g in grid]
+        sm = [sum(v for x, v in zip(grid, raw) if g - 3.5 <= x <= g + 3.5)
+              / max(1, sum(1 for x in grid if g - 3.5 <= x <= g + 3.5))
+              for g in grid]
+        bands.append(sm)
+        labels.append(prov)
+        inks.append(PROVINCE_INK.get(prov, "#999999"))
+
+    ax_v.stackplot(grid, *bands, labels=labels, colors=inks, lw=0, alpha=0.9)
+    ax_v.set_ylabel("samples analysed\nper report day")
+    ax_v.legend(loc="upper left", frameon=False, fontsize=8, ncol=6)
+    for s in ("top", "right"):
+        ax_v.spines[s].set_visible(False)
+    ax_v.grid(axis="y", color="#ededed", lw=0.6)
+    ax_v.set_axisbelow(True)
+    top = max(sum(b[i] for b in bands) for i in range(len(grid)))
+    ax_v.set_ylim(0, top * 1.32)
+
+    ax_v.set_xlim(*_report_calendar(caveat))
+    ax_v.xaxis.set_major_locator(mdates.MonthLocator())
+    ax_v.xaxis.set_major_formatter(mdates.DateFormatter("%B %Y"))
+    ax_v.tick_params(axis="x", labelsize=8.5)
+
+    big = counts.row(0, named=True)
+    second = counts.row(1, named=True)
+    _header(fig, "The same samples, split by province",
+            f"{big['province']} returns {100 * big['p'] / big['s']:.0f}% "
+            f"positive and {second['province']} "
+            f"{100 * second['p'] / second['s']:.0f}% — the national line is a "
+            f"weighted average of the two, over weights that move every week.")
+    fig.savefig(out, dpi=200)
+    plt.close(fig)
+
+
 FIGURES = {
     # The declared inputs ARE the dependency set, so the stream files are
     # listed one by one rather than hidden behind a directory glob.
@@ -3247,6 +3404,10 @@ FIGURES = {
                       "zone_status": "data/build/series/zone_table_status.csv",
                       "summary": "data/build/series/province_summary.csv",
                       "prose": "data/build/series/prose_provinces.csv"}),
+    "positivity_provinces": (draw_positivity_provinces,
+                             {"lab": "data/build/series/lab_prose.csv",
+                              "caveat": "data/build/series/"
+                                        "provisional_caveat.csv"}),
     "test_positivity": (draw_test_positivity,
                         {"lab": "data/build/series/lab_prose.csv",
                          "province_series":

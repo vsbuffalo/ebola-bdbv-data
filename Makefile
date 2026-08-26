@@ -327,6 +327,13 @@ figures:
 	# therefore a composition and not a second rate.
 	uv run python scripts/plot_figures.py --figure test_positivity \
 		--out data/build/figures/test_positivity.png
+	# SLIDE FIGURE, 16:9. THE SECOND HALF OF A PAIR with the figure above and
+	# only meaningful as one: the same samples split by province, showing that
+	# the national rate is a weighted average of provinces three-fold apart
+	# over weights that swing between weeks. The grey dashed line here is the
+	# blue line there, so the two can be read against each other.
+	uv run python scripts/plot_figures.py --figure positivity_provinces \
+		--out data/build/figures/positivity_provinces.png
 	# COMMITTED COPIES, so the README, the data document and the cross-repo
 	# channel can link to figures that survive (data/build is gitignored).
 	# Everything copied here is gated twice: by `release-check`, which
@@ -345,6 +352,7 @@ figures:
 	cp data/build/figures/epi_curve.png docs/figures/
 	cp data/build/figures/response_timeline.png docs/figures/
 	cp data/build/figures/test_positivity.png docs/figures/
+	cp data/build/figures/positivity_provinces.png docs/figures/
 
 ## watch-data-channel -- poll the shared data channel (which lives in the
 ##            modelling repo's tree) and exit as soon as they write, printing
