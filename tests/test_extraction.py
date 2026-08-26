@@ -1038,6 +1038,114 @@ def test_lab_prose_flow_not_stock():
     assert itu and itu[0]["positives"] == 18 and itu[0]["samples"] == 82
 
 
+@needs_pdfs
+def test_lab_prose_fallback_admits_unprinted_rate_by_noun_adjacency():
+    """Sitrep 092's Ituri passage prints '93 résultats positifs (336
+    échantillons analysés), dont 85 nouveaux cas (54 vivants et 31 décès)'
+    with no percentage anywhere in the sentence, so licensed_pair has
+    nothing to check a pair against and this row used to refuse as
+    'no_printed_rate'. The noun-adjacency fallback finds 336 beside
+    'échantillons' and 93 beside the higher-priority 'résultats positifs' --
+    NOT 85, which sits beside the lower-priority 'nouveaux cas' and names a
+    different quantity (new cases among the positives, not all of them).
+    printed_pct stays null: nothing is invented for the rate the source did
+    not print."""
+    import extract_lab_prose as L
+    got, _ = L.extract(pdf(92))
+    itu = [r for r in got if r["province"] == "Ituri"]
+    assert itu, "sitrep 092 admits an Ituri lab row via the fallback"
+    row = itu[0]
+    assert (row["samples"], row["positives"]) == (336, 93)
+    assert row["rate_printed"] is False
+    assert row["printed_pct"] is None
+
+
+@needs_pdfs
+def test_lab_prose_fallback_refuses_when_the_positive_noun_is_not_adjacent():
+    """Sitrep 082's Nord-Kivu passage prints '10 sont revenus positifs': the
+    number and the word 'positifs' are separated by 'sont revenus', so the
+    integer is not adjacent to the noun under this licence, and the sentence
+    still refuses rather than guess which integer was meant."""
+    import extract_lab_prose as L
+    got, refused = L.extract(pdf(82))
+    nk = [r for r in got if r["province"] == "Nord-Kivu"]
+    assert not nk, "no Nord-Kivu row should be admitted for sitrep 082"
+    assert any(r["why"] == "no_noun_anchor" and r["prov"] == "Nord-Kivu"
+              for r in refused)
+
+
+def test_lab_prose_fallback_rejects_positives_exceeding_samples():
+    """Both nouns can be found and the sentence still not be readable: a
+    positive count above the sample count is a sanity failure, not a
+    licence, and must refuse rather than emit a row."""
+    import extract_lab_prose as L
+    pair, why = L.noun_adjacent_pair(
+        "8 positifs parmi 5 échantillons analysés")
+    assert pair is None
+    assert why == "positives_exceed_samples"
+
+
+def test_lab_prose_dedupe_prefers_a_validated_row_over_a_fallback_guess():
+    """The real archive never states one province twice with one reading
+    backed by a printed rate and the other not, so this policy is otherwise
+    untested by any single report. A validated reading must win regardless
+    of which one the document happened to state first -- and the ordinary
+    case, two disagreeing validated (or two disagreeing unvalidated)
+    readings, is still a conflict."""
+    import extract_lab_prose as L
+
+    def row(samples, positives, rate_printed):
+        return {"province": "Ituri", "samples": samples, "positives": positives,
+               "printed_pct": 10.0 if rate_printed else None,
+               "rate_printed": rate_printed, "sentence": "s"}
+
+    # validated seen first, fallback disagrees second -> fallback dropped.
+    out, refused = L.dedupe_by_province([row(100, 10, True), row(90, 9, False)])
+    assert [(r["samples"], r["positives"]) for r in out] == [(100, 10)]
+    assert refused == []
+
+    # fallback seen first, validated disagrees second -> validated wins.
+    out, refused = L.dedupe_by_province([row(90, 9, False), row(100, 10, True)])
+    assert [(r["samples"], r["positives"]) for r in out] == [(100, 10)]
+    assert refused == []
+
+    # two validated readings disagreeing is still a real conflict.
+    out, refused = L.dedupe_by_province([row(100, 10, True), row(80, 8, True)])
+    assert len(out) == 1 and len(refused) == 1
+    assert refused[0]["why"] == "conflicting_sentences"
+
+
+LAB_PROSE_BUILD = ROOT / "data" / "build" / "series" / "lab_prose.csv"
+needs_lab_prose_build = pytest.mark.skipif(
+    not LAB_PROSE_BUILD.exists(),
+    reason="lab_prose.csv is not built; run `make build`")
+
+
+@needs_lab_prose_build
+def test_lab_prose_validated_rows_agree_with_their_own_printed_pct():
+    """The invariant licensed_pair enforces at construction time, checked
+    here against the file `make build` actually wrote: every row licensed by
+    a printed percentage reproduces it, within the same tolerance the licence
+    itself uses (one decimal place -> 0.15 points, integer percent -> 0.55,
+    covering the source's habit of truncating rather than rounding).
+    Fallback rows (rate_printed = False) are exempt by construction -- they
+    have no printed_pct to agree with, which is exactly what distinguishes
+    them."""
+    import polars as pl
+    df = pl.read_csv(LAB_PROSE_BUILD)
+    rated = df.filter(pl.col("rate_printed"))
+    assert rated.height > 0, "the build should carry percentage-licensed rows"
+    bad = []
+    for row in rated.iter_rows(named=True):
+        p = row["printed_pct"]
+        tol = 0.55 if float(p).is_integer() else 0.15
+        computed = 100.0 * row["positives"] / row["samples"]
+        if abs(computed - p) > tol:
+            bad.append((row["sitrep"], row["province"], row["samples"],
+                       row["positives"], p))
+    assert not bad, bad
+
+
 # --------------------------------------------------------------------------
 # The letality check, and the register entry it produced
 # --------------------------------------------------------------------------
