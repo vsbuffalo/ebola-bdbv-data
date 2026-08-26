@@ -16,6 +16,46 @@ carries the rest.
 
 ---
 
+## `data/2026-08-24-r2` — 2026-08-25 — test positivity, and its one denominator
+
+**No stream changes and no value changes. One figure added**, so nothing a
+consumer reads moves: no file under `data/build/streams/` is added, removed,
+renamed or rewritten, and `meta.json` is untouched. A consumer pinned to
+`data/2026-08-24` needs nothing from this tag.
+
+`docs/figures/test_positivity.png`, with its caption.
+
+**The rate is well supported.** Our positivity agrees with the percentage the
+source prints beside it on 153 of 154 province-days to within 0.15 percentage
+points, so the panel is a reading of the page rather than a recomputation that
+could drift from it. The level has sat near 20% since mid-June while daily
+confirmations roughly doubled and weekly sample volume grew from about 250 to
+about 3,000 — testing kept pace with the epidemic rather than falling behind.
+
+**A limit of the source worth recording, because it will be asked again.**
+There is no positivity rate for suspected cases and a separate one for
+community deaths. The laboratory paragraph prints **one pool of samples** per
+province with no indication of where any of them came from, and two rates
+require two denominators. What decomposes is the numerator: over 77
+province-days from mid-July, 2,200 positives are 1,523 confirmations made on a
+living patient and 677 made at or around a death, with no internally
+inconsistent row. Treating lab positives as the day's new confirmations is
+licensed by their agreeing on 70 of the 78 province-days where both appear.
+The figure's lower panel is therefore a **composition and not a second rate**,
+and is labelled as such.
+
+The denominator that would close this is printed but is not a series: bodies
+swabbed post-mortem appear in roughly ten reports clustered 3–12 August,
+sometimes national and sometimes provincial, sometimes for the day and
+sometimes cumulative. Enough for a few point estimates, not a curve.
+
+Sampling is targeted at symptomatic suspects and at deaths rather than drawn
+from the population, so this rate is not comparable with population-screening
+benchmarks used for other diseases. Its stability, not its level, is the
+interpretable part.
+
+---
+
 ## `data/2026-08-24-r1` — 2026-08-25 — what the reports can say about a scale-up
 
 **No stream changes and no value changes. One figure added**, so nothing a
