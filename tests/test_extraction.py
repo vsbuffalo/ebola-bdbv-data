@@ -814,6 +814,88 @@ def test_099_continuation_page_is_read_and_the_table_completes():
 
 
 @needs_pdfs
+def test_102_continuation_page_is_read_and_the_table_completes():
+    """Sitrep 102 failed with sitrep 099's SIGNATURE and not its cause, and the
+    difference is why 099's guards did not cover it.
+
+    On 099 the vertical that reached the footer was drawn by the coloured band
+    Word paints on province rows, and `_nested` -- which reads a filled
+    rectangle inside a larger one as paint rather than as a cell -- removed it.
+    On 102 there is no such box to suppress: the vertical is the zone table's
+    OWN column rule at x=401.45, and what it met is the page footer's own cell
+    side at x=404.80. They sit 3.35 pt apart across the page, inside
+    `_coalesce`'s 6 pt x-clustering, and 34.69 pt apart down it, inside its
+    36 pt gap bridging -- so the two joined into one rule running to y=779.05,
+    the footer's page-wide horizontals crossed it, and the footer unioned into
+    the table's component.
+
+    Page 2's component then came back as x=[16.95, 599.30] where the table is
+    [83.79, 528.46]. `select` chains a continuation by comparing its edges with
+    the anchor's, so nothing on page 3 matched and the chain stopped at page 2:
+    25 rows ending at Nizi, identity `not_checkable`, and Ituri's own zones
+    1,108 cases short of the 4,716 its province row prints.
+
+    SITREP 101 IS THE SAME VINTAGE AND THE SAME LAYOUT and does not do this
+    only because its page-2 table ends 6.9 pt higher, which puts the footer
+    41.6 pt away and outside the bridging gap. Nothing can be keyed on where a
+    table happens to stop, so the rule is about the two pieces: a gap is
+    bridged only between pieces of one drawn line.
+    """
+    rows, st = E.extract(pdf(102))
+    assert st == "ok"
+    nat = [r for r in rows if r["level"] == "national"]
+    assert len(nat) == 1, "the national Total row is printed on page 3"
+    assert (nat[0]["cum_cases"], nat[0]["cum_deaths"]) == (5656, 2715)
+    assert nat[0]["page"] == 3
+    provinces = {r["zone_reported"]: r for r in rows if r["level"] == "province"}
+    assert set(provinces) == {"Ituri", "Nord-Kivu", "Haut-Uélé", "Tshopo",
+                              "Sud-Kivu", "Bas Uélé"}
+    # Ituri's province row is on page 2 and every other province is on page 3 --
+    # the rows the chain used to drop.
+    assert (provinces["Ituri"]["cum_cases"],
+            provinces["Ituri"]["cum_deaths"]) == (4716, 2119)
+    assert provinces["Nord-Kivu"]["page"] == 3
+    got = E.reconcile(rows)
+    assert got["identity"] == "ok" and got["residual"] == 0
+    assert len(rows) == 66
+
+
+def test_a_rule_does_not_adopt_a_neighbour_it_merely_passes():
+    """The geometric rule sitrep 102 needed, stated without the document.
+
+    Pieces are grouped across the page at `SNAP_X` because a shared border
+    arrives as its rule and the two cell faces beside it, a few points apart --
+    and those lie SIDE BY SIDE over the same rows. Joining pieces END TO END
+    says instead that a rule the page drew in pieces is one rule, and one drawn
+    line has one coordinate. Allowing both at once let a column rule run 36 pt
+    past its own end and adopt anything within 6 pt of it.
+
+    The numbers are sitrep 102 page 2's: the table's column rule drawn per row
+    down to y=740.86, and the page footer's 3.5 pt cell side at x=404.80
+    starting 34.69 pt below it.
+    """
+    from lib.pdftable import Segment, _coalesce
+
+    column = [Segment(401.45, y, y + 14.64, False)
+              for y in (696.34, 710.98, 725.26)]
+    footer = Segment(404.80, 775.55, 779.05, False)
+
+    got = sorted(_coalesce(column + [footer]), key=lambda s: s.lo)
+    assert len(got) == 2, "the footer was adopted by the table's column rule"
+    assert got[0].hi == pytest.approx(739.90), "the column rule ends where drawn"
+    assert got[1].lo == pytest.approx(775.55) and got[1].hi == pytest.approx(779.05)
+
+    # AND THE BRIDGING THAT IS REAL STILL HAPPENS. A rule interrupted by a
+    # double-height row -- the case COALESCE_GAP was measured on -- is drawn in
+    # pieces at ONE coordinate, so it still joins across the same 34.69 pt.
+    same_line = column + [Segment(401.45, 775.55, 779.05, False)]
+    joined = _coalesce(same_line)
+    assert len(joined) == 1
+    assert joined[0].lo == pytest.approx(696.34)
+    assert joined[0].hi == pytest.approx(779.05)
+
+
+@needs_pdfs
 @pytest.mark.parametrize("n", [99, 100])
 def test_two_rows_with_no_rule_between_them_do_not_become_one_number(n):
     """Bas-Uélé's two health zones are separated by no horizontal rule at all;

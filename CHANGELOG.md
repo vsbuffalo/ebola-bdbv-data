@@ -16,6 +16,55 @@ carries the rest.
 
 ---
 
+## `data/2026-08-24` — 2026-08-25 — sitrep 102
+
+**Not breaking. New observations only** — no stream added or removed, no column
+renamed, no previously published value changed. **Refit**: every national and
+province series gains 24 August, and the weekly bins move with it.
+
+Sitrep 102, data date 2026-08-24, national cumulative **5,656 confirmed cases
+and 2,715 confirmed deaths**. Extraction identity holds with residual 0 over
+all six provinces; the letality check is clean on all 65 rows that print one;
+96 PDFs in the archive and the manifest reconciles in both directions.
+
+### A rule adopting a neighbour it merely passed
+
+This report first read as **25 rows from page 2 alone**, ending at Nizi, with no
+national row and an identity of `not_checkable` — Ituri's zones 1,108 cases
+short of the 4,716 its own province row prints. That is sitrep 099's signature,
+and **not** sitrep 099's cause, which is why the guard written for 099 did not
+cover it.
+
+Tables are recovered from the rules the document draws, and pieces of one rule
+are rejoined in two ways at once: grouped *across* the page at 6 pt, because
+Word draws a shared border as its rule plus the two cell faces beside it, and
+joined *along* the page across gaps up to 36 pt, because a rule is routinely
+drawn in pieces. Applying both at once lets a rule run 36 pt past its own end
+and adopt anything that passes within 6 pt.
+
+On page 2 the zone table's column rule at x=401.45 stops at y=740.86 and the
+page footer's own cell side at x=404.80 starts at y=775.55 — 3.35 pt apart
+across the page, 34.69 pt down it. They merged, the joined rule crossed the
+footer's page-wide bars, and the **footer became part of the table**, so the
+component's extent came back as the full text width [16.95, 599.30] instead of
+the table's [83.79, 528.46]. A continuation page is chained by comparing
+extents, nothing on page 3 could match, and the chain stopped at page 2.
+
+Sitrep 101 is the same vintage, the same layout and the same footer, and does
+not do this only because its page-2 table ends 6.9 pt higher, leaving the
+footer 41.6 pt away and outside the bridging gap. Where a table happens to stop
+is not a property anything can be keyed on, so the fix is about the two pieces:
+**a gap is bridged only between pieces of one drawn line** — overlapping pieces
+still merge, but pieces separated by a gap must share a coordinate. Sitrep 099's
+own vertical came from a coloured band and is removed earlier, as before; this
+one is real table furniture and there was nothing to suppress.
+
+Every other report in the archive is byte-identical across the change:
+`zone_table.csv`, `province_series.csv` and `province_summary.csv` all match a
+rebuild of the previous vintage once sitrep 102's own rows are set aside.
+
+---
+
 ## `data/2026-08-23` — 2026-08-25 — sitrep 101
 
 **Not breaking. New observations only** — no stream added or removed, no column

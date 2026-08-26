@@ -483,6 +483,46 @@ def _segments(page) -> list[Segment]:
 #: taking its 94 unallocated Ituri cases with it. 36 pt bridges it.
 COALESCE_GAP = 36.0
 
+#: How far two pieces' positions may differ and still be pieces of ONE drawn
+#: rule, for the purpose of joining them END TO END across a gap.
+#:
+#: TWO DIFFERENT CLAIMS SHARE ONE TOLERANCE BELOW, AND THEY MUST NOT. Pieces
+#: are grouped at `SNAP_X` (down the page) because Word draws a shared vertical
+#: border as three objects a few points apart -- the right face of the cell to
+#: its left, the rule itself, and the left face of the cell to its right. Those
+#: three lie SIDE BY SIDE over the same rows: they overlap along the rule, and
+#: absorbing that offset is exactly what `SNAP_X` is for.
+#:
+#: Joining pieces END TO END asserts something else -- that a rule the page drew
+#: in pieces is one rule -- and the pieces of one drawn line sit at ONE
+#: coordinate. Permitting both at once lets a rule run `COALESCE_GAP` past its
+#: own end and adopt an unrelated rule that merely passes within `SNAP_X`.
+#:
+#: Sitrep 102 page 2 is that case. The zone table's column rule at x=401.45
+#: stops at y=740.86; the page-footer bar's cell side at x=404.80 starts at
+#: y=775.55. They are 3.35 pt apart across the page and 34.69 pt apart down it,
+#: inside both tolerances, so they merged into one rule running to y=779.05 --
+#: which then crossed the footer's two horizontal bars and unioned the FOOTER
+#: into the table's component. That component's extent became the full text
+#: width, [16.95, 599.30] instead of the table's own [83.79, 528.46]. `select`
+#: chains a continuation page by comparing extents, page 3 matched neither the
+#: blown-out extent nor any rule of that width, and the report was published
+#: from page 2 alone: 25 rows ending at Nizi, no national row, identity
+#: `not_checkable`, and Ituri short by 1,108 of its own cases.
+#:
+#: SITREP 101 IS THE SAME VINTAGE, THE SAME LAYOUT AND THE SAME FOOTER, and does
+#: not do this only because its page-2 table ends 6.9 pt higher, at y=733.99,
+#: leaving the footer 41.6 pt away and outside `COALESCE_GAP`. Where a table
+#: happens to stop is not a property anything can be keyed on, so the rule is
+#: about the two pieces themselves: a gap is bridged only along one line.
+#:
+#: The value is loose next to what it separates. Within one drawn rule the
+#: pieces here repeat a coordinate exactly (sitrep 102's column pieces are all
+#: at x=401.45); the offsets this must reject start at the ~3 pt of a cell face
+#: and run to `SNAP_X`. A point of slack covers re-encoder jitter without
+#: reaching either.
+BRIDGE_TOL = 1.0
+
 
 def _coalesce(segs: list[Segment], gap: float = COALESCE_GAP) -> list[Segment]:
     """Merge collinear pieces that lie on one line into single rules."""
@@ -514,19 +554,39 @@ def _coalesce(segs: list[Segment], gap: float = COALESCE_GAP) -> list[Segment]:
     return out
 
 
-def _merge_run(cluster: list[Segment], horizontal: bool, gap: float) -> list[Segment]:
-    """Join pieces at one position whose spans touch or nearly touch."""
-    pos = sum(s.pos for s in cluster) / len(cluster)
-    spans = sorted((s.lo, s.hi) for s in cluster)
+def _merge_run(cluster: list[Segment], horizontal: bool, gap: float,
+               bridge: float = BRIDGE_TOL) -> list[Segment]:
+    """Join the pieces of one rule: those that overlap, and those that continue it.
+
+    A piece that OVERLAPS the run always joins it. That is the shared border
+    arriving as its rule and the two cell faces beside it, and collapsing those
+    is what the grouping tolerance exists for.
+
+    A piece separated from the run by a GAP joins only if the run already holds
+    a piece at its own position, within `BRIDGE_TOL` -- because bridging a gap
+    claims the two are one drawn line, and one drawn line has one coordinate.
+    Without that test a rule reaches `COALESCE_GAP` beyond its end and adopts
+    whatever passes within the grouping tolerance, which on sitrep 102 welded
+    the page footer to the zone table.
+
+    A run that splits therefore yields several rules at their own positions
+    rather than one at the cluster's mean; `_snap` in `tables` still collapses
+    them into a single table edge where they belong to one.
+    """
+    spans = sorted((s.lo, s.hi, s.pos) for s in cluster)
     out: list[Segment] = []
-    lo, hi = spans[0]
-    for a, b in spans[1:]:
-        if a - hi <= gap:
+    lo, hi, poss = spans[0][0], spans[0][1], [spans[0][2]]
+    for a, b, p in spans[1:]:
+        joins = (a - hi <= 0
+                 or (a - hi <= gap
+                     and any(abs(p - q) <= bridge for q in poss)))
+        if joins:
             hi = max(hi, b)
+            poss.append(p)
         else:
-            out.append(Segment(pos, lo, hi, horizontal))
-            lo, hi = a, b
-    out.append(Segment(pos, lo, hi, horizontal))
+            out.append(Segment(sum(poss) / len(poss), lo, hi, horizontal))
+            lo, hi, poss = a, b, [p]
+    out.append(Segment(sum(poss) / len(poss), lo, hi, horizontal))
     return out
 
 
