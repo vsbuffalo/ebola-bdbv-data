@@ -424,3 +424,50 @@ census split into confirmed and suspected patients.
   asserts none.
 - **The census split ends because the source stopped printing it**, after
   SitRep 080 on 2 August, not because the series ended. The total continues.
+
+---
+
+## `test_positivity.png`
+
+The share of laboratory samples returning positive, over time, and what the
+positives were. Upper panel: one grey point per province-day with area
+proportional to samples, and a 7-day pooled line. Lower panel: samples analysed
+each report day, with the positives drawn inside them and split, where the
+source permits, into confirmations made on a living patient and confirmations
+made at or around a death.
+
+- **The numerator splits and the denominator does not, and that is the
+  answer to the obvious question.** There is no separate positivity rate for
+  suspected cases and for community deaths, because the laboratory paragraph
+  prints **one pool of samples** per province with no indication of where any
+  of them came from. Two rates would need two denominators. **The lower panel
+  is a composition, not a second rate**, and reading it as one would invent a
+  quantity the reports do not contain.
+- **What the positives are can be decomposed**, because confirmations made at
+  or around a death are printed separately. Lab positives equal the day's new
+  confirmations on 70 of the 78 province-days where both appear, which is what
+  licenses treating one as the other.
+- **The at-death count begins in mid-July**, so the positives before it are
+  drawn as a single band. A day is treated as split only if *every* province
+  reporting laboratory volume that day also carries the at-death count;
+  the handful of partial days are shown unsplit, because a national
+  composition built from some provinces is not one.
+- **Bodies swabbed post-mortem would be the missing denominator, and it is not
+  a series.** A count appears in roughly ten reports, clustered in early
+  August, sometimes national and sometimes provincial, sometimes for the day
+  and sometimes cumulative. It could support a handful of point estimates and
+  not a curve.
+- **The pooled line is a ratio of sums, not a mean of ratios.** Provinces
+  report very unequal volumes on the same day — six samples against ninety-four
+  — and averaging the daily percentages would give a six-sample province-day
+  the weight of a large one.
+- **The rate agrees with the source's own printed percentage** on 153 of 154
+  province-days to within 0.15 percentage points, so the upper panel is a
+  reading of the page rather than a recomputation that could drift from it.
+- **High positivity is expected here and is not evidence of undertesting on
+  its own.** Sampling is targeted at symptomatic suspects and at deaths, not
+  drawn from the population, so this rate cannot be compared with the
+  population-screening benchmarks used for other diseases. What it does carry
+  is its *stability*: the level has stayed near 20% since mid-June while daily
+  confirmations roughly doubled, meaning testing volume grew with the epidemic
+  rather than falling behind it.

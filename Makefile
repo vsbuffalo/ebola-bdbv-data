@@ -319,6 +319,14 @@ figures:
 	# one of them begin after the window closes.
 	uv run python scripts/plot_figures.py --figure response_timeline \
 		--out data/build/figures/response_timeline.png
+	# SLIDE FIGURE, 16:9. The share of samples returning positive, and what
+	# the positives were. THE NUMERATOR SPLITS AND THE DENOMINATOR DOES NOT:
+	# the laboratory paragraph prints one pool of samples per province with
+	# no indication of origin, so a positivity rate for suspected cases and
+	# another for community deaths cannot be formed. The lower panel is
+	# therefore a composition and not a second rate.
+	uv run python scripts/plot_figures.py --figure test_positivity \
+		--out data/build/figures/test_positivity.png
 	# COMMITTED COPIES, so the README, the data document and the cross-repo
 	# channel can link to figures that survive (data/build is gitignored).
 	# Everything copied here is gated twice: by `release-check`, which
@@ -336,6 +344,7 @@ figures:
 	cp data/build/figures/outcomes.png docs/figures/
 	cp data/build/figures/epi_curve.png docs/figures/
 	cp data/build/figures/response_timeline.png docs/figures/
+	cp data/build/figures/test_positivity.png docs/figures/
 
 ## watch-data-channel -- poll the shared data channel (which lives in the
 ##            modelling repo's tree) and exit as soon as they write, printing

@@ -3038,6 +3038,164 @@ def draw_response_timeline(inputs: dict[str, Path], out: Path) -> None:
     plt.close(fig)
 
 
+def _pooled_positivity(dates, pos, samp, window=7):
+    """Pooled positivity in a centred window: sum of positives over sum of
+    samples, NOT the mean of the daily ratios.
+
+    The two differ here and the mean is the wrong one. Provinces report
+    wildly unequal volumes on the same day -- Sud-Kivu prints 6 samples while
+    Ituri prints 94 -- so a mean of ratios lets a six-sample day count as much
+    as a ninety-four-sample day, and a single positive out of six reads as
+    17% positivity with the weight of a whole province-week behind it.
+    """
+    out = []
+    for i, d in enumerate(dates):
+        lo, hi = d - window / 2, d + window / 2
+        p = sum(v for x, v in zip(dates, pos) if lo <= x <= hi)
+        s = sum(v for x, v in zip(dates, samp) if lo <= x <= hi)
+        out.append(100 * p / s if s else None)
+    return out
+
+
+def draw_test_positivity(inputs: dict[str, Path], out: Path) -> None:
+    """The share of laboratory samples returning positive, and what the
+    positives were -- a living suspected case, or a body swabbed after death.
+
+    THE NUMERATOR SPLITS AND THE DENOMINATOR DOES NOT, which is the whole
+    reason this figure has the shape it has. The laboratory paragraph prints
+    one pool of samples per province with no indication of where any of them
+    came from, so there is no way to compute a positivity rate for suspected
+    cases and another for community deaths: the two rates would need two
+    denominators and the source publishes one. What CAN be decomposed is the
+    positives, because the confirmations made at or around a death are printed
+    separately, and lab positives equal the day's new confirmations on 70 of
+    the 78 province-days where both appear.
+
+    So the top panel is a rate and the bottom panel is a composition, and they
+    must not be read as two rates. A reader who wants "positivity among
+    post-mortem swabs" is asking for a number the reports do not support:
+    bodies swabbed post-mortem are printed in about ten reports, clustered in
+    early August, with the count sometimes national and sometimes provincial
+    and sometimes cumulative. That is a note in a register, not a series.
+
+    WHAT THE RATE IS WORTH. Our positivity agrees with the percentage the
+    source prints beside it on 153 of 154 province-days to within 0.15
+    percentage points, so the top panel is a reading of the page rather than a
+    recomputation that might drift from it.
+    """
+    lab = (pl.read_csv(inputs["lab"]).drop_nulls(["samples", "positives"])
+           .filter(pl.col("samples") > 0))
+    prov = pl.read_csv(inputs["province_series"]).select(
+        "date", "province", "deaths_community")
+    caveat = pl.read_csv(inputs["caveat"])
+
+    # `deaths_community` is read as text because the source prints `ND` (non
+    # disponible -- it did not say) in that column on some days, so a
+    # non-strict cast is what separates a real zero from a silence.
+    j = (lab.join(prov, on=["date", "province"], how="left")
+         .with_columns(pl.col("deaths_community")
+                       .cast(pl.Int64, strict=False).alias("atdeath")))
+
+    # A DAY IS SPLIT ONLY IF EVERY PROVINCE REPORTING LABORATORY VOLUME THAT
+    # DAY ALSO CARRIES THE AT-DEATH COUNT. Two days have it for some provinces
+    # and not others; splitting those would draw a national composition out of
+    # a partial one, so they are shown unsplit with the rest.
+    per = (j.group_by("date").agg(
+        pl.len().alias("n"),
+        pl.col("atdeath").is_not_null().sum().alias("n_split"),
+        pl.col("samples").sum().alias("samples"),
+        pl.col("positives").sum().alias("positives"),
+        pl.col("atdeath").sum().alias("atdeath"))
+        .with_columns((pl.col("n") == pl.col("n_split")).alias("split"))
+        .sort("date"))
+
+    xs = _dates(per["date"])
+    samp = per["samples"].to_list()
+    pos = per["positives"].to_list()
+    split = per["split"].to_list()
+    atd = [a if s else None for a, s in zip(per["atdeath"].to_list(), split)]
+
+    fig, (ax_r, ax_n) = plt.subplots(
+        2, 1, figsize=(13.333, 7.5), height_ratios=[1.25, 1],
+        sharex=True, constrained_layout=True)
+
+    # ---- Panel A: the rate ---------------------------------------------
+    # One point per province-day, area proportional to samples, because a
+    # six-sample province-day and a ninety-four-sample one are not equally
+    # informative about the level and should not look it.
+    px = _dates(lab["date"])
+    ppct = [100 * p / s for p, s in
+            zip(lab["positives"].to_list(), lab["samples"].to_list())]
+    psz = [3 + 0.45 * math.sqrt(s) for s in lab["samples"].to_list()]
+    ax_r.scatter(px, ppct, s=psz, color="#9a9a9a", alpha=0.55, lw=0, zorder=2,
+                 label="one province-day (area = samples)")
+    ax_r.plot(xs, _pooled_positivity(xs, pos, samp), color="#0072B2", lw=2.2,
+              zorder=3, label="7-day pooled")
+
+    pooled = 100 * sum(pos) / sum(samp)
+    ax_r.axhline(pooled, color="#333333", lw=1.0, ls=(0, (4, 3)), zorder=1)
+    ax_r.annotate(f"{pooled:.0f}% over the whole period", xy=(0.995, pooled),
+                  xycoords=("axes fraction", "data"), xytext=(0, 5),
+                  textcoords="offset points", ha="right", fontsize=8.5,
+                  color="#333333")
+    ax_r.set_ylabel("samples returning\npositive")
+    ax_r.set_ylim(0, 72)
+    ax_r.yaxis.set_major_formatter(
+        matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:g}%"))
+    ax_r.legend(loc="upper right", frameon=False, fontsize=8, ncol=2)
+    for s in ("top", "right"):
+        ax_r.spines[s].set_visible(False)
+    ax_r.grid(axis="y", color="#ededed", lw=0.6)
+    ax_r.set_axisbelow(True)
+
+    # ---- Panel B: the volume, and what the positives were ---------------
+    alive = [(p - a) if a is not None else None for p, a in zip(pos, atd)]
+    unsplit = [p if a is None else 0 for p, a in zip(pos, atd)]
+    ax_n.bar(xs, samp, width=1.0, color="#e4e4e4", zorder=2,
+             label="tested")
+    ax_n.bar(xs, [a or 0 for a in alive], width=1.0, color="#0072B2",
+             zorder=3, label="positive · confirmed alive")
+    ax_n.bar(xs, [a or 0 for a in atd], width=1.0,
+             bottom=[a or 0 for a in alive], color="#D55E00", zorder=3,
+             label="positive · confirmed at death")
+    ax_n.bar(xs, unsplit, width=1.0, color="#7FA8C9", zorder=3,
+             label="positive · split not printed")
+    ax_n.set_ylabel("samples analysed\nper report day")
+    ax_n.legend(loc="upper left", frameon=False, fontsize=8, ncol=4)
+    for s in ("top", "right"):
+        ax_n.spines[s].set_visible(False)
+    ax_n.grid(axis="y", color="#ededed", lw=0.6)
+    ax_n.set_axisbelow(True)
+    ax_n.set_ylim(0, max(samp) * 1.30)
+
+    first_split = min((x for x, s in zip(xs, split) if s), default=None)
+    if first_split is not None:
+        ax_n.axvline(first_split - 0.5, color="#888888", lw=1.0,
+                     ls=(0, (3, 3)), zorder=4)
+        ax_n.annotate("the at-death count starts here;\nbefore it the "
+                      "positives cannot be split",
+                      xy=(first_split - 4, max(samp) * 1.02), ha="right",
+                      va="bottom", fontsize=7.5, color="#555555")
+
+    ax_n.set_xlim(*_report_calendar(caveat))
+    ax_n.xaxis.set_major_locator(mdates.MonthLocator())
+    ax_n.xaxis.set_major_formatter(mdates.DateFormatter("%B %Y"))
+    ax_n.tick_params(axis="x", labelsize=8.5)
+
+    sp = [(p, a) for p, a in zip(pos, atd) if a is not None]
+    share = 100 * sum(a for _, a in sp) / sum(p for p, _ in sp)
+    ax_n.annotate(f"{share:.0f}% of the positives that can be split\nwere "
+                  f"confirmed at or around a death",
+                  xy=(0.995, 0.72), xycoords="axes fraction", ha="right",
+                  va="top", fontsize=8.5, color="#B34700")
+    _header(fig, "How often a sample comes back positive, and what the "
+                 "positives are",
+            f"Laboratory volume as the reports print it · {_span(lab)} — one "
+            f"pool of samples, so no separate rate for cases and for deaths.")
+    fig.savefig(out, dpi=200)
+    plt.close(fig)
+
+
 FIGURES = {
     # The declared inputs ARE the dependency set, so the stream files are
     # listed one by one rather than hidden behind a directory glob.
@@ -3089,6 +3247,12 @@ FIGURES = {
                       "zone_status": "data/build/series/zone_table_status.csv",
                       "summary": "data/build/series/province_summary.csv",
                       "prose": "data/build/series/prose_provinces.csv"}),
+    "test_positivity": (draw_test_positivity,
+                        {"lab": "data/build/series/lab_prose.csv",
+                         "province_series":
+                             "data/build/series/province_series.csv",
+                         "caveat": "data/build/series/"
+                                   "provisional_caveat.csv"}),
     "response_timeline": (draw_response_timeline,
                           {"cases": "data/build/streams/"
                                     "cases_daily_national.tsv",
