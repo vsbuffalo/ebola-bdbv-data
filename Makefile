@@ -312,6 +312,13 @@ figures:
 		--out data/build/figures/care_ledger.png
 	uv run python scripts/plot_figures.py --figure residuals \
 		--out data/build/figures/residuals.png
+	# SLIDE FIGURE, 16:9. Whether a claimed response scale-up can be checked
+	# against the reports at all, and what the epidemic did over the window
+	# it is claimed for. The middle panel is the load-bearing one: it dates
+	# the first appearance of every response quantity we extract, and all but
+	# one of them begin after the window closes.
+	uv run python scripts/plot_figures.py --figure response_timeline \
+		--out data/build/figures/response_timeline.png
 	# COMMITTED COPIES, so the README, the data document and the cross-repo
 	# channel can link to figures that survive (data/build is gitignored).
 	# Everything copied here is gated twice: by `release-check`, which
@@ -328,6 +335,7 @@ figures:
 	cp data/build/figures/ascertainment.png docs/figures/
 	cp data/build/figures/outcomes.png docs/figures/
 	cp data/build/figures/epi_curve.png docs/figures/
+	cp data/build/figures/response_timeline.png docs/figures/
 
 ## watch-data-channel -- poll the shared data channel (which lives in the
 ##            modelling repo's tree) and exit as soon as they write, printing

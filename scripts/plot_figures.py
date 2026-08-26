@@ -2814,6 +2814,230 @@ def draw_residuals(inputs: dict[str, Path], out: Path) -> None:
     plt.close(fig)
 
 
+#: A response timeline asserted outside this repository: a scale-up beginning
+#: on the date of the first situation report, ramping for three weeks, and
+#: complete on 8 June. Held here as data so the panels can be read AGAINST it
+#: rather than against a sentence describing it, and so that changing the
+#: claim changes the figure.
+#:
+#: THE FIRST SITUATION REPORT IS 14 MAY, NOT 18 MAY. SitRep 001 is dated 14
+#: May and SitRep 002 17 May; both are in `data/raw/sitrep_pdfs/`. Neither
+#: yields a machine-readable table -- 001's health-zone counts sit inside an
+#: image the text layer does not carry, and 002's table is transposed out of
+#: any registered geometry -- so both extract as `no_matching_table` and the
+#: national series starts at SitRep 004 on 18 May. 18 May is therefore where
+#: THE DATA starts, not where the response started, and that is the most
+#: likely origin of the date.
+CLAIMED_RAMP = ("2026-05-18", "2026-06-08")
+
+#: Where the isolation census stops rising. NOT A FITTED BREAKPOINT: it is the
+#: week in which the weekly mean stops climbing (627, then 747, then 731) and
+#: begins seven weeks inside 690-792. It is marked because daily incidence
+#: resumes rising in the same week, and the coincidence is the finding --
+#: neither series was tested for a change point, and this figure does not
+#: claim one was.
+CENSUS_PLATEAU = "2026-07-06"
+
+
+def _roll_median(xs, ys, window=7, max_gap=4.0):
+    """Centred rolling median, broken across reporting gaps.
+
+    A MEDIAN AND NOT A MEAN, because this series carries backlog releases.
+    22 July prints 369 confirmed cases against a neighbourhood of 50 to 100,
+    and 30 July prints 245 covering three days; both are the source
+    discharging a queue rather than a day the epidemic behaved differently.
+    A mean carries them into the whole fortnight -- the week of 20 July reads
+    120 cases/day on the mean and 68 on the median -- and would draw a July
+    surge that is partly an artefact of when the source caught up.
+
+    The gap-breaking is `_roll_geomean`'s and is there for its reason: a line
+    drawn across a silence asserts a level on days nobody reported.
+    """
+    out = []
+    for i in range(len(ys)):
+        if i > 0 and xs[i] - xs[i - 1] > max_gap:
+            out.append(None)
+            continue
+        lo, hi = max(0, i - window // 2), min(len(ys), i + window // 2 + 1)
+        vals = sorted(v for v in ys[lo:hi] if v is not None)
+        out.append(vals[len(vals) // 2] if vals else None)
+    return out
+
+
+def draw_response_timeline(inputs: dict[str, Path], out: Path) -> None:
+    """What the reports can and cannot say about when the response scaled up.
+
+    THE FIGURE ANSWERS A QUESTION THE SOURCE ONLY HALF PERMITS. A response
+    scale-up is a claim about capacity -- beds, laboratories, contact tracers
+    -- and the situation reports do not print any of that until well after the
+    period a scale-up would occupy. So the middle panel states the limit
+    outright: of the six response quantities this project extracts, one exists
+    before June and the rest begin between 1 June and 9 August. Any statement
+    about a May scale-up is inference from the epidemic's own behaviour, never
+    a reading of reported capacity, and the panel is there so that is not
+    quietly forgotten.
+
+    What CAN be read is the top panel: daily confirmed cases carry the mark of
+    when transmission slowed, whatever drove it. Three regimes are visible
+    without fitting anything -- a steep climb through late May, four flat
+    weeks near 40 cases/day, then a renewed rise from early July that roughly
+    doubles the daily count by mid-August.
+
+    THE BOTTOM PANEL IS DRAWN ON THE SAME AXIS BECAUSE OF ONE COINCIDENCE.
+    The isolation census stops rising in the same week the case count resumes
+    rising. A flat census beside rising incidence means a falling share of
+    cases is in a bed, which is the quantity the models most need -- and it is
+    NOT a bed shortage: over the weeks where the reports print both, national
+    capacity grows from about 850 beds to 1,050 while occupancy falls from
+    89% to 66%. The explanation the ledger supports is throughput. In Ituri,
+    admissions rise from about 70-86/day in mid-July to 90-138/day by late
+    August while the census holds near 500, which is a shorter stay at a
+    steady stock rather than a ward that filled up.
+    """
+    caveat = pl.read_csv(inputs["caveat"])
+    cases = (pl.read_csv(inputs["cases"], separator="\t", null_values="NA",
+                         try_parse_dates=True)
+             .drop_nulls("cases_national").sort("time"))
+    banner = pl.read_csv(inputs["banner"]).sort("date")
+    care = pl.read_csv(inputs["care"])
+    lab = pl.read_csv(inputs["lab"])
+    zone = pl.read_csv(inputs["zone_table"])
+
+    ramp = [mdates.datestr2num(d) for d in CLAIMED_RAMP]
+    plateau = mdates.datestr2num(CENSUS_PLATEAU)
+
+    fig, (ax_i, ax_a, ax_c) = plt.subplots(
+        3, 1, figsize=(13.333, 7.5), height_ratios=[2.05, 1.15, 1.75],
+        sharex=True, constrained_layout=True)
+
+    # ---- Panel A: what the epidemic did -------------------------------
+    # Per DAY, not per row: one row covers three days after the 28-29 July
+    # silence, and plotting its 245 as a daily figure invents a spike next to
+    # the real backlog release two days earlier.
+    d = cases.with_columns(
+        (pl.col("cases_national") / pl.col("days_covered")).alias("rate"))
+    xs = [mdates.date2num(x) for x in d["time"].to_list()]
+    ys = d["rate"].to_list()
+    med = _roll_median(xs, ys)
+
+    for ax in (ax_i, ax_a, ax_c):
+        ax.axvspan(ramp[0], ramp[1], color="#E69F00", alpha=0.15, lw=0, zorder=0)
+        ax.axvline(plateau, color="#D55E00", lw=1.1, ls=(0, (4, 3)), zorder=1)
+
+    ax_i.plot(xs, ys, ls="none", marker="o", ms=3.2, color="#9a9a9a",
+              alpha=0.75, zorder=2, label="reported that day")
+    ax_i.plot(xs, med, color="#0072B2", lw=2.0, zorder=3,
+              label="7-day median")
+    ax_i.set_yscale("log")
+    ax_i.set_ylabel("confirmed cases\nper day (log)")
+    # Down to 1, because three days in late May print 1 and 4 confirmed cases
+    # and a floor above them draws the quietest days of the outbreak as points
+    # sitting on the axis.
+    ax_i.set_ylim(0.8, 700)
+    ax_i.set_yticks([1, 2, 5, 10, 20, 50, 100, 200, 400])
+    ax_i.get_yaxis().set_major_formatter(
+        matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:g}"))
+    ax_i.legend(loc="lower right", frameon=False, fontsize=8, ncol=2)
+    for s in ("top", "right"):
+        ax_i.spines[s].set_visible(False)
+    ax_i.grid(axis="y", color="#e9e9e9", lw=0.6)
+    ax_i.set_axisbelow(True)
+
+    ax_i.annotate("about 40/day\nfor four weeks", xy=(0.375, 0.30),
+                  xycoords="axes fraction", fontsize=8.5, color="#333333",
+                  ha="center")
+    ax_i.annotate("backlog release", xy=(mdates.datestr2num("2026-07-22"), 369),
+                  xytext=(6, -4), textcoords="offset points",
+                  fontsize=7.5, color="#777777", va="center")
+
+    # ---- Panel B: what the reports let us measure, and from when ------
+    # The bar is the span between the first and last day the quantity is
+    # printed, so a bar that starts late IS the finding.
+    def span_of(frame, col, date_col="date"):
+        s = frame.filter(pl.col(col).is_not_null())
+        if not s.height:
+            return None
+        return (mdates.datestr2num(s[date_col].min()),
+                mdates.datestr2num(s[date_col].max()))
+
+    nat = zone.filter(pl.col("level") == "national")
+    rows = [
+        ("confirmed cases", span_of(nat, "cum_cases")),
+        ("isolation census", span_of(banner, "patients_isolated")),
+        ("census split confirmed/suspect",
+         span_of(banner, "patients_isolated_confirmed")),
+        ("laboratory samples", span_of(lab, "samples")),
+        ("treatment-centre beds", span_of(care, "beds")),
+        ("contacts followed", span_of(care, "contacts_followed")),
+    ]
+    rows = [(n, s) for n, s in rows if s]
+    for i, (name, (lo, hi)) in enumerate(rows):
+        y = len(rows) - 1 - i
+        ax_a.barh(y, hi - lo, left=lo, height=0.55, color="#009E73",
+                  alpha=0.85, zorder=2)
+        ax_a.text(lo - 2, y, _fmt_day(mdates.num2date(lo).strftime("%Y-%m-%d")),
+                  ha="right", va="center", fontsize=7.5, color="#555555")
+    ax_a.set_yticks(range(len(rows)))
+    ax_a.set_yticklabels([n for n, _ in reversed(rows)], fontsize=8)
+    ax_a.set_ylim(-0.7, len(rows) - 0.3)
+    ax_a.set_ylabel("first printed", labelpad=10)
+    for s in ("top", "right", "left"):
+        ax_a.spines[s].set_visible(False)
+    ax_a.tick_params(axis="y", length=0)
+
+    # ---- Panel C: the census, and what is inside it -------------------
+    b = banner.filter(pl.col("patients_isolated").is_not_null())
+    cx = _dates(b["date"])
+    tot = b["patients_isolated"].to_list()
+    conf = b["patients_isolated_confirmed"].to_list()
+    # The split dies with the front-page tile after 2 August; past that only
+    # the total is published, so the bands stop and the total continues.
+    split = [(x, t, c) for x, t, c in zip(cx, tot, conf) if c is not None]
+    sx = [x for x, _, _ in split]
+    sc = [c for _, _, c in split]
+    ss = [t - c for _, t, c in split]
+    ax_c.fill_between(sx, 0, sc, color="#0072B2", lw=0, label="confirmed")
+    ax_c.fill_between(sx, sc, [c + s for c, s in zip(sc, ss)],
+                      color="#56B4E9", lw=0, label="suspected")
+    ax_c.plot(cx, tot, color="#333333", lw=1.6, label="total in isolation")
+    # The bands end in a vertical face, which is the honest shape: the front
+    # page stops printing the split after SitRep 080 and the total keeps being
+    # published, so this is a source event and not the series ending.
+    ax_c.annotate("split no longer\nprinted after Aug 2",
+                  xy=(sx[-1], sc[-1] + ss[-1]), xytext=(6, 26),
+                  textcoords="offset points", fontsize=7.5, color="#555555",
+                  ha="left", va="bottom")
+    ax_c.set_ylabel("patients in\nisolation")
+    ax_c.set_ylim(0, max(t for t in tot if t is not None) * 1.22)
+    ax_c.legend(loc="upper left", frameon=False, fontsize=8, ncol=3)
+    for s in ("top", "right"):
+        ax_c.spines[s].set_visible(False)
+    ax_c.grid(axis="y", color="#e9e9e9", lw=0.6)
+    ax_c.set_axisbelow(True)
+
+    ax_c.set_xlim(*_report_calendar(caveat))
+    ax_c.xaxis.set_major_locator(mdates.MonthLocator())
+    ax_c.xaxis.set_major_formatter(mdates.DateFormatter("%B %Y"))
+    ax_c.tick_params(axis="x", labelsize=8.5)
+
+    # The two claimed milestones, labelled once at the top of the figure.
+    ax_i.annotate(f"claimed scale-up\n{_fmt_day(CLAIMED_RAMP[0])} to "
+                  f"{_fmt_day(CLAIMED_RAMP[1])}",
+                  xy=((ramp[0] + ramp[1]) / 2, 0.965), xycoords=("data",
+                  "axes fraction"), ha="center", va="top", fontsize=8.5,
+                  color="#8a5a00")
+    ax_i.annotate(f"census stops rising · {_fmt_day(CENSUS_PLATEAU)}",
+                  xy=(plateau + 2, 0.965), xycoords=("data", "axes fraction"),
+                  ha="left", va="top", fontsize=8.5, color="#D55E00")
+
+    _header(fig, "When did the response scale up, and when can we see it?",
+            "Daily confirmed cases, the response quantities the reports print, "
+            "and the isolation census · "
+            f"{_span(caveat)} — no capacity figure is published before June.")
+    fig.savefig(out, dpi=200)
+    plt.close(fig)
+
+
 FIGURES = {
     # The declared inputs ARE the dependency set, so the stream files are
     # listed one by one rather than hidden behind a directory glob.
@@ -2865,6 +3089,15 @@ FIGURES = {
                       "zone_status": "data/build/series/zone_table_status.csv",
                       "summary": "data/build/series/province_summary.csv",
                       "prose": "data/build/series/prose_provinces.csv"}),
+    "response_timeline": (draw_response_timeline,
+                          {"cases": "data/build/streams/"
+                                    "cases_daily_national.tsv",
+                           "banner": "data/build/series/banner.csv",
+                           "care": "data/build/series/care_prose.csv",
+                           "lab": "data/build/series/lab_prose.csv",
+                           "zone_table": "data/build/series/zone_table.csv",
+                           "caveat": "data/build/series/"
+                                     "provisional_caveat.csv"}),
     "province_series": (draw_province_series,
                         {"province_series": "data/build/series/province_series.csv",
                          "summary": "data/build/series/province_summary.csv",

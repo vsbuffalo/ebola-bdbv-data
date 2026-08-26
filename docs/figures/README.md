@@ -369,3 +369,58 @@ INRB-UMIE's transcription.
   has them, and nothing can check it.
 - A difference panel that is zero everywhere is given a small fixed range, so
   it reads as zero rather than as floating-point noise.
+
+---
+
+## `response_timeline.png`
+
+Whether a claimed response scale-up can be checked against the situation
+reports, and what the epidemic did over the window it is claimed for. The
+shaded band is a timeline asserted outside this repository — a scale-up
+beginning with the first situation report and complete three weeks later, on 8
+June. Three panels share one calendar: daily confirmed cases on a log axis, the
+first day each response quantity appears in the reports, and the isolation
+census split into confirmed and suspected patients.
+
+- **The first situation report is 14 May, not 18 May.** SitRep 001 is dated 14
+  May and SitRep 002 17 May, and both are in the archive. Neither yields a
+  machine-readable table — 001's health-zone counts sit inside an image the
+  text layer does not carry, and 002's table is transposed out of any
+  registered geometry — so both extract as `no_matching_table` and the national
+  series starts at SitRep 004. **18 May is where the data starts, not where the
+  response started**, and anyone anchoring a response milestone there is
+  anchoring it to an artefact of extraction.
+- **The middle panel is the honest limit of this figure.** A scale-up is a
+  claim about capacity, and the reports print none of it during the window: of
+  the six response quantities extracted here, only the case count exists before
+  June. Beds first appear in mid-July and contacts followed in August. Any
+  statement about a May scale-up is therefore inference from the epidemic's own
+  behaviour, never a reading of reported capacity.
+- **The top panel shows a change of regime, not a cause.** Incidence climbs
+  steeply through the claimed window, holds near 40 cases/day for roughly four
+  weeks after it, then rises again from early July. That the slowdown coincides
+  with the claimed window is consistent with a response taking effect; it is
+  equally consistent with any other change over the same weeks, and this figure
+  distinguishes none of them.
+- **Early growth is inflated by surveillance expanding.** Health zones under
+  reporting go from 16 to 58 across the series, most steeply in the first
+  weeks, so part of the early rise is the system finding cases rather than the
+  epidemic making them. This biases the apparent slowdown *upward* and is the
+  main reason not to read the top panel as an effect size.
+- **The 7-day line is a median, because the series carries backlog releases.**
+  22 July prints 369 confirmed cases against a neighbourhood of 50 to 100, and
+  30 July prints 245 covering three days. On a mean the week of 20 July reads
+  about 120 cases/day; on the median it reads 68.
+- **The census plateau is not a bed shortage.** The isolation census stops
+  rising in the same week incidence resumes rising, which means a falling share
+  of cases is in a bed. Over the weeks the reports print both, national capacity
+  grows from about 850 beds to 1,050 while occupancy falls from 89% to 66%. The
+  ledger points to throughput instead: in Ituri admissions rise from about
+  70–86/day in mid-July to 90–138/day by late August while the census holds near
+  500, which is a shorter stay at a steady stock rather than a ward that filled.
+- **Neither marked date is a fitted change point.** The band is the external
+  claim as stated, and the 6 July line is the week the weekly mean census stops
+  climbing. No change-point test was run on either series, and the figure
+  asserts none.
+- **The census split ends because the source stopped printing it**, after
+  SitRep 080 on 2 August, not because the series ended. The total continues.
