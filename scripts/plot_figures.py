@@ -3038,18 +3038,61 @@ def draw_response_timeline(inputs: dict[str, Path], out: Path) -> None:
     plt.close(fig)
 
 
-def _pooled_positivity(dates, pos, samp, window=7):
+#: Marker area for a province-day: `MARK_BASE + MARK_SCALE * sqrt(samples)`.
+#: Area on the square root of the count, so a day with four times the samples
+#: draws twice the width rather than four times it -- the eye reads a disc by
+#: its width, and scaling area linearly in the count makes Ituri's 347-sample
+#: days blot out the six-sample ones they need to be compared against. Shared
+#: by the national figure and the province one so the pair looks like one
+#: dataset seen twice.
+MARK_BASE, MARK_SCALE = 5.0, 0.72
+
+#: A series is INTERRUPTED rather than joined where consecutive observations
+#: are more than this many days apart.
+#:
+#: A LINE ACROSS A GAP ASSERTS A LEVEL ON DAYS THIS SERIES DOES NOT COVER, and
+#: it does so most confidently exactly where there is least evidence. The
+#: reports are daily, so a one-day step is the series behaving. Measured over
+#: this build: nationally 59 of the 68 steps are a single day and the largest
+#: is six; Ituri's are 49 ones, nine twos, two threes and a single nine. Two
+#: is deliberately not the threshold -- two- and three-day steps are ordinary
+#: (Ituri has eleven) and breaking on those would fragment a series that is in
+#: fact continuous. Breaking above three interrupts the national line once and
+#: Ituri's once, while Sud-Kivu, which prints laboratory volume on 25 days
+#: across twelve weeks with a 29-day silence in the middle, falls into five
+#: pieces -- which is what that series honestly is.
+#:
+#: A BREAK MEANS THIS SERIES HAS NO OBSERVATION, NOT THAT THE SOURCE PRINTED
+#: NOTHING, and the two come apart in this very figure. Across the archive 44
+#: candidate laboratory rows are refused against 154 kept, 33 of them because
+#: the report gave no printed positivity rate of its own; on 13 report-days
+#: that leaves nothing at all. The August interruption is both kinds at once:
+#: 6 to 10 August print no sample count anywhere in the report, and 11 to 14
+#: August print 249, 284 and 336 samples that this pipeline declines because
+#: the percentage it checks them against is absent. Do not describe either
+#: break as the laboratory going quiet.
+POSITIVITY_MAX_GAP = 3.0
+
+
+def _pooled_positivity(dates, pos, samp, window=7, max_gap=POSITIVITY_MAX_GAP):
     """Pooled positivity in a centred window: sum of positives over sum of
-    samples, NOT the mean of the daily ratios.
+    samples, NOT the mean of the daily ratios. Interrupted across gaps.
 
     The two differ here and the mean is the wrong one. Provinces report
     wildly unequal volumes on the same day -- Sud-Kivu prints 6 samples while
     Ituri prints 94 -- so a mean of ratios lets a six-sample day count as much
     as a ninety-four-sample day, and a single positive out of six reads as
     17% positivity with the weight of a whole province-week behind it.
+
+    The window is defined on DATES rather than on positions in the list, so a
+    point on the far side of a silence never contributes to the level on this
+    side of it; `max_gap` then breaks the drawn line at the same silences.
     """
     out = []
     for i, d in enumerate(dates):
+        if i > 0 and d - dates[i - 1] > max_gap:
+            out.append(None)
+            continue
         lo, hi = d - window / 2, d + window / 2
         p = sum(v for x, v in zip(dates, pos) if lo <= x <= hi)
         s = sum(v for x, v in zip(dates, samp) if lo <= x <= hi)
@@ -3126,8 +3169,9 @@ def draw_test_positivity(inputs: dict[str, Path], out: Path) -> None:
     px = _dates(lab["date"])
     ppct = [100 * p / s for p, s in
             zip(lab["positives"].to_list(), lab["samples"].to_list())]
-    psz = [3 + 0.45 * math.sqrt(s) for s in lab["samples"].to_list()]
-    ax_r.scatter(px, ppct, s=psz, color="#9a9a9a", alpha=0.55, lw=0, zorder=2,
+    psz = [MARK_BASE + MARK_SCALE * math.sqrt(s)
+           for s in lab["samples"].to_list()]
+    ax_r.scatter(px, ppct, s=psz, color="#8a8a8a", alpha=0.62, lw=0, zorder=2,
                  label="one province-day (area = samples)")
     ax_r.plot(xs, _pooled_positivity(xs, pos, samp), color="#0072B2", lw=2.2,
               zorder=3, label="7-day pooled")
@@ -3281,9 +3325,9 @@ def draw_positivity_provinces(inputs: dict[str, Path], out: Path) -> None:
         px = _dates(d["date"])
         pct = [100 * p / s for p, s in
                zip(d["positives"].to_list(), d["samples"].to_list())]
-        ax_r.scatter(px, pct, s=[3 + 0.45 * math.sqrt(v)
+        ax_r.scatter(px, pct, s=[MARK_BASE + MARK_SCALE * math.sqrt(v)
                                  for v in d["samples"].to_list()],
-                     color=ink, alpha=0.40, lw=0, zorder=3)
+                     color=ink, alpha=0.62, lw=0, zorder=3)
         if d.height >= LINE_MIN_DAYS:
             ax_r.plot(px, _pooled_positivity(px, d["positives"].to_list(),
                                              d["samples"].to_list()),

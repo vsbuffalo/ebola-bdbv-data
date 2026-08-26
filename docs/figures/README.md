@@ -461,6 +461,11 @@ made at or around a death.
   report very unequal volumes on the same day — six samples against ninety-four
   — and averaging the daily percentages would give a six-sample province-day
   the weight of a large one.
+- **The pooled line is interrupted where this series has no observation**, so
+  it is never drawn across days it does not cover. A break is not evidence the
+  laboratory went quiet: 33 candidate rows across the archive are refused for
+  printing no positivity rate of their own, and on 11 to 14 August the reports
+  print sample counts that are declined for exactly that reason.
 - **The rate agrees with the source's own printed percentage** on 153 of 154
   province-days to within 0.15 percentage points, so the upper panel is a
   reading of the page rather than a recomputation that could drift from it.
@@ -506,6 +511,15 @@ stacked by province.
   samples per report-day to about 347. Testing expanding while positivity falls
   is what case-finding catching up looks like, and none of it is visible in the
   national line.
+- **A break in a line means this series has no observation, not that the
+  laboratory went quiet.** The two come apart here. Across the archive 44
+  candidate laboratory rows are refused against 154 kept, 33 of them because
+  the report printed no positivity rate of its own for that province — the
+  rate this pipeline checks its own arithmetic against. On 13 report-days that
+  leaves nothing at all. The August interruption is both kinds at once: 6 to
+  10 August print no sample count anywhere in the report, while 11 to 14
+  August print 249, 284 and 336 samples that are declined for want of the
+  percentage beside them.
 - **A province gets a line only with at least 15 province-days**; below that a
   line through a handful of points would read as a trend. Tshopo prints
   laboratory volume twice in the whole series, ten samples in total. Those
