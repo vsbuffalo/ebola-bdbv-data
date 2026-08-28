@@ -327,35 +327,33 @@ def bar_pitch(col_prof: np.ndarray, tick_xs: tuple[float, ...]) \
     """
     if len(tick_xs) < 4:
         raise CalibrationError(f"only {len(tick_xs)} x tick marks found")
-    gaps = np.diff(np.array(tick_xs))
+    ticks = np.array(tick_xs)
+    gaps = np.diff(ticks)
     med_gap = float(np.median(gaps))
-    est = med_gap / 7.0
-    if not MIN_DAY_PX <= est <= MAX_DAY_PX:
+    if not MIN_DAY_PX <= med_gap / 7.0 <= MAX_DAY_PX:
         raise CalibrationError(
-            f"tick spacing {med_gap:.1f}px implies day pitch {est:.2f}px, "
-            f"outside [{MIN_DAY_PX}, {MAX_DAY_PX}]")
-
-    x = col_prof - col_prof.mean()
-    n = len(x)
-    ac = np.correlate(x, x, mode="full")[n - 1:]
-    lo = max(2, int(np.floor(est * 0.85)))
-    hi = min(len(ac) - 2, int(np.ceil(est * 1.15)))
-    window = ac[lo:hi + 1]
-    if window.size and window.max() > 0:
-        lag = lo + int(window.argmax())
-        a, b, c = ac[lag - 1], ac[lag], ac[lag + 1]
-        denom = a - 2 * b + c
-        pitch = lag + (0.5 * (a - c) / denom if denom != 0 else 0.0)
-    else:
-        pitch = est     # no usable peak; the tick estimate stands alone
-    if abs(pitch - est) > 0.1 * est:
+            f"tick spacing {med_gap:.1f}px implies day pitch "
+            f"{med_gap / 7.0:.2f}px, outside [{MIN_DAY_PX}, {MAX_DAY_PX}]")
+    # Every tick must be a whole number of weeks from the first; a stray
+    # detection (a stain, a label descender) refuses rather than tilting
+    # the regression.
+    weeks = (ticks - ticks[0]) / med_gap
+    if np.abs(weeks - np.round(weeks)).max() > 0.25:
         raise CalibrationError(
-            f"bar pitch {pitch:.2f}px disagrees with tick-derived "
-            f"{est:.2f}px by more than 10%")
+            f"x ticks are not on a weekly grid: offsets {weeks.round(2)}")
+    # The pitch from a single gap is good to ~1%; over 150 slots that
+    # drifts half a slot and interleaves neighbouring days between
+    # vintages. Regressing position on week index uses the whole axis
+    # span, which pins the pitch to a few hundredths of a pixel.
+    k = np.round(weeks)
+    slope = float(np.polyfit(k, ticks, 1)[0])
+    pitch = slope / 7.0
 
-    # Gap phase: the comb offset minimising summed profile.
+    # Gap phase with the pitch fixed: the comb offset minimising summed
+    # profile marks the bar boundaries; centres sit half a pitch away.
+    n = len(col_prof)
     best_phase, best_val = 0.0, np.inf
-    for ph in np.arange(0.0, pitch, 0.1):
+    for ph in np.arange(0.0, pitch, 0.05):
         ks = np.arange(int((n - ph) / pitch) + 1)
         xs = np.round(ph + ks * pitch).astype(int)
         xs = xs[(xs >= 0) & (xs < n)]
@@ -642,10 +640,28 @@ def calibrate(im: np.ndarray) -> Calibration:
     day_px, x_phase = bar_pitch(col_prof[panel.left:panel.right + 1], tick_xs)
     x_phase += panel.left
 
+    # A tick marks a date, and a date is a bar slot: every tick must land on
+    # a slot centre. A consistent half-slot offset means the gap comb found
+    # centres where the gaps are; scattered offsets mean the geometry is
+    # not understood, which refuses.
+    tk = np.array(tick_xs)
+    frac = ((tk - x_phase) / day_px) % 1.0
+    off = np.minimum(frac, 1.0 - frac)
+    if np.median(off) > 0.32:
+        x_phase += day_px / 2.0
+        frac = ((tk - x_phase) / day_px) % 1.0
+        off = np.minimum(frac, 1.0 - frac)
+    if np.median(off) > 0.2:
+        raise CalibrationError(
+            f"x ticks sit {np.median(off):.2f} slots off the bar centres")
+
     px_per_case, y_step, y_labels = read_y_axis(im, panel)
     printed_n = read_printed_n(im, panel)
 
-    n_slots = int((panel.right - x_phase) / day_px) + 1
+    # Only slots that fit wholly inside the panel are bars; a slot centred
+    # against the right border reads the border's own pixels as a phantom
+    # bar (sitrep 099 grew 78 cases from one sliver of band edge).
+    n_slots = int((panel.right - 0.45 * day_px - x_phase) / day_px) + 1
     return Calibration(panel=panel, palette=pal, day_px=day_px,
                        x_phase=x_phase, n_slots=n_slots,
                        px_per_case=px_per_case, y_step=y_step,
