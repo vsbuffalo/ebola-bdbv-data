@@ -1,0 +1,58 @@
+# The date each onset figure's x axis is anchored to, read off the printed
+# tick labels by a human against saved crops. This is the one manual input
+# the onset reader takes, and it exists because the alternative -- inferring
+# the axis dates from the report's own date -- is the defect the design
+# note names: the printed tick is sometimes days short of the report date,
+# and it freezes across re-published reports (12 jul serves reports 059-062;
+# 15 Jul serves 064-067) while report dates advance. Nothing may derive an
+# onset date from a sitrep date.
+#
+# One row per distinct decoded image (reprints share their row through the
+# hash). `first_label` and `last_label` are the leftmost and rightmost
+# *labelled* ticks, verbatim as printed -- the locale flips between French
+# and English across render families, and some renders end with an
+# unlabelled tick beyond the last label (087, 102), which is why the last
+# label is recorded rather than the last tick.
+#
+# Machine-checked at build time, so a wrong row cannot survive: every
+# detected tick must sit a whole number of weeks from the first; the span
+# first_date..last_date must equal a whole number of weeks that fits the
+# detected tick count; and consecutive vintages must align at zero shift
+# under the cross-vintage L1 test. A row failing any check refuses its
+# vintage loudly.
+#
+# sha12       first 12 hex of the decoded-pixel SHA-256, the image identity
+# image_file  the published copy under data/build/onset/images/
+# first_label the leftmost labelled tick, exactly as printed
+# first_date  that label as an ISO date
+# last_label  the rightmost labelled tick, exactly as printed
+# last_date   that label as an ISO date
+sha12	image_file	first_label	first_date	last_label	last_date
+426784e1dc68	2026-07-12-059-426784e1dc68.png	05 avr 2026	2026-04-05	12 jul 2026	2026-07-12
+15ef6fdbf638	2026-07-13-060-15ef6fdbf638.png	05 avr 2026	2026-04-05	12 jul 2026	2026-07-12
+c96c32a12525	2026-07-14-061-c96c32a12525.png	05 avr 2026	2026-04-05	12 jul 2026	2026-07-12
+ba43ae6678ad	2026-07-15-062-ba43ae6678ad.png	05 avr 2026	2026-04-05	12 jul 2026	2026-07-12
+786715ad8992	2026-07-17-064-786715ad8992.png	01 Apr 2026	2026-04-01	15 Jul 2026	2026-07-15
+aa0cc281d951	2026-07-18-065-aa0cc281d951.png	01 Apr 2026	2026-04-01	15 Jul 2026	2026-07-15
+64adeed37ce0	2026-07-19-066-64adeed37ce0.png	01 Apr 2026	2026-04-01	15 Jul 2026	2026-07-15
+85395e287e6a	2026-07-20-067-85395e287e6a.png	01 Apr 2026	2026-04-01	15 Jul 2026	2026-07-15
+33382f28b27a	2026-07-21-068-33382f28b27a.png	01 Apr 2026	2026-04-01	22 Jul 2026	2026-07-22
+8b8bdc7aeb8f	2026-07-22-069-8b8bdc7aeb8f.png	01 Apr 2026	2026-04-01	22 Jul 2026	2026-07-22
+86d8164c8831	2026-07-25-072-86d8164c8831.png	01 Apr 2026	2026-04-01	22 Jul 2026	2026-07-22
+a1b9c80351d2	2026-07-26-073-a1b9c80351d2.png	01 Apr 2026	2026-04-01	22 Jul 2026	2026-07-22
+102d6d648de9	2026-07-30-077-102d6d648de9.png	01 Apr 2026	2026-04-01	29 Jul 2026	2026-07-29
+bb9869491680	2026-07-31-078-bb9869491680.png	01 Apr 2026	2026-04-01	29 Jul 2026	2026-07-29
+dd579d73e950	2026-08-01-079-dd579d73e950.png	01 Apr 2026	2026-04-01	29 Jul 2026	2026-07-29
+1da1248eade9	2026-08-03-081-1da1248eade9.png	01 Apr 2026	2026-04-01	29 Jul 2026	2026-07-29
+009271f3f0ae	2026-08-04-082-009271f3f0ae.png	01 Apr 2026	2026-04-01	05 Aug 2026	2026-08-05
+5ed335f635dd	2026-08-05-083-5ed335f635dd.png	01 Apr 2026	2026-04-01	05 Aug 2026	2026-08-05
+242864ea64bb	2026-08-09-087-242864ea64bb.png	01 Apr 2026	2026-04-01	05 Aug 2026	2026-08-05
+6167f3e2267e	2026-08-10-088-6167f3e2267e.png	01 Apr 2026	2026-04-01	05 Aug 2026	2026-08-05
+edec6c85e600	2026-08-14-092-edec6c85e600.png	06 avr 2026	2026-04-06	10 aout 2026	2026-08-10
+a5cd91e9bde5	2026-08-16-094-a5cd91e9bde5.png	06 avr 2026	2026-04-06	17 aout 2026	2026-08-17
+17f5d223b71f	2026-08-19-097-17f5d223b71f.png	06 avr 2026	2026-04-06	17 aout 2026	2026-08-17
+b2311dcfb3f5	2026-08-20-098-b2311dcfb3f5.png	06 avr 2026	2026-04-06	17 aout 2026	2026-08-17
+acdd9cc1ed36	2026-08-21-099-acdd9cc1ed36.png	06 avr 2026	2026-04-06	17 aout 2026	2026-08-17
+0e94f3a740f4	2026-08-22-100-0e94f3a740f4.png	06 avr 2026	2026-04-06	17 aout 2026	2026-08-17
+a092256f32ec	2026-08-23-101-a092256f32ec.png	06 avr 2026	2026-04-06	24 aout 2026	2026-08-24
+f412bfc7d36e	2026-08-24-102-f412bfc7d36e.png	06 avr 2026	2026-04-06	24 aout 2026	2026-08-24

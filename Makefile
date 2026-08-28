@@ -2,7 +2,7 @@
 # by design: `build` and `doc` never touch the network, so a rebuild can never
 # silently change what the source says.
 
-.PHONY: watch-data-channel release-check escape-fraction care-ledger oneoff-testing oneoff-death-split oneoff-death-flow cron-install cron-uninstall check fetch refresh manifest verify build streams compare figures external \
+.PHONY: watch-data-channel release-check escape-fraction care-ledger oneoff-testing oneoff-death-split oneoff-death-flow cron-install cron-uninstall check fetch refresh manifest verify build streams compare figures onset external \
 	external-update scan-refresh doc serve test
 
 ## check   -- is the archive current, and does the source still look the same?
@@ -271,8 +271,23 @@ compare:
 	cp data/build/compare/comparison.png \
 	   data/build/compare/comparison_series.png docs/figures/
 
+## onset -- OFFLINE. The symptom-onset reporting triangle, read out of the
+##          sitrep figures' pixels. The chart is an embedded raster with no
+##          data table anywhere; the reader fits every bar as a pair of
+##          integer counts, checks each figure against its own printed
+##          total, and gates every vintage against its temporal neighbours.
+##          Design: notes/2026-08-28-onset-digitiser-design.md. The one
+##          manual input is registers/onset_axis_anchors.tsv (printed tick
+##          labels, machine-validated); everything else is measured from
+##          the figure being read. Outputs under data/build/onset/ --
+##          vintages.csv, snapshots.csv (levels), triangle.csv (derived
+##          increments), images/ (the exact pixels read), proof/ (the
+##          reader's conclusions drawn onto them, for the human check).
+onset:
+	uv run python scripts/extract_onset_curve.py
+
 ## figures -- OFFLINE. The EDA figures, from the built series.
-figures: 
+figures:
 	uv run python scripts/plot_figures.py --figure availability \
 		--out data/build/figures/availability.png
 	# SLIDE FIGURE, 16:9 at PowerPoint widescreen size (13.333 x 7.5 in).
