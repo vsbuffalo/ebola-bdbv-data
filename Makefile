@@ -285,6 +285,13 @@ compare:
 ##          reader's conclusions drawn onto them, for the human check).
 onset:
 	uv run python scripts/extract_onset_curve.py
+	# THE TRIANGLE, DRAWN: every vintage on one axis (the fan closing is
+	# the reporting process completing) and the empirical delay shape
+	# (each settled onset date's climb to its final count).
+	uv run python scripts/plot_figures.py --figure onset_vintages \
+		--out data/build/onset/figures/onset_vintages.png
+	uv run python scripts/plot_figures.py --figure onset_delay \
+		--out data/build/onset/figures/onset_delay.png
 
 ## figures -- OFFLINE. The EDA figures, from the built series.
 figures:

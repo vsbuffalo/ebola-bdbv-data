@@ -3267,6 +3267,186 @@ def _capacity_marks(ax, path: Path, ytop: float = 0.80) -> None:
                           "pad": 1.5, "alpha": 0.85})
 
 
+def draw_onset_vintages(inputs: dict[str, Path], out: Path) -> None:
+    """Every vintage of the symptom-onset curve on one axis, and the latest
+    vintage's alive/dead split beneath it.
+
+    THE STREAM IS A STACK OF SNAPSHOTS, NOT A TIME SERIES, and this figure
+    is that fact made visible: each line is the same epidemic curve as one
+    report published it, and the vertical distance between lines at a fixed
+    onset date is late reporting -- cases that had happened but had not yet
+    reached the figure. The fan converging to the dark line is the
+    reporting process completing; where lines still separate, the curve is
+    not yet settled and the newest bars understate the epidemic.
+
+    THE LOWER PANEL IS WHAT ONE VINTAGE ACTUALLY CARRIES: the latest
+    accepted snapshot, stacked by vital status as of that report. The
+    shaded right edge is the source's own "donnees potentiellement
+    incompletes" band, carried through as the `provisional` flag -- those
+    bars are printed faded because the source itself does not yet believe
+    them.
+    """
+    snap = (pl.read_csv(inputs["snapshots"], try_parse_dates=True)
+            .filter(pl.col("status") != "refused"))
+    reports = sorted(snap["report_date"].unique().to_list())
+    last = reports[-1]
+
+    fig, (ax_f, ax_l) = plt.subplots(
+        2, 1, figsize=(13.333, 7.5), sharex=True, constrained_layout=True,
+        height_ratios=[1.3, 1.0])
+    cmap = plt.get_cmap("viridis")
+    norm = matplotlib.colors.Normalize(
+        vmin=mdates.date2num(reports[0]), vmax=mdates.date2num(last))
+    for r in reports:
+        d = snap.filter(pl.col("report_date") == r).sort("onset_date")
+        xs = [mdates.date2num(x) for x in d["onset_date"].to_list()]
+        if r == last:
+            ax_f.step(xs, d["total"].to_list(), where="mid",
+                      color="#1a1a1a", lw=1.8, zorder=5)
+        else:
+            ax_f.step(xs, d["total"].to_list(), where="mid",
+                      color=cmap(norm(mdates.date2num(r))), lw=0.9,
+                      alpha=0.75, zorder=3)
+    sm = matplotlib.cm.ScalarMappable(norm=norm, cmap=cmap)
+    cb = fig.colorbar(sm, ax=ax_f, pad=0.01, aspect=32)
+    cb.ax.yaxis.set_major_locator(mdates.WeekdayLocator(interval=2))
+    cb.ax.yaxis.set_major_formatter(mdates.DateFormatter("%d %b"))
+    cb.set_label("report date", fontsize=8)
+    ax_f.set_ylabel("confirmed cases\nby onset date")
+    ax_f.annotate("latest accepted vintage", xy=(0.71, 0.9),
+                  xycoords="axes fraction", fontsize=8.5, color="#1a1a1a")
+
+    fin = snap.filter(pl.col("report_date") == last).sort("onset_date")
+    xs = [mdates.date2num(x) for x in fin["onset_date"].to_list()]
+    ax_l.bar(xs, fin["alive"].to_list(), width=0.9, color="#bfe0ec",
+             label="alive as of the snapshot")
+    ax_l.bar(xs, fin["dead"].to_list(), bottom=fin["alive"].to_list(),
+             width=0.9, color="#c5343c", label="dead as of the snapshot")
+    prov = fin.filter(pl.col("provisional"))
+    if prov.height:
+        x0 = mdates.date2num(prov["onset_date"].min())
+        ax_l.axvspan(x0, xs[-1] + 0.5, color="#f5c6c8", alpha=0.35, lw=0,
+                     zorder=0)
+        ax_l.annotate("source flags\nincomplete", xy=(x0 - 1, 0.82),
+                      xycoords=("data", "axes fraction"), ha="right",
+                      fontsize=8, color="#8a4a4e")
+    ax_l.set_ylabel("latest vintage,\nby vital status")
+    ax_l.legend(loc="upper left", frameon=False, fontsize=8)
+
+    for ax in (ax_f, ax_l):
+        for s in ("top", "right"):
+            ax.spines[s].set_visible(False)
+        ax.grid(axis="y", color="#ededed", lw=0.6)
+        ax.set_axisbelow(True)
+    ax_l.xaxis.set_major_locator(mdates.MonthLocator())
+    ax_l.xaxis.set_major_formatter(mdates.DateFormatter("%B %Y"))
+
+    _header(fig, "The onset curve, every time the source published it",
+            "Confirmed cases by symptom-onset date, one line per accepted "
+            "vintage of the sitrep figure · the gap between lines at a "
+            "fixed date is late reporting, still arriving weeks after "
+            "onset.")
+    fig.savefig(out, dpi=200)
+    plt.close(fig)
+
+
+# Delays this many days past the last report are treated as settled: the
+# completion curves are flat there (the median is 1.0 from five weeks on),
+# so the denominator no longer moves.
+ONSET_SETTLED_AGE = 35
+ONSET_SETTLED_MIN = 10
+
+
+def draw_onset_delay(inputs: dict[str, Path], out: Path) -> None:
+    """How completely an onset date is reported, as a function of time since
+    onset -- the empirical shape of the reporting delay.
+
+    EACH GREY LINE IS ONE ONSET DATE watched across every later vintage:
+    its bar height at each report, as a share of where that bar finally
+    settled. Stacked up, the lines trace an empirical cumulative
+    distribution of the delay from symptom onset to appearing in the
+    published figure, with its spread shown rather than assumed. The bold
+    line is the median across onset dates; the band is the interquartile
+    range.
+
+    WHAT THE DELAY IS, PRECISELY: onset to *publication in the figure* --
+    sample collection, laboratory confirmation, DHIS2 entry with an onset
+    date recorded, and figure regeneration, convolved. It is necessarily
+    longer than the onset-to-sample delay fitted in Akilimali et al. (NEJM
+    395(6):610: median 4.8 d for confirmed cases), and the comparison runs
+    the right way: completion here reaches half only in the second week.
+
+    THREE HONEST LIMITS. An increment cannot distinguish a late-reported
+    case from an old case whose empty onset-date field was back-filled, so
+    this conflates the two. The figure plots only cases with vital status
+    and onset date recorded, 76-78% of the confirmed cumulative where
+    measured. And lines drifting above 1.0 are real: re-dating moves cases
+    between bars, so a bar can settle below an earlier reading -- the
+    overshoot is the measurement honesty, not an error to clip.
+    """
+    snap = (pl.read_csv(inputs["snapshots"], try_parse_dates=True)
+            .filter(pl.col("status") != "refused"))
+    last = snap["report_date"].max()
+    fin = (snap.filter(pl.col("report_date") == last)
+           .select("onset_date", pl.col("total").alias("final")))
+    j = (snap.join(fin, on="onset_date")
+         .with_columns(delay=(pl.col("report_date") - pl.col("onset_date"))
+                       .dt.total_days())
+         .filter((pl.col("final") >= ONSET_SETTLED_MIN)
+                 & ((pl.lit(last) - pl.col("onset_date")).dt.total_days()
+                    >= ONSET_SETTLED_AGE)
+                 & (pl.col("delay") >= 0))
+         .with_columns(frac=pl.col("total") / pl.col("final")))
+
+    fig, ax = plt.subplots(figsize=(13.333, 7.5), constrained_layout=True)
+    for _, grp in j.group_by("onset_date"):
+        g = grp.sort("delay")
+        ax.plot(g["delay"].to_list(), g["frac"].to_list(),
+                color="#bbbbbb", lw=0.7, alpha=0.6, zorder=2)
+    binned = (j.with_columns((pl.col("delay") // 3 * 3 + 1).alias("bin"))
+              .group_by("bin")
+              .agg(med=pl.col("frac").median(),
+                   q25=pl.col("frac").quantile(0.25),
+                   q75=pl.col("frac").quantile(0.75),
+                   n=pl.len())
+              .filter(pl.col("n") >= 8).sort("bin"))
+    ax.fill_between(binned["bin"].to_list(), binned["q25"].to_list(),
+                    binned["q75"].to_list(), color="#4a7fb5", alpha=0.25,
+                    lw=0, zorder=3, label="interquartile range")
+    ax.plot(binned["bin"].to_list(), binned["med"].to_list(),
+            color="#1f4e79", lw=2.6, zorder=4,
+            label="median across onset dates")
+    ax.axhline(1.0, color="#999999", lw=0.8, ls=(0, (3, 3)), zorder=1)
+    for d0 in (7, 14, 21):
+        row = binned.filter((pl.col("bin") - d0).abs()
+                            == (pl.col("bin") - d0).abs().min())
+        if row.height:
+            m = row["med"][0]
+            ax.annotate(f"{m:.0%} by day {int(row['bin'][0])}",
+                        xy=(row["bin"][0], m), xytext=(6, -11),
+                        textcoords="offset points", fontsize=8.5,
+                        color="#1f4e79")
+    ax.set_xlim(0, 63)
+    ax.set_ylim(0, 1.18)
+    ax.set_xlabel("days since symptom onset")
+    ax.set_ylabel("share of the eventually\nreported total")
+    ax.xaxis.set_major_locator(MultipleLocator(7))
+    ax.legend(loc="lower right", frameon=False, fontsize=8.5)
+    for s in ("top", "right"):
+        ax.spines[s].set_visible(False)
+    ax.grid(axis="y", color="#ededed", lw=0.6)
+    ax.set_axisbelow(True)
+
+    _header(fig, "How long the onset curve takes to fill in",
+            "Each settled onset date watched across every later vintage, "
+            "as a share of its final count · "
+            f"{j['onset_date'].n_unique()} onset dates, "
+            f"{j.height} vintage observations; overshoot above 1 is "
+            "re-dating, kept rather than clipped.")
+    fig.savefig(out, dpi=200)
+    plt.close(fig)
+
+
 def draw_test_positivity(inputs: dict[str, Path], out: Path) -> None:
     """The share of laboratory samples returning positive, and what the
     positives were -- a living suspected case, or a body swabbed after death.
@@ -3680,6 +3860,13 @@ FIGURES = {
                       "zone_status": "data/build/series/zone_table_status.csv",
                       "summary": "data/build/series/province_summary.csv",
                       "prose": "data/build/series/prose_provinces.csv"}),
+    # THE ONSET FIGURES READ `make onset` OUTPUTS, not `make build` ones:
+    # their input is the digitised reporting triangle, and they exist for
+    # the lab notes rather than the released document set.
+    "onset_vintages": (draw_onset_vintages,
+                       {"snapshots": "data/build/onset/snapshots.csv"}),
+    "onset_delay": (draw_onset_delay,
+                    {"snapshots": "data/build/onset/snapshots.csv"}),
     "lab_effort": (draw_lab_effort,
                    {"lab": "data/build/series/lab_prose.csv",
                     "capacity": "registers/lab_capacity_events.tsv",
