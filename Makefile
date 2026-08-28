@@ -297,6 +297,11 @@ onset:
 	# the transmission model implements for it.
 	uv run python scripts/plot_figures.py --figure onset_delay_vs_model \
 		--out data/build/onset/figures/onset_delay_vs_model.png
+	# THE COHORT SPLIT: whether reporting sped up after the window the
+	# paper's delay was fitted on. Left-truncated cohorts appear as
+	# initial-stock points, not curves.
+	uv run python scripts/plot_figures.py --figure onset_delay_cohorts \
+		--out data/build/onset/figures/onset_delay_cohorts.png
 
 ## figures -- OFFLINE. The EDA figures, from the built series.
 figures:

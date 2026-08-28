@@ -3602,6 +3602,116 @@ def draw_onset_delay_vs_model(inputs: dict[str, Path], out: Path) -> None:
     plt.close(fig)
 
 
+def draw_onset_delay_cohorts(inputs: dict[str, Path], out: Path) -> None:
+    """The completion curve split by onset month: did reporting speed up
+    after the window the paper's delay was fitted on?
+
+    WHY THE COHORTS CANNOT BE READ THE SAME WAY. The first onset figure we
+    hold is the 13 July vintage, so a July onset date is watched from its
+    first days and traces a full curve, while a June date is first seen
+    already part-reported and a May date first seen near-complete: their
+    left limbs are unobservable, not zero. The honest rendering is a curve
+    where a curve exists and a first-observation point -- the initial
+    stock, one point on the cohort's delay distribution at a known delay --
+    where that is all the vintage record contains.
+
+    WHAT IT SHOWED when first drawn: over the matched window of 12-21 days
+    since onset, June onset dates sit at a median completion of 0.81
+    against July's 0.89, and the 90% point moves from about day 21 to
+    about day 18 -- a modest speed-up, one to three days, in the direction
+    of the paper's own caution that its early-window delay may reflect
+    early diagnostic capacity. Read the gap conservatively: July's final
+    counts are the least settled, which inflates its fractions by a few
+    percent at most.
+
+    The paper's onset-to-sample Gamma is drawn faint for orientation; its
+    cohort (3 May - 5 June, Ituri) is essentially the May cohort here.
+
+    ONE MECHANICAL ARTEFACT TO READ AROUND: a cohort's completion is
+    measured against its count in the *last held vintage*, so every
+    cohort reaches exactly 1.0 at its own final-observation delay -- July
+    dates at 35-55 days, June dates at 55-85. The June median's plateau
+    near 0.95 through days 25-50 before closing is therefore part real
+    late reporting and part the denominator still being July's future;
+    tails compress toward 1 mechanically as a cohort runs out of record.
+    """
+    snap = (pl.read_csv(inputs["snapshots"], try_parse_dates=True)
+            .filter(pl.col("status") != "refused"))
+    last = snap["report_date"].max()
+    fin = (snap.filter(pl.col("report_date") == last)
+           .select("onset_date", pl.col("total").alias("final")))
+    j = (snap.join(fin, on="onset_date")
+         .with_columns(delay=(pl.col("report_date") - pl.col("onset_date"))
+                       .dt.total_days())
+         .filter((pl.col("final") >= ONSET_SETTLED_MIN)
+                 & ((pl.lit(last) - pl.col("onset_date")).dt.total_days()
+                    >= ONSET_SETTLED_AGE)
+                 & (pl.col("delay") >= 0))
+         .with_columns(frac=pl.col("total") / pl.col("final"),
+                       month=pl.col("onset_date").dt.month()))
+
+    fig, ax = plt.subplots(figsize=(13.333, 7.5), constrained_layout=True)
+    cohorts = [(7, "#1f4e79", "July onset dates"),
+               (6, "#c96a1f", "June onset dates"),
+               (5, "#8a8a8a", "May onset dates")]
+    for month, ink, label in cohorts:
+        c = j.filter(pl.col("month") == month)
+        if c.height == 0:
+            continue
+        for _, grp in c.group_by("onset_date"):
+            g = grp.sort("delay")
+            ax.plot(g["delay"].to_list(), g["frac"].to_list(),
+                    color=ink, lw=0.5, alpha=0.25, zorder=1)
+        binned = (c.with_columns((pl.col("delay") // 3 * 3 + 1)
+                                 .alias("bin"))
+                  .group_by("bin").agg(med=pl.col("frac").median(),
+                                       n=pl.len())
+                  .filter(pl.col("n") >= 5).sort("bin"))
+        ax.plot(binned["bin"].to_list(), binned["med"].to_list(),
+                color=ink, lw=2.4, zorder=4, label=f"{label} (median)")
+        # The initial stock: each onset date's first appearance, one point
+        # on the cohort's delay CDF at the delay the vintage record starts.
+        first = (c.sort("delay")
+                 .group_by("onset_date", maintain_order=True).first())
+        ax.scatter(first["delay"].to_list(), first["frac"].to_list(),
+                   s=22, facecolors="none", edgecolors=ink, lw=1.1,
+                   zorder=5)
+    t = [x * 0.1 for x in range(631)]
+    ax.plot(t, [_gammainc_p(AKILIMALI_GAMMA_K, x / AKILIMALI_GAMMA_THETA)
+                for x in t],
+            color="#bbbbbb", lw=1.4, ls=(0, (5, 3)), zorder=2,
+            label="Akilimali et al. onset → sample Gamma (fitted on the "
+                  "May-era cohort)")
+    ax.axhline(1.0, color="#999999", lw=0.8, ls=(0, (3, 3)), zorder=1)
+    ax.axvspan(12, 21, color="#f2f2f2", zorder=0)
+    ax.annotate("matched window, days 12–21:\nJune median 0.81 · "
+                "July median 0.89",
+                xy=(16.5, 0.42), ha="center", fontsize=8.5,
+                color="#555555")
+    ax.annotate("open circles: an onset date's first appearance —\n"
+                "the initial stock, all the record holds of the left limb\n"
+                "for dates before the first held vintage",
+                xy=(37, 0.62), ha="left", fontsize=8, color="#777777")
+    ax.set_xlim(0, 63)
+    ax.set_ylim(0, 1.12)
+    ax.set_xlabel("days since symptom onset")
+    ax.set_ylabel("share of the eventually\nreported total")
+    ax.xaxis.set_major_locator(MultipleLocator(7))
+    ax.legend(loc="lower right", frameon=False, fontsize=8.5)
+    for s in ("top", "right"):
+        ax.spines[s].set_visible(False)
+    ax.grid(axis="y", color="#ededed", lw=0.6)
+    ax.set_axisbelow(True)
+    _header(fig, "Reporting sped up after the window the delay was "
+                 "fitted on",
+            "Completion of the onset curve by days since onset, split by "
+            "onset month · May and June dates are first seen already "
+            "part-reported (left-truncation), so their short-delay limbs "
+            "are points, not curves.")
+    fig.savefig(out, dpi=200)
+    plt.close(fig)
+
+
 def draw_test_positivity(inputs: dict[str, Path], out: Path) -> None:
     """The share of laboratory samples returning positive, and what the
     positives were -- a living suspected case, or a body swabbed after death.
@@ -4025,6 +4135,9 @@ FIGURES = {
     "onset_delay_vs_model": (draw_onset_delay_vs_model,
                              {"snapshots":
                               "data/build/onset/snapshots.csv"}),
+    "onset_delay_cohorts": (draw_onset_delay_cohorts,
+                            {"snapshots":
+                             "data/build/onset/snapshots.csv"}),
     "lab_effort": (draw_lab_effort,
                    {"lab": "data/build/series/lab_prose.csv",
                     "capacity": "registers/lab_capacity_events.tsv",
