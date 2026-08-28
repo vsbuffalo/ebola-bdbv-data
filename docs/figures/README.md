@@ -463,9 +463,9 @@ made at or around a death.
   the weight of a large one.
 - **The pooled line is interrupted where this series has no observation**, so
   it is never drawn across days it does not cover. A break is not evidence the
-  laboratory went quiet: 33 candidate rows across the archive are refused for
-  printing no positivity rate of their own, and on 11 to 14 August the reports
-  print sample counts that are declined for exactly that reason.
+  laboratory went quiet — it can equally be a sentence this pipeline could not
+  read, or a row excluded for carrying a different numerator (see
+  `positivity_provinces.png`).
 - **The rate agrees with the source's own printed percentage** on 153 of 154
   province-days to within 0.15 percentage points, so the upper panel is a
   reading of the page rather than a recomputation that could drift from it.
@@ -512,14 +512,23 @@ stacked by province.
   is what case-finding catching up looks like, and none of it is visible in the
   national line.
 - **A break in a line means this series has no observation, not that the
-  laboratory went quiet.** The two come apart here. Across the archive 44
-  candidate laboratory rows are refused against 154 kept, 33 of them because
-  the report printed no positivity rate of its own for that province — the
-  rate this pipeline checks its own arithmetic against. On 13 report-days that
-  leaves nothing at all. The August interruption is both kinds at once: 6 to
-  10 August print no sample count anywhere in the report, while 11 to 14
-  August print 249, 284 and 336 samples that are declined for want of the
-  percentage beside them.
+  laboratory went quiet.** Across the archive 35 candidate laboratory rows are
+  refused against 163 kept, 24 of them because neither the sample noun nor the
+  positive noun could be pinned uniquely in the sentence. **These figures draw
+  only the 154 rows whose numerator is comparable** (see below), so their
+  breaks are wider than the extraction's own coverage. The August
+  interruption is the source's: 6 to 10 August print no sample count anywhere
+  in any report.
+- **The figures draw validated rows only, and that is why a gap sits over
+  mid-August.** `lab_prose.csv` carries two kinds of row. Where the report
+  printed its own positivity, the positive count is the one reproducing it,
+  and it equals the day's new confirmations on 70 of the 78 province-days
+  where both appear — median excess zero. Where no rate was printed, the count
+  is the total positive results, **re-tests of already-confirmed people
+  included**, running a median +8 above new confirmations and as high as +16.
+  Both are real and each answers a different question, but a line switching
+  between them mid-August would show a step this reader introduced. The
+  unvalidated rows stay in the extraction for whoever wants total yield.
 - **A province gets a line only with at least 15 province-days**; below that a
   line through a handful of points would read as a trend. Tshopo prints
   laboratory volume twice in the whole series, ten samples in total. Those
@@ -531,3 +540,60 @@ stacked by province.
 - **Province is as fine as this gets.** The laboratory paragraph is written per
   province; there is no health-zone testing data anywhere in the reports, so a
   positivity map at health-zone level cannot be built from this source.
+
+---
+
+## `positivity_provinces_annotated.png`
+
+`positivity_provinces.png` with the laboratory-capacity marks added, and
+identical in every other respect. The two are meant to be shown in sequence —
+the plain figure first, then this one — because the difference between them is
+exactly what reading the reports for capacity statements bought.
+
+- **The plain figure is not a doctored version of this one.** It declares
+  fewer inputs: it does not read `registers/lab_capacity_events.tsv` at all,
+  so it is genuinely what the pipeline produces without that extraction.
+- **The marks name the provinces they belong to**, which matters here: the two
+  recorded events are Nord-Kivu's and Haut-Uélé's, and **Ituri — whose testing
+  actually rose by two thirds — has no capacity statement in any report read so
+  far**. The annotation must not be taken as explaining Ituri.
+- Every caveat on `positivity_provinces.png` applies here unchanged.
+
+---
+
+## `lab_effort.png`
+
+The two parts of the positivity ratio drawn apart: samples analysed and
+positives found, per report day, for the two provinces that carry the testing.
+Ituri and Nord-Kivu on one shared count axis.
+
+- **This figure exists because a ratio cannot answer the question its own
+  movement raises.** Positivity falling is compatible with less disease among
+  those tested and with more people tested, and the ratio alone cannot
+  separate them when both its parts have moved. The parts drawn separately do
+  separate them.
+- **What the panels say.** In Ituri, samples per report day rise from about
+  206 to about 297 between mid-July and late August while positives hold near
+  64 and then 61 — testing up about two fifths, cases found essentially
+  unchanged, and a positivity falling by a third as arithmetic rather than as
+  epidemiology. In Nord-Kivu, testing is flat near 127 and positives rise from
+  about 11.9 to 14.3. **The provinces are the control on each other: the one
+  whose testing did not change is the one that got worse.**
+- **The gap between the lines is the negatives, not the positivity.**
+  Positivity is the lower line as a share of the upper. The figure says so on
+  its face because the looser reading is the easy one to reach for.
+- **Per report day, and a mean rather than a sum.** The source does not
+  publish every day; a week carrying four reports and one carrying seven both
+  span seven calendar days, so a weekly sum falls when reports thin and rises
+  when they resume — a fact about publication, not about testing.
+- **What this does not license.** Positives per report day fell about 5% in
+  Ituri, which is not evidence transmission rose; and the later window is ten
+  report days, which is short. The claim supported here is narrow and
+  negative — that Ituri's falling positivity cannot be read as falling
+  incidence — not that incidence is known to be flat.
+- **Validated rows only**, for the reason given under
+  `positivity_provinces.png`: the excluded rows count re-tests among their
+  positives and would put a step in the lower line that the reader introduced.
+- **Only the two provinces with sustained volume are drawn.** The other four
+  contribute a few samples a day at most and would be four flat lines against
+  the axis.

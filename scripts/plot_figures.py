@@ -3100,6 +3100,173 @@ def _pooled_positivity(dates, pos, samp, window=7, max_gap=POSITIVITY_MAX_GAP):
     return out
 
 
+def _lab_calendar(lab: pl.DataFrame, pad: float = 4.0) -> tuple[float, float]:
+    """The x limits the LABORATORY figures share: the span of the laboratory
+    series itself, padded, rather than the span of the whole archive.
+
+    A DEPARTURE FROM `_report_calendar`, AND ONLY FOR THESE FIGURES. That
+    function exists so a stream starting late shows the empty weeks before it,
+    which is right when the question is what a release covers -- the release
+    grid must never let a stream's late start read as a full history. Here the
+    question is instead how a ratio moved over the days it exists, the first
+    report carrying laboratory volume is three weeks into the archive, and
+    those three empty weeks say the same thing on every one of these panels
+    while taking a fifth of the width.
+
+    ALL THE LABORATORY FIGURES CALL THIS, deliberately. The national and
+    province positivity figures are shown one after the other and their lines
+    are meant to be compared by eye; if only one were trimmed, the same dates
+    would sit at different places on the two slides and every line would
+    appear to move. A shared axis is the point, not a coincidence.
+    """
+    xs = _dates(lab["date"])
+    return min(xs) - pad, max(xs) + pad
+
+
+def _per_report_day(dates, values, window=7, max_gap=POSITIVITY_MAX_GAP):
+    """Centred mean PER REPORT DAY, interrupted across gaps.
+
+    Per report day and not per calendar day, and a mean rather than a sum,
+    because the source does not publish every day: a week carrying four
+    reports and a week carrying seven both sum over seven calendar days, so a
+    weekly sum falls when the reports thin out and rises when they resume,
+    which is a fact about publication rather than about testing. Dividing by
+    the reports actually in the window removes that.
+    """
+    out = []
+    for i, d in enumerate(dates):
+        if i > 0 and d - dates[i - 1] > max_gap:
+            out.append(None)
+            continue
+        lo, hi = d - window / 2, d + window / 2
+        vals = [v for x, v in zip(dates, values) if lo <= x <= hi]
+        out.append(sum(vals) / len(vals) if vals else None)
+    return out
+
+
+def draw_lab_effort(inputs: dict[str, Path], out: Path) -> None:
+    """Samples analysed and positives found, per report day, for the two
+    provinces that carry the testing.
+
+    WHY THIS EXISTS BESIDE THE POSITIVITY FIGURES. A positivity rate falling
+    is compatible with two opposite readings -- less disease among those
+    tested, or more people tested -- and the ratio alone cannot separate them
+    because both its parts moved. Drawing the parts separately does separate
+    them, and the separation is the argument: the gap between the two lines IS
+    the positivity, so a widening gap at a flat lower line is a denominator
+    story and not a numerator one.
+
+    WHAT THE TWO PANELS SAY. In Ituri, samples per report day rise from about
+    206 to about 297 between mid-July and late August while positives hold
+    near 64 and then 61 -- testing up by roughly two fifths, cases found
+    essentially unchanged, and a positivity that falls by a third as
+    arithmetic rather than as epidemiology. In Nord-Kivu, where testing is
+    flat at about 127, positives rise from about 11.9 to 14.3 and positivity
+    rises with them. The provinces are the control on each other: the one
+    whose testing did not change is the one that got worse.
+
+    WHAT IT DOES NOT LICENSE. Positives per report day fell about 5% in
+    Ituri, which is not evidence that transmission ROSE; and the later window
+    is ten report days, which is short. The claim this figure supports is
+    narrow and negative -- that Ituri's falling positivity cannot be read as
+    falling incidence -- not that incidence is known to be flat.
+
+    ONE AXIS PER PANEL AND THE SAME ONE ACROSS BOTH. Samples and positives are
+    both counts per report day, so they belong on a single scale; sharing it
+    across the panels keeps Ituri's dominance visible instead of normalising
+    it away, which is the honest cost of Nord-Kivu's lines sitting low.
+    """
+    lab = (pl.read_csv(inputs["lab"]).drop_nulls(["samples", "positives"])
+           .filter(pl.col("samples") > 0))
+    # Same restriction as the positivity figures, for the same reason: the
+    # fallback rows count re-tests in `positives` and would put a step in the
+    # lower line that this reader introduced.
+    lab = lab.filter(pl.col("rate_printed")).sort("date")
+    caveat = pl.read_csv(inputs["caveat"])
+
+    provs = (lab.group_by("province").agg(pl.col("samples").sum().alias("s"))
+             .sort("s", descending=True)["province"].to_list()[:2])
+
+    fig, axes = plt.subplots(1, 2, figsize=(13.333, 7.5), sharex=True,
+                             sharey=True, constrained_layout=True)
+    top = 0
+    for ax, prov in zip(axes, provs):
+        d = lab.filter(pl.col("province") == prov)
+        xs = _dates(d["date"])
+        smp = _per_report_day(xs, d["samples"].to_list())
+        pos = _per_report_day(xs, d["positives"].to_list())
+        ink = PROVINCE_INK.get(prov, "#999999")
+        ax.plot(xs, smp, color="#8a8a8a", lw=2.4, zorder=3,
+                label="samples analysed")
+        ax.plot(xs, pos, color=ink, lw=2.4, zorder=4, label="positives found")
+        ax.fill_between(xs, [p or 0 for p in pos], [s or 0 for s in smp],
+                        where=[s is not None and p is not None
+                               for s, p in zip(smp, pos)],
+                        color="#d9d9d9", alpha=0.45, lw=0, zorder=2)
+        top = max(top, max(v for v in smp if v is not None))
+        if "capacity" in inputs:
+            _capacity_marks(ax, inputs["capacity"], ytop=0.99)
+        ax.set_title(prov, fontsize=10, fontweight="bold", loc="left",
+                     color=ink)
+        for s in ("top", "right"):
+            ax.spines[s].set_visible(False)
+        ax.grid(axis="y", color="#ededed", lw=0.6)
+        ax.set_axisbelow(True)
+        ax.xaxis.set_major_locator(mdates.MonthLocator())
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%b"))
+        ax.tick_params(axis="x", labelsize=8.5)
+
+    axes[0].set_ylabel("per report day")
+    axes[0].set_ylim(0, top * 1.18)
+    axes[0].set_xlim(*_lab_calendar(lab))
+    axes[0].legend(loc="upper left", frameon=False, fontsize=9)
+    # The GAP is the negatives; the positivity is the ratio. Saying the gap
+    # "is" the positivity would be wrong in the one place a reader looks for
+    # the definition.
+    axes[0].annotate("positivity is the lower line\nas a share of the upper",
+                     xy=(0.03, 0.82), xycoords="axes fraction", fontsize=8.5,
+                     color="#555555")
+
+    _header(fig, "Where testing grew, and what it found",
+            "Samples analysed and positives found, per report day · the two "
+            "provinces that carry the testing — through August Ituri's upper "
+            "line kept climbing while its lower one levelled off.")
+    fig.savefig(out, dpi=200)
+    plt.close(fig)
+
+
+def _capacity_marks(ax, path: Path, ytop: float = 0.80) -> None:
+    """Mark the days a report states that testing capacity itself changed.
+
+    THE DENOMINATOR OF A POSITIVITY RATE IS A DECISION, NOT A MEASUREMENT.
+    Who gets sampled is set by the response, so a fall in the ratio means
+    either less virus among those tested or more people tested, and the two
+    are not distinguishable from the ratio alone. Where a report says outright
+    that capacity moved, that is the only direct evidence a reader has for
+    telling them apart, and it belongs on the axis rather than in a caption
+    nobody reads beside the slide.
+
+    Sparingly, and only from `registers/lab_capacity_events.tsv`: a statement
+    in a report that equipment arrived or a laboratory opened. Never a date
+    inferred from the volume series itself -- marking a jump in the
+    denominator as evidence about the denominator is circular, and it would
+    turn a figure that argues from the source into one that argues from its
+    own shape. Events sharing a date are drawn as one rule with one label.
+    """
+    if not path.exists():
+        return
+    ev = pl.read_csv(path, separator="\t", comment_prefix="#")
+    for day, grp in ev.group_by("date", maintain_order=True):
+        x = mdates.datestr2num(day[0] if isinstance(day, tuple) else day)
+        ax.axvline(x, color="#6a6a6a", lw=1.0, ls=(0, (2, 2.5)), zorder=1)
+        who = ", ".join(sorted(set(grp["province"].to_list())))
+        ax.annotate(f"{_fmt_day(grp['date'][0])} · testing capacity added\n{who}",
+                    xy=(x - 1.5, ytop), xycoords=("data", "axes fraction"),
+                    ha="right", va="top", fontsize=7.5, color="#4a4a4a",
+                    bbox={"facecolor": "white", "edgecolor": "none",
+                          "pad": 1.5, "alpha": 0.85})
+
+
 def draw_test_positivity(inputs: dict[str, Path], out: Path) -> None:
     """The share of laboratory samples returning positive, and what the
     positives were -- a living suspected case, or a body swabbed after death.
@@ -3128,6 +3295,24 @@ def draw_test_positivity(inputs: dict[str, Path], out: Path) -> None:
     """
     lab = (pl.read_csv(inputs["lab"]).drop_nulls(["samples", "positives"])
            .filter(pl.col("samples") > 0))
+    # ONLY ROWS WHOSE NUMERATOR MEANS THE SAME THING. `lab_prose.csv` carries
+    # two kinds of row. Where the report printed its own positivity, the
+    # positive count is the one that reproduces it, and that count equals the
+    # day's new confirmations on 70 of the 78 province-days where both appear
+    # -- median excess zero. Where no rate was printed, the count is licensed
+    # by the noun beside it, which is "résultats positifs": the day's total
+    # positive results, RE-TESTS OF ALREADY-CONFIRMED PEOPLE INCLUDED. Against
+    # printed new confirmations those eight rows run a median +8 and as high
+    # as +16.
+    #
+    # Both are real and each is right for a different question, but they are
+    # not the same ratio, and a line that switches between them mid-August
+    # would show a step this reader introduced rather than one the epidemic or
+    # the laboratories did. So the figures draw the validated rows only and
+    # carry the resulting gap honestly. The unvalidated rows stay in the
+    # extraction for whoever wants total positive yield.
+    lab = lab.filter(pl.col("rate_printed"))
+
     prov = pl.read_csv(inputs["province_series"]).select(
         "date", "province", "deaths_community")
     caveat = pl.read_csv(inputs["caveat"])
@@ -3182,6 +3367,8 @@ def draw_test_positivity(inputs: dict[str, Path], out: Path) -> None:
                   xycoords=("axes fraction", "data"), xytext=(0, 5),
                   textcoords="offset points", ha="right", fontsize=8.5,
                   color="#333333")
+    if "capacity" in inputs:
+        _capacity_marks(ax_r, inputs["capacity"])
     ax_r.set_ylabel("samples returning\npositive")
     ax_r.set_ylim(0, 72)
     ax_r.yaxis.set_major_formatter(
@@ -3221,7 +3408,7 @@ def draw_test_positivity(inputs: dict[str, Path], out: Path) -> None:
                       xy=(first_split - 4, max(samp) * 1.02), ha="right",
                       va="bottom", fontsize=7.5, color="#555555")
 
-    ax_n.set_xlim(*_report_calendar(caveat))
+    ax_n.set_xlim(*_lab_calendar(lab))
     ax_n.xaxis.set_major_locator(mdates.MonthLocator())
     ax_n.xaxis.set_major_formatter(mdates.DateFormatter("%B %Y"))
     ax_n.tick_params(axis="x", labelsize=8.5)
@@ -3297,6 +3484,23 @@ def draw_positivity_provinces(inputs: dict[str, Path], out: Path) -> None:
     """
     lab = (pl.read_csv(inputs["lab"]).drop_nulls(["samples", "positives"])
            .filter(pl.col("samples") > 0).sort("date"))
+    # ONLY ROWS WHOSE NUMERATOR MEANS THE SAME THING. `lab_prose.csv` carries
+    # two kinds of row. Where the report printed its own positivity, the
+    # positive count is the one that reproduces it, and that count equals the
+    # day's new confirmations on 70 of the 78 province-days where both appear
+    # -- median excess zero. Where no rate was printed, the count is licensed
+    # by the noun beside it, which is "résultats positifs": the day's total
+    # positive results, RE-TESTS OF ALREADY-CONFIRMED PEOPLE INCLUDED. Against
+    # printed new confirmations those eight rows run a median +8 and as high
+    # as +16.
+    #
+    # Both are real and each is right for a different question, but they are
+    # not the same ratio, and a line that switches between them mid-August
+    # would show a step this reader introduced rather than one the epidemic or
+    # the laboratories did. So the figures draw the validated rows only and
+    # carry the resulting gap honestly. The unvalidated rows stay in the
+    # extraction for whoever wants total positive yield.
+    lab = lab.filter(pl.col("rate_printed"))
     caveat = pl.read_csv(inputs["caveat"])
 
     fig, (ax_r, ax_v) = plt.subplots(
@@ -3333,11 +3537,16 @@ def draw_positivity_provinces(inputs: dict[str, Path], out: Path) -> None:
                                              d["samples"].to_list()),
                       color=ink, lw=2.2, zorder=4, label=prov)
 
+    # Declared as an input or not: the plain variant of this figure omits the
+    # register entirely, so the slide can be shown twice and the marks turned
+    # on as a second beat.
+    if "capacity" in inputs:
+        _capacity_marks(ax_r, inputs["capacity"])
     ax_r.set_ylabel("samples returning\npositive")
     ax_r.set_ylim(-2, 72)
     ax_r.yaxis.set_major_formatter(
         matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:g}%"))
-    ax_r.legend(loc="upper right", frameon=False, fontsize=8, ncol=4)
+    ax_r.legend(loc="upper right", frameon=False, fontsize=8, ncol=6)
     for s in ("top", "right"):
         ax_r.spines[s].set_visible(False)
     ax_r.grid(axis="y", color="#ededed", lw=0.6)
@@ -3371,7 +3580,30 @@ def draw_positivity_provinces(inputs: dict[str, Path], out: Path) -> None:
         labels.append(prov)
         inks.append(PROVINCE_INK.get(prov, "#999999"))
 
-    ax_v.stackplot(grid, *bands, labels=labels, colors=inks, lw=0, alpha=0.9)
+    # ONE STACKPLOT PER RUN OF CONSECUTIVE REPORTING, not one across the whole
+    # grid. `stackplot` joins whatever points it is given, so a single call
+    # drew a straight face across 6 to 12 August -- six days spanning five
+    # PUBLISHED reports that carried no laboratory volume at all -- and read
+    # as several hundred samples a day being analysed through a window in
+    # which none were reported. The area is a claim about volume, so bridging
+    # a silence with it is a stronger misstatement than bridging a rate.
+    runs, cur = [], [0]
+    for i in range(1, len(grid)):
+        if grid[i] - grid[i - 1] > POSITIVITY_MAX_GAP:
+            runs.append(cur)
+            cur = []
+        cur.append(i)
+    runs.append(cur)
+    for n, run in enumerate(runs):
+        if len(run) < 2:                       # a lone day has no area to fill
+            continue
+        ax_v.stackplot([grid[i] for i in run],
+                       *[[b[i] for i in run] for b in bands],
+                       # Only the first run carries the labels; the rest pass
+                       # empty strings, which stackplot accepts and the legend
+                       # ignores, so six provinces do not appear five times.
+                       labels=labels if n == 0 else [""] * len(bands),
+                       colors=inks, lw=0, alpha=0.9)
     ax_v.set_ylabel("samples analysed\nper report day")
     ax_v.legend(loc="upper left", frameon=False, fontsize=8, ncol=6)
     for s in ("top", "right"):
@@ -3381,7 +3613,7 @@ def draw_positivity_provinces(inputs: dict[str, Path], out: Path) -> None:
     top = max(sum(b[i] for b in bands) for i in range(len(grid)))
     ax_v.set_ylim(0, top * 1.32)
 
-    ax_v.set_xlim(*_report_calendar(caveat))
+    ax_v.set_xlim(*_lab_calendar(lab))
     ax_v.xaxis.set_major_locator(mdates.MonthLocator())
     ax_v.xaxis.set_major_formatter(mdates.DateFormatter("%B %Y"))
     ax_v.tick_params(axis="x", labelsize=8.5)
@@ -3448,12 +3680,28 @@ FIGURES = {
                       "zone_status": "data/build/series/zone_table_status.csv",
                       "summary": "data/build/series/province_summary.csv",
                       "prose": "data/build/series/prose_provinces.csv"}),
+    "lab_effort": (draw_lab_effort,
+                   {"lab": "data/build/series/lab_prose.csv",
+                    "capacity": "registers/lab_capacity_events.tsv",
+                    "caveat": "data/build/series/provisional_caveat.csv"}),
+    # ONE FIGURE, TWO DECLARATIONS. The base name does not read the capacity
+    # register at all; the `_annotated` name does. Shown in that order on a
+    # slide, the difference between them is exactly what reading the reports
+    # for capacity statements bought -- so the pair demonstrates the register's
+    # contribution instead of asserting it.
     "positivity_provinces": (draw_positivity_provinces,
                              {"lab": "data/build/series/lab_prose.csv",
                               "caveat": "data/build/series/"
                                         "provisional_caveat.csv"}),
+    "positivity_provinces_annotated": (draw_positivity_provinces,
+                                       {"lab": "data/build/series/lab_prose.csv",
+                                        "capacity": "registers/"
+                                                    "lab_capacity_events.tsv",
+                                        "caveat": "data/build/series/"
+                                                  "provisional_caveat.csv"}),
     "test_positivity": (draw_test_positivity,
                         {"lab": "data/build/series/lab_prose.csv",
+                         "capacity": "registers/lab_capacity_events.tsv",
                          "province_series":
                              "data/build/series/province_series.csv",
                          "caveat": "data/build/series/"

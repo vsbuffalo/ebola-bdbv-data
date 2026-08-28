@@ -334,6 +334,16 @@ figures:
 	# blue line there, so the two can be read against each other.
 	uv run python scripts/plot_figures.py --figure positivity_provinces \
 		--out data/build/figures/positivity_provinces.png
+	# THE SAME FIGURE WITHOUT THE CAPACITY REGISTER. Shown first and then
+	# replaced by the annotated one, the pair makes visible what reading the
+	# reports bought: a mark nothing else in the pipeline could supply.
+	uv run python scripts/plot_figures.py --figure positivity_provinces_annotated \
+		--out data/build/figures/positivity_provinces_annotated.png
+	# SLIDE FIGURE, 16:9. The two parts of the positivity ratio drawn apart,
+	# because a falling ratio is compatible with less disease OR more testing
+	# and only the parts separate them.
+	uv run python scripts/plot_figures.py --figure lab_effort \
+		--out data/build/figures/lab_effort.png
 	# COMMITTED COPIES, so the README, the data document and the cross-repo
 	# channel can link to figures that survive (data/build is gitignored).
 	# Everything copied here is gated twice: by `release-check`, which
@@ -353,6 +363,8 @@ figures:
 	cp data/build/figures/response_timeline.png docs/figures/
 	cp data/build/figures/test_positivity.png docs/figures/
 	cp data/build/figures/positivity_provinces.png docs/figures/
+	cp data/build/figures/positivity_provinces_annotated.png docs/figures/
+	cp data/build/figures/lab_effort.png docs/figures/
 
 ## watch-data-channel -- poll the shared data channel (which lives in the
 ##            modelling repo's tree) and exit as soon as they write, printing

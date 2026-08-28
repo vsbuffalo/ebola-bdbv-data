@@ -1,0 +1,38 @@
+# Dated changes to laboratory testing capacity, read off the situation reports.
+#
+# WHY THIS EXISTS. Test positivity is a ratio whose denominator is decided by
+# how many people get sampled, and that is a property of the response rather
+# than of the epidemic. A fall in positivity means one of two very different
+# things -- less virus among the people being tested, or a wider set of people
+# being tested -- and the reports occasionally say outright when the second
+# changed. Those statements are the only direct evidence we have for reading
+# the ratio, so they are recorded here rather than left in prose nobody
+# revisits, and the positivity figures mark them.
+#
+# WHAT GOES IN. Only a dated statement in a report that testing capacity
+# itself changed: equipment received or installed, a laboratory opening, a
+# site beginning or ceasing to analyse. NOT a change in observed volume --
+# volume is measured in `data/build/series/lab_prose.csv` and inferring a
+# capacity event from a jump in it would make the figure argue in a circle.
+# If the reports do not say it, it does not go here.
+#
+# EVERY ROW CARRIES THE SENTENCE IT CAME FROM, in the source's own words, so
+# a reader can disagree with our reading without going back to the PDF. The
+# `sitrep` column is where to look if they want to anyway.
+#
+# WHAT THIS DOES NOT ESTABLISH. A recorded event is not a demonstrated cause.
+# Ituri's testing rose by about two thirds between mid-July and late August
+# and no report we have read states a capacity change for Ituri; the two
+# events below name Nord-Kivu and Haut-Uélé, and of those only Haut-Uélé's
+# volume moved. The register is evidence to reason with, not an explanation.
+#
+# COLUMNS
+#   date       the report's data date, the day the statement was published
+#   sitrep     the report number, so the claim can be checked against the page
+#   province   the province the statement is about
+#   kind       equipment_received | installation_pending | site_opened
+#   summary    a short phrase for a figure label
+#   quote      the source's own sentence, verbatim, French as printed
+date	sitrep	province	kind	summary	quote
+2026-08-03	81	Nord-Kivu	equipment_received	RT-PCR kits and a Biofire Torch received	Réception de 10 kits RT-PCR Altona (ASLM), de kits PCR Biofire et d'une machine Biofire Torch (US CDC).
+2026-08-03	81	Haut-Uélé	installation_pending	Wamba laboratory machine available, installation scheduled	La machine destinée au laboratoire de diagnostic de Wamba est disponible et son installation est programmée.
