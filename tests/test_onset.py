@@ -187,6 +187,19 @@ def test_triangle_endpoints_are_accepted(vintages):
 # --------------------------------------------------------------------------
 # The anchor register is internally consistent.
 
+def test_gamma_cdf_reproduces_the_printed_quantiles():
+    # The comparison figure draws Akilimali et al.'s onset-to-sample Gamma
+    # through a scipy-free incomplete-gamma implementation; it must land on
+    # the quantiles the paper actually printed (median and quartiles) and
+    # the q90 the modelling repository derived from the same fit.
+    from plot_figures import (_gammainc_p, AKILIMALI_GAMMA_K,
+                              AKILIMALI_GAMMA_THETA)
+    for q, want in [(1.80, 0.25), (4.80, 0.50), (10.25, 0.75),
+                    (17.68, 0.90)]:
+        got = _gammainc_p(AKILIMALI_GAMMA_K, q / AKILIMALI_GAMMA_THETA)
+        assert abs(got - want) < 0.01, (q, got, want)
+
+
 def test_anchor_register_spans_whole_weeks():
     import csv
     import datetime as dt

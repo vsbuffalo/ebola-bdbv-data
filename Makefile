@@ -292,6 +292,11 @@ onset:
 		--out data/build/onset/figures/onset_vintages.png
 	uv run python scripts/plot_figures.py --figure onset_delay \
 		--out data/build/onset/figures/onset_delay.png
+	# THE CROSS-REPOSITORY COMPARISON: our measured completion curve
+	# against the paper's fitted onset-to-sample Gamma and the mixture
+	# the transmission model implements for it.
+	uv run python scripts/plot_figures.py --figure onset_delay_vs_model \
+		--out data/build/onset/figures/onset_delay_vs_model.png
 
 ## figures -- OFFLINE. The EDA figures, from the built series.
 figures:

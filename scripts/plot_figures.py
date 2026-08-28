@@ -3447,6 +3447,161 @@ def draw_onset_delay(inputs: dict[str, Path], out: Path) -> None:
     plt.close(fig)
 
 
+# The onset-to-sample interval fitted in Akilimali et al., NEJM 395(6):610
+# (6 Aug 2026), on the 129 laboratory-confirmed cases of the Ituri line
+# list over 3 May - 5 June, correcting for double interval censoring and
+# right truncation. The letter prints mean 7.4 d and median 4.8 d;
+# supplementary Table S3 adds quartiles 1.81 and 10.23 d. The shape and
+# scale below are the Gamma fitted to all four printed summaries (by the
+# modelling repository), so the shape is determined by four numbers, not
+# read off two; it reproduces the printed quantiles to under 0.01.
+AKILIMALI_GAMMA_K = 0.860
+AKILIMALI_GAMMA_THETA = 8.605
+
+# What the camdl model implements in place of that Gamma: a two-phase
+# hyperexponential (10% of cases with mean 1.50 d, 90% with mean 8.06 d),
+# because the infectious compartment is drained by competing exits and the
+# dwell needs a single draining clause. Mixture weight and class means are
+# hardcoded in the model; only the overall scale is estimated. It matches
+# the Gamma's quartiles to 0.08 d and its CV to 0.01.
+MODEL_HYPEREXP_W = 0.10
+MODEL_HYPEREXP_MEANS = (1.50, 8.06)
+
+
+def _gammainc_p(a: float, x: float) -> float:
+    """Regularised lower incomplete gamma, series below a+1 and continued
+    fraction above -- the Gamma CDF without a scipy dependency. Verified
+    against the paper's printed quantiles in tests/test_onset.py."""
+    if x <= 0:
+        return 0.0
+    if x < a + 1:
+        term = 1.0 / a
+        s = term
+        n = a
+        for _ in range(500):
+            n += 1
+            term *= x / n
+            s += term
+            if abs(term) < abs(s) * 1e-12:
+                break
+        return s * math.exp(-x + a * math.log(x) - math.lgamma(a))
+    b = x + 1 - a
+    c = 1e300
+    d = 1 / b
+    h = d
+    for i in range(1, 500):
+        an = -i * (i - a)
+        b += 2
+        d = 1 / max(abs(an * d + b), 1e-300) * math.copysign(1, an * d + b)
+        c = b + an / c if abs(c) > 1e-300 else 1e-300
+        de = d * c
+        h *= de
+        if abs(de - 1) < 1e-12:
+            break
+    return 1.0 - h * math.exp(-x + a * math.log(x) - math.lgamma(a))
+
+
+def draw_onset_delay_vs_model(inputs: dict[str, Path], out: Path) -> None:
+    """The empirical onset-to-publication completion against the paper's
+    onset-to-sample Gamma and the model's hyperexponential stand-in.
+
+    THREE DELAYS THAT ARE NOT THE SAME DELAY, on one axis so the
+    differences can be read as quantities. The orange curve is the fitted
+    onset-to-sample interval from the outbreak's own line list (constants
+    above); the dashed purple curve is the mixture the transmission model
+    actually implements for it, and the two should be indistinguishable --
+    their coincidence here is the approximation audit. The blue curve is
+    this repository's measurement: how completely an onset date is
+    reported in the published figure, by days since onset.
+
+    WHAT THE COMPARISON SHOWED when first drawn: the empirical curve is a
+    nearly uniform right-shift of the Gamma by about a day and a half,
+    with almost identical interquartile width -- the laboratory-and-
+    data-entry limb between sampling and publication is short and close
+    to deterministic. That reading carries a regime confound stated on
+    the face of the figure: the paper's cohort is the early window its
+    authors flag as possibly slow, and these settled onset dates are
+    mostly later; a faster later sampling delay plus a longer limb could
+    land on the same curve.
+    """
+    snap = (pl.read_csv(inputs["snapshots"], try_parse_dates=True)
+            .filter(pl.col("status") != "refused"))
+    last = snap["report_date"].max()
+    fin = (snap.filter(pl.col("report_date") == last)
+           .select("onset_date", pl.col("total").alias("final")))
+    j = (snap.join(fin, on="onset_date")
+         .with_columns(delay=(pl.col("report_date") - pl.col("onset_date"))
+                       .dt.total_days())
+         .filter((pl.col("final") >= ONSET_SETTLED_MIN)
+                 & ((pl.lit(last) - pl.col("onset_date")).dt.total_days()
+                    >= ONSET_SETTLED_AGE)
+                 & (pl.col("delay") >= 0))
+         .with_columns(frac=pl.col("total") / pl.col("final")))
+    binned = (j.with_columns((pl.col("delay") // 3 * 3 + 1).alias("bin"))
+              .group_by("bin")
+              .agg(med=pl.col("frac").median(),
+                   q25=pl.col("frac").quantile(0.25),
+                   q75=pl.col("frac").quantile(0.75), n=pl.len())
+              .filter(pl.col("n") >= 8).sort("bin"))
+
+    fig, ax = plt.subplots(figsize=(13.333, 7.5), constrained_layout=True)
+    for _, grp in j.group_by("onset_date"):
+        g = grp.sort("delay")
+        ax.plot(g["delay"].to_list(), g["frac"].to_list(),
+                color="#cccccc", lw=0.6, alpha=0.5, zorder=1)
+    ax.fill_between(binned["bin"].to_list(), binned["q25"].to_list(),
+                    binned["q75"].to_list(), color="#4a7fb5", alpha=0.22,
+                    lw=0, zorder=2)
+    ax.plot(binned["bin"].to_list(), binned["med"].to_list(),
+            color="#1f4e79", lw=2.6, zorder=5,
+            label="this extraction: onset → published figure (median, IQR)")
+    t = [x * 0.1 for x in range(631)]
+    ax.plot(t, [_gammainc_p(AKILIMALI_GAMMA_K, x / AKILIMALI_GAMMA_THETA)
+                for x in t],
+            color="#c96a1f", lw=2.2, zorder=4,
+            label="Akilimali et al.: onset → sample, "
+                  f"Gamma(k={AKILIMALI_GAMMA_K}, θ={AKILIMALI_GAMMA_THETA})")
+    w = MODEL_HYPEREXP_W
+    m1, m2 = MODEL_HYPEREXP_MEANS
+    ax.plot(t, [1 - (w * math.exp(-x / m1) + (1 - w) * math.exp(-x / m2))
+                for x in t],
+            color="#7a4fa8", lw=2.0, ls=(0, (5, 3)), zorder=4,
+            label="camdl model: two-phase hyperexponential "
+                  f"(w={w}, means {m1}/{m2} d)")
+    ax.axhline(1.0, color="#999999", lw=0.8, ls=(0, (3, 3)), zorder=1)
+
+    xs = binned["bin"].to_list()
+    ys = binned["med"].to_list()
+    emp50 = next(a + (0.5 - ya) / (yb - ya) * (b - a)
+                 for a, b, ya, yb in zip(xs, xs[1:], ys, ys[1:])
+                 if ya < 0.5 <= yb)
+    ax.annotate("", xy=(emp50, 0.5), xytext=(4.80, 0.5),
+                arrowprops={"arrowstyle": "->", "color": "#555555",
+                            "lw": 1.2})
+    ax.annotate("the administrative limb:\nsampling to published figure,\n"
+                f"≈{emp50 - 4.80:.1f} d at the median",
+                xy=((emp50 + 4.80) / 2, 0.505), xytext=(0, 10),
+                textcoords="offset points", ha="center", fontsize=8.5,
+                color="#555555")
+    ax.set_xlim(0, 63)
+    ax.set_ylim(0, 1.12)
+    ax.set_xlabel("days since symptom onset")
+    ax.set_ylabel("cumulative share")
+    ax.xaxis.set_major_locator(MultipleLocator(7))
+    ax.legend(loc="lower right", frameon=False, fontsize=9)
+    for s in ("top", "right"):
+        ax.spines[s].set_visible(False)
+    ax.grid(axis="y", color="#ededed", lw=0.6)
+    ax.set_axisbelow(True)
+    _header(fig, "Three delays that are not the same delay",
+            "The paper's onset→sample Gamma (Ituri, 3 May–5 Jun), the "
+            "model's hyperexponential approximation of it, and this "
+            "extraction's onset→publication completion (settled onset "
+            "dates, mostly Jun–Jul, national).")
+    fig.savefig(out, dpi=200)
+    plt.close(fig)
+
+
 def draw_test_positivity(inputs: dict[str, Path], out: Path) -> None:
     """The share of laboratory samples returning positive, and what the
     positives were -- a living suspected case, or a body swabbed after death.
@@ -3867,6 +4022,9 @@ FIGURES = {
                        {"snapshots": "data/build/onset/snapshots.csv"}),
     "onset_delay": (draw_onset_delay,
                     {"snapshots": "data/build/onset/snapshots.csv"}),
+    "onset_delay_vs_model": (draw_onset_delay_vs_model,
+                             {"snapshots":
+                              "data/build/onset/snapshots.csv"}),
     "lab_effort": (draw_lab_effort,
                    {"lab": "data/build/series/lab_prose.csv",
                     "capacity": "registers/lab_capacity_events.tsv",
