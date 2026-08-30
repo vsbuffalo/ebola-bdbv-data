@@ -138,6 +138,26 @@ class TableSpec:
     #: stays aligned.
     values: tuple[Role, ...] = ()
 
+    #: ALTERNATIVE left-to-right orders the same table has been printed in,
+    #: tried when `values` does not reproduce the page's own arithmetic.
+    #:
+    #: The source reorders its columns. On 2026-08-26 the provincial summary
+    #: moved `Nouveaux cas confirmés (24h)` from last to second, which slid
+    #: cumulative cases into deaths and deaths into letality; every row's
+    #: printed case fatality then disagreed with the two columns beside it by
+    #: two orders of magnitude, which is how the build caught it.
+    #:
+    #: THE ORDER IS CHOSEN BY THE PAGE'S OWN ARITHMETIC, NOT BY THE REPORT
+    #: NUMBER. A heading cell's column index is not meaningful here (see the
+    #: module docstring), so the headings cannot say which layout this is --
+    #: but the source derives its letality column from the two beside it, so
+    #: an order that reproduces it is the order the page was printed in.
+    #: Exactly one candidate may reproduce it: none means a layout nobody has
+    #: read yet, several means the check cannot tell them apart, and both
+    #: refuse rather than pick. Dating the change instead would have this
+    #: build assert what the source did on days nobody has looked at.
+    value_orders: tuple[tuple[Role, ...], ...] = ()
+
     #: Names that identify the table by its ROWS rather than its heading. The
     #: provincial summary is often headless -- its heading bleeds into the
     #: dashboard above it -- so no heading vocabulary can find it. What is
@@ -478,6 +498,13 @@ PROVINCIAL_SUMMARY = TableSpec(
     # 348 summary rows. The value sequence is what the classifier actually
     # detects: cases, deaths, letality, then the day's new cases.
     values=(Role.CUM_CASES, Role.CUM_DEATHS, Role.LETALITY, Role.NEW_CASES),
+    # The layout through sitrep 103, then the one the source moved to on
+    # 2026-08-26 (sitrep 104), which lifted the day's new cases to the front.
+    # Chosen per page by which reproduces the printed letality; see `_map`.
+    value_orders=(
+        (Role.CUM_CASES, Role.CUM_DEATHS, Role.LETALITY, Role.NEW_CASES),
+        (Role.NEW_CASES, Role.CUM_CASES, Role.CUM_DEATHS, Role.LETALITY),
+    ),
     row_vocabulary=frozenset({
         "ituri", "nord-kivu", "nord kivu", "sud-kivu", "sud kivu",
         "haut-uele", "haut uele", "tshopo", "bas-uele", "bas uele",
@@ -501,7 +528,7 @@ ALL_SPECS: tuple[TableSpec, ...] = SPECS + (PROVINCIAL_SUMMARY,)
 #: where it was measured; `select` uses the same number when it asks whether a
 #: rule inside a fused component was drawn by the table it is chaining, because
 #: that is the same question about the same two edges.
-SPAN_TOL = 10.0
+SPAN_TOL = 18.0
 
 
 def spans_same(a, b, tol: float = SPAN_TOL) -> bool:
@@ -526,6 +553,21 @@ def spans_same(a, b, tol: float = SPAN_TOL) -> bool:
 
     A tuning parameter measured against a buggy pipeline gives the wrong answer
     confidently, and the number then outlives the bug it was compensating for.
+
+    RAISED TO 18 PT ON 2026-08-29, and measured the same way. Sitreps 103 and
+    106 draw their continuation page INSET ON BOTH SIDES by about 15 pt --
+    103's pages begin 16.7 pt apart and end 14.7 pt apart, 106's 15.3 and
+    13.3 -- where sitrep 104, printed between them, differs by 0.5 and 0.3.
+    The inset is symmetric, so the table is the same width of content drawn
+    with a wider margin, not a different table.
+
+    Swept over the whole archive, 10, 12 and 15 pt all give 3,960 zone rows;
+    18, 20 and 25 pt all give 4,042. The step is a plateau rather than a
+    slope, and the 82 rows it recovers are exactly the two orphaned
+    continuation pages (41 rows each). Row counts on the other 98 reports do
+    not move at all, so the looser bound chains nothing it should not: the
+    failure mode this docstring warns about would show as rows appearing on
+    reports nobody was fixing, and none appear.
     """
     return abs(a.xs[0] - b.xs[0]) <= tol and abs(a.xs[-1] - b.xs[-1]) <= tol
 
@@ -601,12 +643,72 @@ def rows_are_provinces(table) -> bool:
     return hits * 2 > len(names)
 
 
+def _cell_number(cell: str) -> float | None:
+    """A data cell as a number, or None. Local to the order check, which needs
+    only magnitudes -- the extraction's own parsers stay the authority for the
+    values that get published."""
+    t = cell.strip().rstrip("*†‡").strip()
+    if t.lower() in _SENTINEL or not _NUMERIC.match(t):
+        return None
+    for ch in _SPACES:
+        t = t.replace(ch, "")
+    try:
+        return float(t.rstrip("%").replace(",", "."))
+    except ValueError:
+        return None
+
+
+def _letality_agrees(table, roles: dict, start: int) -> int:
+    """How many data rows have `deaths / cases` reproducing their own printed
+    letality, under a candidate column order.
+
+    THE SOURCE DERIVES THAT COLUMN FROM THE TWO BESIDE IT, which makes it a
+    free per-row check on an ordering -- the same check the build already runs
+    over the emitted rows, applied one step earlier where it can still choose
+    rather than only refuse. A tolerance of one percentage point absorbs the
+    source's own rounding without admitting a displaced column, which misses
+    by a factor rather than by a decimal.
+    """
+    need = (Role.CUM_CASES, Role.CUM_DEATHS, Role.LETALITY)
+    if not all(r in roles for r in need):
+        return 0
+    ci, di, li = (roles[r] for r in need)
+    agree = 0
+    for i in range(start, table.nrows):
+        row = table.row(i)
+        if max(ci, di, li) >= len(row):
+            continue
+        cases, deaths, let = (_cell_number(row[j]) for j in (ci, di, li))
+        if not cases or deaths is None or let is None:
+            continue
+        if abs(100.0 * deaths / cases - let) <= 1.0:
+            agree += 1
+    return agree
+
+
 def _map(table, spec: TableSpec) -> Mapped | None:
     labels, values = classify(table, start=table.header_rows())
     if not values:
         return None
-    roles = {role: col for role, col in zip(spec.values, values)
-             if role is not Role.IGNORED}
+    start = table.header_rows()
+
+    def mapped(order):
+        return {role: col for role, col in zip(order, values)
+                if role is not Role.IGNORED}
+
+    orders = spec.value_orders or (spec.values,)
+    if len(orders) > 1:
+        # EXACTLY ONE CANDIDATE MAY REPRODUCE THE PAGE'S OWN ARITHMETIC. None
+        # means a layout nobody has read; several means this check cannot tell
+        # them apart. Both are a judgement for a person, so both return None
+        # and the route is refused by name rather than guessed at.
+        scored = [(_letality_agrees(table, mapped(o), start), o) for o in orders]
+        best = max(n for n, _ in scored)
+        if best == 0 or sum(1 for n, _ in scored if n == best) != 1:
+            return None
+        roles = mapped(next(o for n, o in scored if n == best))
+    else:
+        roles = mapped(orders[0])
     return Mapped(table=table, roles=roles, labels=tuple(labels))
 
 

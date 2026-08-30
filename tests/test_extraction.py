@@ -3045,19 +3045,40 @@ def test_province_bullets_do_not_sum_to_a_national_census():
 @needs_build
 def test_province_occupancy_cannot_see_a_saturated_centre():
     """PANEL B'S CAVEAT, as numbers. Occupancy at province grain is a ratio of
-    sums and stays below capacity almost everywhere -- one province-day exceeds
-    it. The reports meanwhile name individual treatment centres above capacity
-    in a prose subsection the care extraction does not read, so the slack this
-    panel shows is not evidence of free beds where the patients are."""
+    sums and stays below capacity on the great majority of province-days. The
+    reports meanwhile name individual treatment centres above capacity in a
+    prose subsection the care extraction does not read, so the slack this panel
+    shows is not evidence of free beds where the patients are.
+
+    WHAT CHANGED ON 2026-08-29, and it is a finding rather than a drift. Until
+    sitrep 103 exactly one province-day exceeded capacity -- Nord-Kivu at 139%
+    on 3 August, readable as an outlier. Sitreps 104-106 add three CONSECUTIVE
+    Nord-Kivu days over capacity (26-28 August: 214/206, 232/220, 236/220), so
+    the province ends the archive saturated rather than spiking once. The
+    caveat this test guards is unchanged and the panel's caption is generated
+    from the data, but a reader who took "one outlier" from an earlier vintage
+    would now be wrong.
+    """
     import plot_figures as P
     care, _ = _built()
     o = P.occupancy_at_province_grain(care)
     # The province-day COUNT grows on every fetch and is not the finding;
     # assert that it is a real sample, then assert the finding itself.
     assert o["n"] > 50
-    assert o["n_over_100"] == 1
-    assert o["over_100"][0]["province"] == "Nord-Kivu"
-    assert round(o["over_100"][0]["occ"]) == 139
+    # Over-capacity days remain a small minority, and every one of them is the
+    # same province -- that is the claim the panel rests on.
+    assert 0 < o["n_over_100"] <= 0.1 * o["n"]
+    assert {r["province"] for r in o["over_100"]} == {"Nord-Kivu"}
+    assert round(max(r["occ"] for r in o["over_100"])) == 139
+    # The tail is sustained, not a single spike: at least three of them are
+    # consecutive report days.
+    days = sorted(d if isinstance(d, dt.date) else dt.date.fromisoformat(str(d))
+                  for d in (r["date"] for r in o["over_100"]))
+    longest = run = 1
+    for a, b in zip(days, days[1:]):
+        run = run + 1 if (b - a).days == 1 else 1
+        longest = max(longest, run)
+    assert longest >= 3
     assert o["min"] < 20 and 50 < o["median"] < 70
 
 
