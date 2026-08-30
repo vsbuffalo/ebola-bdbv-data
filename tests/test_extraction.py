@@ -2094,22 +2094,25 @@ def test_a_two_column_stream_cannot_ship_without_naming_its_denominator(tmp_path
     assert len(bad) == 1 and "DENOMINATOR_OF" in bad[0]
 
 
-def test_the_grid_is_report_days_and_never_calendar_days():
-    """A row asserts a bin. Emitting one on a day the archive holds no report
-    for would assert a bin the source never licensed -- and, because the reset
-    is row-based, manufacture a reset point out of nothing."""
-    report = {dt.date(2026, 6, 1), dt.date(2026, 6, 4), dt.date(2026, 6, 5)}
-    got = BS.report_day_grid([dt.date(2026, 6, 1), dt.date(2026, 6, 5)], report)
-    assert got == [dt.date(2026, 6, 1), dt.date(2026, 6, 4), dt.date(2026, 6, 5)]
-    assert dt.date(2026, 6, 2) not in got and dt.date(2026, 6, 3) not in got
+def test_the_grid_is_calendar_days_so_every_row_covers_one_day():
+    """A 24-hour figure covers one day however wide the silence behind it, and
+    the accumulation window is set by the rows that exist. So every day between
+    the first and last observation is a row, including days the archive holds
+    no report for -- an NA row asserts only that the day existed and nobody
+    reported this quantity, which the source does license.
+
+    This REPLACED a report-day grid, which closed the gap only where the source
+    published and left the days nobody published on widening the window.
+    """
+    got = BS.calendar_day_grid([dt.date(2026, 6, 1), dt.date(2026, 6, 5)])
+    assert got == [dt.date(2026, 6, d) for d in (1, 2, 3, 4, 5)]
 
 
 def test_the_grid_stops_at_the_streams_own_span():
     """A row before the first observation would claim the quantity was being
     reported and was empty; one after the last would claim the series is still
     running. Neither is something the file may assert."""
-    report = {dt.date(2026, 6, d) for d in (1, 2, 3, 4, 5)}
-    got = BS.report_day_grid([dt.date(2026, 6, 2), dt.date(2026, 6, 4)], report)
+    got = BS.calendar_day_grid([dt.date(2026, 6, 2), dt.date(2026, 6, 4)])
     assert got == [dt.date(2026, 6, 2), dt.date(2026, 6, 3), dt.date(2026, 6, 4)]
 
 
@@ -2120,8 +2123,8 @@ def test_gridding_holes_a_row_and_fills_only_the_divisor():
     d = pl.DataFrame({"date": [dt.date(2026, 6, 1), dt.date(2026, 6, 3)],
                       "positives_ituri": [4, 6], "tests_ituri": [40, 60]})
     report = {dt.date(2026, 6, 1), dt.date(2026, 6, 2), dt.date(2026, 6, 3)}
-    got = BS.on_report_day_grid(d, report, time_col="date",
-                                divisors=("tests_ituri",))
+    got = BS.on_calendar_day_grid(d, report, time_col="date",
+                                  divisors=("tests_ituri",))
     assert got.height == 3
     assert got["n_report_days"].to_list() == [1, 0, 1]
     assert got["positives_ituri"].to_list() == [4, None, 6]
@@ -2130,13 +2133,31 @@ def test_gridding_holes_a_row_and_fills_only_the_divisor():
     assert got["n_report_days_silent"].to_list() == [0, 1, 0]
 
 
+def test_the_two_kinds_of_hole_are_distinguishable_in_the_columns():
+    """A day nobody published on and a day somebody published on without
+    stating this quantity are different facts, and after the regrid the file
+    separates them without a consumer needing the archive: both carry
+    `n_report_days` 0, and only the second carries `n_report_days_silent` 1.
+    """
+    d = pl.DataFrame({"date": [dt.date(2026, 6, 1), dt.date(2026, 6, 4)],
+                      "x": [1, 2]})
+    # 2 June had a report that passed this quantity over; 3 June had none.
+    report = {dt.date(2026, 6, 1), dt.date(2026, 6, 2), dt.date(2026, 6, 4)}
+    got = BS.on_calendar_day_grid(d, report, time_col="date")
+    assert got["n_report_days"].to_list() == [1, 0, 0, 1]
+    assert got["n_report_days_silent"].to_list() == [0, 1, 0, 0]
+    assert got["days_covered"].to_list() == [1, 1, 1, 1]
+
+
 def test_an_observation_off_the_report_day_calendar_stops_the_build():
-    """Gridding onto report days would silently DROP such a row, so the
-    calendar is wrong rather than the stream, and it must say so."""
+    """Every observation lands on a calendar grid by construction, so the
+    check that still bites is an observation on a day the archive holds no
+    report for: the calendar is wrong rather than the stream, and downstream
+    it would surface as a negative silence count rather than as a message."""
     d = pl.DataFrame({"date": [dt.date(2026, 6, 1), dt.date(2026, 6, 2)],
                       "x": [1, 2]})
     with pytest.raises(SystemExit, match="the report-day calendar does not"):
-        BS.on_report_day_grid(d, {dt.date(2026, 6, 1)}, time_col="date")
+        BS.on_calendar_day_grid(d, {dt.date(2026, 6, 1)}, time_col="date")
 
 
 # -- the same three properties, on the files this build actually shipped ----
@@ -2168,7 +2189,10 @@ def test_a_hole_carries_its_metadata_rather_than_being_a_bare_row():
     holes = d.filter(pl.col("n_report_days") == 0)
     assert holes.height > 0
     assert holes["admissions_nord_kivu"].null_count() == holes.height
-    assert holes["n_report_days_silent"].to_list() == [1] * holes.height
+    # Under the calendar grid a hole is one of TWO facts, and the column says
+    # which: 1 where a report was published and passed this quantity over,
+    # 0 where no report was published at all.
+    assert set(holes["n_report_days_silent"].to_list()) <= {0, 1}
     assert holes["checks"].to_list() == ["unchecked"] * holes.height
     assert holes["flags"].null_count() == 0
 
@@ -3382,29 +3406,33 @@ def test_a_care_flow_row_covers_the_window_it_claims():
     own, because an engine accumulates between the ROWS that are present and
     reads no column to decide the window: a file holding only the days the
     source spoke made each next row's window as wide as the silence behind it.
-    Every report day the file spans is therefore a row, and `days_covered` is
-    the gap to the row before -- 1 wherever the source published on
-    consecutive days, and wider only where it published nothing at all.
+
+    THE INVARIANT, and it is now exact: every calendar day the file spans is a
+    row, so `days_covered` is 1 EVERYWHERE and a row's value covers precisely
+    the interval since the row before it. A report-day grid got this right
+    only where the source published on consecutive days; the days nobody
+    published on stayed absent and kept widening the window.
     """
-    seen_gap = seen_hole = False
+    seen_no_report = seen_silent = False
     for path in _care_files():
         t = BS.read_stream(path)
         if "days_covered" not in t.columns:
             continue                       # a stock; the test below covers it
         times = [dt.date.fromisoformat(x) for x in t["time"].to_list()]
         gaps = [(b - a).days for a, b in zip(times, times[1:])]
-        assert gaps == t["days_covered"].to_list()[1:], path.name
-        assert t["days_covered"][0] == 1, path.name
+        assert set(gaps) <= {1}, f"{path.name} skips a calendar day"
+        assert set(t["days_covered"].to_list()) == {1}, path.name
         assert set(t["n_report_days"].to_list()) <= {0, 1}, path.name
-        # A hole says 1 silent report day -- its own -- and a scored row says
-        # none, because every silent day between two observations is now a row
-        # of its own rather than a tally on the next one.
+        # A hole is one of two facts and the column says which: 1 where a
+        # report was published and passed this quantity over, 0 where no
+        # report was published at all.
         holes = t.filter(pl.col("n_report_days") == 0)
-        assert holes["n_report_days_silent"].to_list() == [1] * holes.height
-        seen_hole |= holes.height > 0
-        seen_gap |= max(gaps, default=0) > 1
-    assert seen_hole, "no care flow stream holds a hole"
-    assert seen_gap, "no care flow stream spans a day the source did not report"
+        silent = holes["n_report_days_silent"].to_list()
+        assert set(silent) <= {0, 1}, path.name
+        seen_silent |= 1 in silent
+        seen_no_report |= 0 in silent
+    assert seen_silent, "no care flow stream holds a silent-report-day hole"
+    assert seen_no_report, "no care flow stream holds a no-report-day hole"
 
 
 @needs_care_streams
@@ -3650,7 +3678,7 @@ def test_the_build_stops_if_a_flow_stream_loses_its_report_day_rows(monkeypatch,
     _synthetic_panel(panel, [10, 20, 30, 40], [2, 4, 6, 8])
     care = tmp_path / "care.csv"
     _synthetic_care(care)
-    monkeypatch.setattr(BS, "report_day_grid", lambda times, days: sorted(times))
+    monkeypatch.setattr(BS, "calendar_day_grid", lambda times: sorted(times))
     monkeypatch.setattr(BS, "spans", lambda times, left: [1] * len(list(times)))
     out = tmp_path / "streams"
     with pytest.raises(SystemExit) as e:

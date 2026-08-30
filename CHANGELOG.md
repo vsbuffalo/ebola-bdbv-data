@@ -16,6 +16,79 @@ carries the rest.
 
 ---
 
+## `data/2026-08-29` — 2026-08-29 — unreported days are rows, and the caveats travel with the data
+
+**BREAKING for a consumer that reads row structure or joins on `meta.json`.**
+Three coordinated changes, requested by the modelling repository on the data
+channel. Nothing about what any number *means* changes, and no value moves.
+
+### 1. Single-day-figure streams are gridded onto calendar days
+
+**What changed.** 27 files gain rows: every calendar day between a stream's
+first and last observation is now a row, with `NA` where no figure was
+published. `days_covered` is therefore **1 on every row** of these files.
+
+**Why.** These streams carry a figure the report states for one 24-hour
+period, so the value covers one day however wide the silence behind it. An
+engine that accumulates a modelled flow between consecutive rows — camdl does,
+and reads no column to decide the window — integrated over the whole gap and
+compared the result against a single day's count. It fails **silently**: no
+error, just a biased fit. This repository already gridded onto *report days*,
+which closed the gap only where the source published; the days nobody
+published on stayed absent and kept widening the window.
+
+**The invariant, now exact and tested:** a row's value covers precisely the
+interval since the previous row in the file.
+
+**`cases_*` and `deaths_*` are deliberately NOT regridded.** They are built by
+differencing the source's own cumulative, so their value genuinely covers the
+interval and camdl is already correct on them. Padding them would have broken
+a correct arm — and they are the two families the modelling side leans on
+hardest. A consumer must not pad them.
+
+**Migration.** Filter on `n_report_days == 1` for scored rows, or read `NA` as
+"scheduled, unobserved". A hole is now one of two facts and the columns say
+which: `n_report_days_silent` is 1 where a report was published and passed the
+quantity over, 0 where no report was published at all.
+
+### 2. `meta.json` carries a `streams` block
+
+One entry per published file: its family, its `value_span`, and the
+`registers/stream_families.tsv` sentences verbatim.
+
+`value_span` is `interval` (differenced from a cumulative — the value covers
+`days_covered` days), `report_day` (a printed 24-hour figure — one day, now
+gridded so the two agree), or `stock` (a reading at an instant). Until now the
+first two were indistinguishable from outside, and the modelling side lost the
+better part of a day inferring it from the numbers.
+
+The two sentences travel because `meta.json` is vendored and hash-verified
+downstream and the register is not. The `care_exits_deaths` entry has read
+"an upper bound on confirmed deaths in care" since it was written, and that
+column was still fitted as confirmed-only downstream. Documentation that does
+not travel is documentation that does not arrive.
+
+A family with no `VALUE_SPAN` entry now stops the build, as one with no
+sentence already did.
+
+### 3. A `consolidating` column on every stream carrying `flags`
+
+1 where the page carried its own consolidation caveat, 0 otherwise. Derived
+from `flags`, so it cannot disagree with the prose beside it. `flags` is
+unchanged; this is the same fact without a string match.
+
+Consolidation days matter more than their number suggests: on the ward-books
+reconciliation, three of twelve days carried 99% of the discrepancy and one —
+22 July, 369 confirmations where neighbouring days run 50 to 98 — carried 76%.
+
+### Hashes
+
+Every regridded file changes, and `meta.json` changes. `cases_*`, `deaths_*`
+and the stock files change only by the added `consolidating` column where they
+carry `flags`. Re-vendor rather than diffing values: no value moved.
+
+---
+
 ## `data/2026-08-24-r3` — 2026-08-25 — the same samples, split by province
 
 **No stream changes and no value changes. One figure added**, so nothing a

@@ -260,23 +260,41 @@ def spans(times, left) -> list[int]:
     return out
 
 
-def report_day_grid(times, report_days) -> list:
-    """Every report day the stream spans, so a flow file has a ROW on each.
+def calendar_day_grid(times) -> list:
+    """Every calendar day the stream spans, so a single-day-figure file has a
+    ROW on each and every row's window is exactly one day.
 
-    THE GRID IS REPORT DAYS, NEVER CALENDAR DAYS. A row asserts a bin, and a
-    bin on a day the archive holds no report for would be an assertion the
-    source never licensed -- it would also manufacture a reset point in an
-    engine that resets its accumulator on every row present. The days the
-    source did publish are days it said something, so a row there saying "and
-    nothing of this quantity for this place" is a statement the source
-    supports.
+    THE GRID IS CALENDAR DAYS, AND THIS REPLACED A REPORT-DAY GRID. These
+    streams carry a figure the report states for one 24-hour period, so the
+    value covers one day however wide the silence behind it. An engine that
+    accumulates a modelled flow between consecutive rows integrates over the
+    whole gap, so a row must exist on every day the value does not cover, or
+    the observation is compared against a model quantity that spans days it
+    never described. A report-day grid closes that gap only where the source
+    published; the days nobody published on stayed absent and kept widening
+    the window.
+
+    The earlier rule read "a bin on a day the archive holds no report for
+    would be an assertion the source never licensed". That is true of a row
+    carrying a ZERO and false of a row carrying NA, which asserts only that
+    the day existed and nobody reported this quantity. The same note worried
+    that a row would "manufacture a reset point"; manufacturing exactly that
+    reset is what a 24-hour figure requires, and not manufacturing it is what
+    made the observation mean something the source never said.
+
+    STREAMS BUILT BY DIFFERENCING A CUMULATIVE DO NOT COME HERE, and must not:
+    there the value genuinely covers the interval since the previous row, so
+    the accumulation window and the value already agree and inserting a row
+    would break a correct arm. The invariant this function exists to enforce
+    -- a row's value covers exactly the interval since the previous row --
+    holds for those streams by construction and for these by gridding.
 
     Bounded by the stream's own first and last observation. A row before the
     first would claim the quantity was being reported and was empty; a row
     after the last would claim the series is still running.
     """
     lo, hi = min(times), max(times)
-    return sorted(d for d in report_days if lo <= d <= hi)
+    return [lo + dt.timedelta(days=i) for i in range((hi - lo).days + 1)]
 
 
 def silent_report_days(times, contributed: list[int], report_days, left) -> list[int]:
@@ -319,10 +337,10 @@ def silent_report_days(times, contributed: list[int], report_days, left) -> list
     return out
 
 
-def on_report_day_grid(d: pl.DataFrame, report_days, *, time_col: str,
-                       divisors=()) -> pl.DataFrame:
-    """A flow stream with a row on every report day it spans: the days the
-    source stated the quantity carry it, the days it did not carry NA.
+def on_calendar_day_grid(d: pl.DataFrame, report_days, *, time_col: str,
+                         divisors=()) -> pl.DataFrame:
+    """A single-day-figure stream with a row on every calendar day it spans:
+    the days the source stated the quantity carry it, every other day NA.
 
     WHY A HOLE MUST BE A ROW. These streams hold a figure the report states
     for the report day itself -- one 24-hour count -- so a row is one day of
@@ -334,6 +352,12 @@ def on_report_day_grid(d: pl.DataFrame, report_days, *, time_col: str,
     instead does not help, because the accumulation window is set by the rows
     that exist and not by any column. The row is what resets the accumulator,
     so the hole has to be a row.
+
+    AFTER GRIDDING, `days_covered` IS 1 ON EVERY ROW by construction, and the
+    two kinds of hole separate in the columns rather than needing the archive:
+    a day nobody published on is `n_report_days` 0 with `n_report_days_silent`
+    0, and a day somebody published on without stating this quantity is
+    `n_report_days` 0 with `n_report_days_silent` 1.
 
     WHAT AN NA ROW SAYS AND WHAT IT DOES NOT. The observation cell is empty:
     no likelihood term, and in particular NOT an observed zero -- a report
@@ -365,12 +389,17 @@ def on_report_day_grid(d: pl.DataFrame, report_days, *, time_col: str,
     intends to publish, so nothing here needs to know what a stream measures.
     """
     have = d[time_col].to_list()
-    grid = report_day_grid(have, report_days)
-    if missing := sorted(set(have) - set(grid)):
+    grid = calendar_day_grid(have)
+    # Every observation lands on the calendar grid by construction, so the
+    # check that remains is the one that still bites: an observation on a day
+    # the archive holds no report for means the report-day calendar is wrong,
+    # and `n_report_days_silent` would go negative downstream rather than say
+    # so. Raise here, where the message can name the day.
+    if off := sorted(set(have) - set(report_days)):
         raise SystemExit(
-            f"a stream has an observation on {missing}, which the report-day "
-            "calendar does not hold. Gridding onto report days would drop "
-            "those rows, so the calendar is wrong rather than the stream.")
+            f"a stream has an observation on {off}, which the report-day "
+            "calendar does not hold: the calendar is wrong rather than the "
+            "stream.")
     out = (pl.DataFrame({time_col: grid}, schema={time_col: pl.Date})
            .join(d.with_columns(pl.lit(1, pl.Int64).alias("n_report_days")),
                  on=time_col, how="left")
@@ -407,7 +436,8 @@ def on_report_day_grid(d: pl.DataFrame, report_days, *, time_col: str,
 #: laboratory stream, where a fitted "probability of publication" of ~0.77 was
 #: measuring how much of the country the paragraph had been written out for.
 METADATA_COLUMNS = ("days_covered", "n_report_days", "flags", "n_provinces",
-                    "n_province_days", "n_report_days_silent", "checks")
+                    "n_province_days", "n_report_days_silent", "checks",
+                    "consolidating")
 
 #: HOW A HOLE IS SPELLED ON DISK, in one place because both sides of it have
 #: to agree. The engines these files are written for read the literal token
@@ -866,6 +896,18 @@ def data_dictionary(written: list[Written], register: Path, *,
                 "needs both: `measures` says what the quantity is, "
                 "`interpretation` says how to read it and where it misleads. "
                 "A stream must not ship with either one missing.")
+
+    # A FAMILY WITHOUT A DECLARED SPAN CANNOT SHIP, for the same reason it
+    # cannot ship without a sentence: a consumer accumulating between rows
+    # needs to know whether the value covers the interval or one day, and
+    # guessing it from the numbers is what the modelling side had to do.
+    if undeclared := sorted(set(families) - set(VALUE_SPAN)):
+        sys.exit(
+            f"{FAMILY_REGISTER} has families with no entry in `VALUE_SPAN`: "
+            f"{undeclared}. Declare what one row's value covers -- `interval` "
+            "for a family differenced from a cumulative, `report_day` for a "
+            "printed 24-hour figure, `stock` for a reading at an instant -- "
+            "before publishing it.")
 
     places = stream_places()
     order = {slug: i for i, slug in enumerate(places)}
@@ -1356,6 +1398,39 @@ CARE_STOCK_FAMILIES = frozenset(
     {"care_census", "care_census_confirmed", "care_census_suspect"})
 
 
+#: WHAT A ROW'S VALUE COVERS, per family, published in `meta.json` so a
+#: consumer never has to infer it from the numbers.
+#:
+#: THE TWO FLOW KINDS LOOK IDENTICAL IN A FILE AND ARE NOT THE SAME STATEMENT.
+#: A family built by DIFFERENCING the source's cumulative has a value covering
+#: the whole interval since the previous row -- when the source skips two days,
+#: the next row's count is three days of cases. A family built from a PRINTED
+#: 24-HOUR FIGURE has a value covering one day whatever the silence behind it.
+#: An engine that accumulates a modelled flow between consecutive rows is
+#: correct on the first without help and wrong on the second unless every day
+#: is a row, which is why only the second kind is gridded onto calendar days.
+#:
+#: The modelling repository asked for this after losing most of a day to the
+#: ambiguity; deriving it from the data means comparing gap rows against
+#: one-day rows and hoping the epidemic held still, which is not a contract.
+VALUE_SPAN = {
+    # differenced from the source's own cumulative
+    "cases": "interval", "deaths": "interval",
+    # a printed 24-hour figure, gridded onto calendar days
+    "community_deaths": "report_day", "lab": "report_day",
+    "care_admissions": "report_day", "care_exits": "report_day",
+    "care_exits_recovered": "report_day", "care_exits_noncase": "report_day",
+    "care_exits_absconded": "report_day", "care_exits_deaths": "report_day",
+    # a reading at an instant: accumulates over no window at all
+    "care_census": "stock", "care_census_confirmed": "stock",
+    "care_census_suspect": "stock", "patients_isolated": "stock",
+    "patients_isolated_confirmed": "stock", "cumul_recovered": "stock",
+    "uganda_exports": "stock",
+    # not an observation stream
+    "revisions": "none",
+}
+
+
 def care_state(checks: str, scope: tuple[str, ...]) -> str:
     """`closes`, `contradicts` or `unchecked` for one care row and quantity.
 
@@ -1517,6 +1592,18 @@ def main() -> None:
         they are written under.
         """
         assert resolution in RESOLUTION_PROSE, resolution
+        # THE ONE FLAG A CONSUMER ACTS ON, AS A COLUMN RATHER THAN A SUBSTRING.
+        # `flags` is prose the page said about the day and it carries several
+        # values; a consumer wanting to drop batch-consolidation days had to
+        # string-match it, and a string match is a silent failure waiting for
+        # the day the vocabulary grows. `consolidating` is 1 or 0 and needs no
+        # parsing. It is derived from `flags` here rather than plumbed through
+        # every builder, so it cannot disagree with the prose beside it.
+        if "flags" in d.columns:
+            d = d.with_columns(
+                pl.col("flags").fill_null("")
+                .str.contains("consolidating").cast(pl.Int64)
+                .alias("consolidating"))
         # `NA` AND NOT AN EMPTY CELL, on every file whether or not it has a
         # hole in it: the token is a property of the format, so a consumer
         # reading the release with `null_values="NA"` reads all of it the same
@@ -1972,7 +2059,7 @@ def main() -> None:
                     time_col="date", flags=fl)
         d = carried(d, name, tname, count_col="deaths_total",
                     time_col="date", flags=fl)
-        d = on_report_day_grid(
+        d = on_calendar_day_grid(
             d.select("date", pl.col("deaths_community").alias(cname),
                      pl.col("deaths_total").alias(tname)),
             report_days, time_col="date")
@@ -2078,7 +2165,7 @@ def main() -> None:
             dl = carried(dl, "lab_daily_national", "tests_national",
                          count_col="samples", time_col="date", flags=fl)
             stated_prov = dl["n_prov"]
-            dl = on_report_day_grid(
+            dl = on_calendar_day_grid(
                 dl.select("date", pl.col("positives").alias("positives_national"),
                           pl.col("samples").alias("tests_national"),
                           pl.col("n_prov").alias("n_provinces")),
@@ -2140,7 +2227,7 @@ def main() -> None:
                 # between rows compared 20 days of modelled specimens against
                 # one day of real ones.
                 n_stated = d.height
-                d = on_report_day_grid(
+                d = on_calendar_day_grid(
                     d.select("date",
                              pl.col("positives").alias(f"positives_{slug}"),
                              pl.col("samples").alias(f"tests_{slug}")),
@@ -2293,7 +2380,7 @@ def main() -> None:
                     # one day of observed ones. With a row on every report day
                     # in between, `days_covered` is the gap to the row before
                     # and the two agree.
-                    d = on_report_day_grid(
+                    d = on_calendar_day_grid(
                         d.select("date", obs, "checks"), report_days,
                         time_col="date")
                     d = d.with_columns(
@@ -2341,10 +2428,36 @@ def main() -> None:
      .sort("stream", "column", "time")
      .write_csv(args.out_dir / "revisions.tsv", separator="\t"))
 
+    # WHAT EACH PUBLISHED FILE IS, TRAVELLING WITH THE FILES. `meta.json` is
+    # vendored and hash-verified downstream; `registers/stream_families.tsv`
+    # is not. So the sentences that say how to read a stream stayed in this
+    # repository while the numbers went out, and a consumer wiring a column
+    # read its filename and its header instead. The `care_exits_deaths`
+    # register entry has said "an upper bound on confirmed deaths in care"
+    # since it was written, and that column was still fitted as confirmed-only
+    # downstream -- documentation that does not travel is documentation that
+    # does not arrive.
+    fams = load_families(args.families)
+    stream_docs = {}
+    for w in written:
+        fam, _ = stream_identity(w.path.stem)
+        entry = fams.get(fam)
+        if entry is None:
+            continue
+        stream_docs[w.path.name] = {
+            "family": fam,
+            "value_span": VALUE_SPAN[fam],
+            "measures": entry["measures"],
+            "interpretation": entry["interpretation"],
+        }
+
     last = panel.filter(pl.col("date") == panel["date"].max())
     meta = {
         "day0": str(DAY0),
         "bin_days": BIN_DAYS,
+        # One entry per published file: what family it belongs to, what one
+        # row's value covers, and the register's two sentences verbatim.
+        "streams": stream_docs,
         "tool_versions": {"pdftotext": pdftotext_version,
                           "polars": pl.__version__},
         "n_days": int((dt.date.fromisoformat(panel["date"].max())
