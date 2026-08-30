@@ -16,6 +16,53 @@ carries the rest.
 
 ---
 
+## `data/2026-08-29-r1` — 2026-08-29 — sitreps 103–106, and two extraction defects they exposed
+
+**Not breaking. Values change** — four reports of new data, and two earlier
+reports whose zone tables were being read incompletely. No file is added,
+removed or renamed; no column changes. `data/2026-08-29` consumers should
+re-vendor.
+
+### What the source did
+
+**The provincial summary moved a column.** From sitrep 104 (26 August),
+`Nouveaux cas confirmés (24h)` moves from last position to second. Read
+positionally that slid cumulative cases into deaths and deaths into letality:
+Haut-Uélé's printed case fatality implied 3880%. The build stopped rather than
+shipping it.
+
+The layout is now chosen per page by which candidate ordering reproduces the
+page's own printed létalité — the column the source derives from the two
+beside it. Neither ordering is dated, because dating one would assert what the
+source did on days nobody has read.
+
+**Two continuation pages were drawn inset.** Sitreps 103 and 106 draw their
+page-3 continuation about 15 pt narrower on both sides, where sitrep 104 —
+printed between them — differs by half a point. The chain predicate refused
+them and both reports emitted page 2 alone: 25 and 27 zone rows against a
+neighbouring 66 to 68, leaving Ituri 1,110 and 995 cases short of its own
+printed province total.
+
+`SPAN_TOL` goes 10 pt to 18 pt, swept over the archive rather than tuned to
+the failures: 10/12/15 pt all give 3,960 zone rows and 18/20/25 pt all give
+4,042. The 82 recovered rows are exactly the two orphaned pages, and no other
+report's row count moves.
+
+**Province reconciliation: 338 of 378 reconcile with 0 disagreeing**, against
+326 of 368 with 2 disagreeing.
+
+### What a consumer should look at
+
+**Nord-Kivu's treatment centres exceed their own bed count on 26, 27 and 28
+August** — 214/206, 232/220, 236/220. Until sitrep 103 exactly one
+province-day in the whole archive was over capacity and it read as an outlier;
+the province now ends the archive saturated. If you use the care census as a
+capacity-bounded quantity, that bound is now being hit.
+
+The series extends to 2026-08-28. `n_days` 98 to 102.
+
+---
+
 ## `data/2026-08-29` — 2026-08-29 — unreported days are rows, and the caveats travel with the data
 
 **BREAKING for a consumer that reads row structure or joins on `meta.json`.**
