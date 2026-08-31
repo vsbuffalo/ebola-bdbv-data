@@ -3880,3 +3880,121 @@ def test_the_notified_series_spans_only_the_window_the_source_printed_one():
     assert scored.height == 23, "every report day in the window carries one"
     reg = FAMILIES.read_text()
     assert "2026-07-12 to 2026-08-05" in reg
+
+
+def test_a_province_the_tile_omits_is_a_zero_not_a_hole():
+    """The tile states a total over five provinces and a breakdown that closes
+    on it, so a province missing from the breakdown contributed nothing. That
+    is arithmetic, not a judgement about coverage — and it is the opposite of
+    the laboratory and care families, where an unmentioned province is silence
+    with no total to close against. `printed` keeps the two apart on the row.
+    """
+    page = "     +50 nouveaux cas (Ituri 42 · N-Kivu 8)\n"
+    tile, = N.tiles(page)
+    named = dict((N.PROVINCES[N._key(p)], int(v))
+                 for p, v in N.PROVINCE.findall(tile))
+    assert named == {"Ituri": 42, "Nord-Kivu": 8}
+    assert sum(named.values()) == 50, "the breakdown must close to license this"
+    assert [p for p in N.PLACES if p not in named] == [
+        "Haut-Uélé", "Sud-Kivu", "Tshopo"]
+
+
+@needs_pdfs
+def test_the_province_split_closes_to_the_national_total_everywhere():
+    """The split is the same reading that licensed the national figure, so if
+    it ever stops summing to it one of the two is being read wrong."""
+    d = pl.read_csv(ROOT / "data/build/series/daily_notified.csv")
+    nat = d.filter(pl.col("place") == "national").select(
+        "date", "quantity", pl.col("notified").alias("nat"))
+    prov = (d.filter(pl.col("place") != "national")
+            .group_by("date", "quantity")
+            .agg(pl.col("notified").sum().alias("prov")))
+    j = nat.join(prov, on=["date", "quantity"], how="inner")
+    assert j.height == 63, "every day with a breakdown carries a full split"
+    assert j.filter(pl.col("nat") != pl.col("prov")).height == 0
+
+
+@needs_pdfs
+def test_the_22_july_backlog_splits_the_way_the_source_prints_it():
+    """The two-province substitution the modelling side needs, pinned. Ituri
+    carries essentially all of the batch; Nord-Kivu's notified CASES exceed
+    its cumulative movement, so the correction there is upward — a reminder
+    that this is not uniformly "remove a backlog".
+    """
+    want = {("cases", "ituri"): (347, 73), ("cases", "nord_kivu"): (16, 18),
+            ("deaths", "ituri"): (213, 45), ("deaths", "nord_kivu"): (20, 14)}
+    for (stem, slug), (moved, notified) in want.items():
+        d = BS.read_stream(STREAMS / f"{stem}_daily_{slug}.tsv")
+        n = BS.read_stream(STREAMS / f"{stem}_notified_{slug}.tsv")
+        row = d.filter(pl.col("time") == "2026-07-22")
+        assert int(row[f"{stem}_{slug}"][0]) == moved
+        assert int(row["days_covered"][0]) == 1
+        assert int(n.filter(pl.col("time") == "2026-07-22")
+                   [f"{stem}_notified_{slug}"][0]) == notified
+
+
+@needs_pdfs
+def test_the_excluding_backlog_family_differs_only_where_the_source_says_so():
+    """The variant is the differenced family with the register's rows replaced
+    and nothing else touched. If it ever differs on a day
+    `retrospective_batches.tsv` does not name, the substitution has escaped its
+    scope — which is the failure that would matter, because this family is
+    meant to be bound without being read.
+    """
+    reg = pl.read_csv(ROOT / "registers/retrospective_batches.tsv",
+                      separator="\t", comment_prefix="#",
+                      infer_schema_length=None)
+    licensed = {(r["date"], q, p)
+                for r in reg.iter_rows(named=True)
+                for q in (("cases", "deaths") if r["quantity"] == "both"
+                          else (r["quantity"],))
+                for p in str(r["places"]).split(",")}
+    for stem in ("cases", "deaths"):
+        for slug in ("national", "ituri", "nord_kivu", "haut_uele"):
+            a = BS.read_stream(STREAMS / f"{stem}_daily_{slug}.tsv")
+            b = BS.read_stream(STREAMS / f"{stem}_excluding_backlog_{slug}.tsv")
+            assert a["time"].to_list() == b["time"].to_list()
+            j = a.select("time", pl.col(f"{stem}_{slug}").alias("base")).join(
+                b.select("time", pl.col(f"{stem}_{slug}").alias("var")),
+                on="time")
+            for r in j.filter(pl.col("base") != pl.col("var")).iter_rows(named=True):
+                assert (r["time"], stem, slug) in licensed, (
+                    f"{stem}_{slug} changed on {r['time']}, which the register "
+                    "does not license")
+
+
+@needs_pdfs
+def test_the_22_july_footnote_scope_excludes_haut_uele():
+    """The footnote names Ituri and Nord-Kivu. Haut-Uélé's two readings also
+    differ that day, by one case and one death, and the source does not say
+    those belong to earlier days — so they keep the differenced value. The
+    place column is what holds that line, and dropping it silently widened the
+    substitution when this was first built.
+    """
+    for stem, value in (("cases", 5), ("deaths", 2)):
+        a = BS.read_stream(STREAMS / f"{stem}_daily_haut_uele.tsv")
+        b = BS.read_stream(STREAMS / f"{stem}_excluding_backlog_haut_uele.tsv")
+        row = lambda d: int(d.filter(pl.col("time") == "2026-07-22")
+                            [f"{stem}_haut_uele"][0])
+        assert row(a) == value and row(b) == value
+    # and the notified reading, which is what would have been substituted
+    n = BS.read_stream(STREAMS / "cases_notified_haut_uele.tsv")
+    assert int(n.filter(pl.col("time") == "2026-07-22")
+               ["cases_notified_haut_uele"][0]) == 6
+
+
+@needs_pdfs
+def test_the_totals_the_register_and_release_notes_claim_are_real():
+    """Both documents state how many records the variant leaves unscored. A
+    number quoted in prose that no build checks is one that rots."""
+    got = {}
+    for stem in ("cases", "deaths"):
+        a = BS.read_stream(STREAMS / f"{stem}_daily_national.tsv")
+        b = BS.read_stream(STREAMS / f"{stem}_excluding_backlog_national.tsv")
+        got[stem] = (int(a[f"{stem}_national"].sum()),
+                     int(b[f"{stem}_national"].sum()))
+    assert got["cases"] == (5912, 5640)      # 272 excluded, 4.6%
+    assert got["deaths"] == (2858, 2674)     # 184 excluded, 6.4%
+    reg = FAMILIES.read_text()
+    assert "272 of 5,912 national cases, 4.6%" in reg
+    assert "184 of 2,858 national deaths, 6.4%" in reg

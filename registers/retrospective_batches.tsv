@@ -1,0 +1,48 @@
+# Days on which the source says a cumulative's movement holds records that
+# belong to EARLIER days, in the source's own words.
+#
+# What an entry asserts. On this report date the national cumulative moved by
+# more (or less) than the count the report states for the day itself, AND the
+# report says why: a harmonisation, an integration of provincial books, a
+# retrospective attachment. An entry is a claim about the document, quoted
+# below, and never an inference from the size of a difference.
+#
+# What it is used for. `build_streams.py` publishes the `cases_excluding_backlog`
+# and `deaths_excluding_backlog` families: the differenced daily series with the
+# rows named here replaced by the report's own same-day count. Every other
+# disagreement between the two readings is left alone, because the source does
+# not say those records belong to other days -- most are reclassifications
+# between zones or provinces, where the differenced value is the right count.
+#
+# Why a register and not a rule in code. Which days these are is a reading of
+# the documents, not a property of the numbers. A threshold on the difference
+# would have caught 2026-07-22 and also caught eight zone reclassifications
+# that are not backlogs at all, and would have missed 2026-08-02, whose
+# difference is 10.
+#
+# Scope. Both scope columns do real work and neither can be dropped.
+#
+# `quantity` is `cases`, `deaths`, or `both`. On 2026-08-02 the source
+# attributes the deaths difference and says nothing about the cases one,
+# which differs by 4 in the other direction and is left alone.
+#
+# `places` is the file stems the entry licenses, and it is the source's own
+# scope rather than wherever the numbers happen to differ. The 22 July
+# footnote names Ituri and Nord-Kivu; Haut-Uélé's readings that day also
+# differ, by one case and one death, and those are NOT covered -- the source
+# does not say they belong to earlier days, so they stay at the differenced
+# value. `national` is listed explicitly because the tile the footnote hangs
+# off is the national one.
+#
+# Beyond these two columns the substitution still applies only where both
+# readings exist, the differenced row covers exactly one day, and the two
+# disagree, so an entry can never silently alter a row they already agree on.
+#
+# The records dropped from the likelihood by each entry are counted in
+# `meta.json` under the excluding-backlog streams, and stated in the release
+# notes. Nothing here is a re-dating: the source never says which earlier days
+# these records belong to, so they are excluded rather than moved.
+#
+date	sitrep	quantity	places	dropped_national_cases	dropped_national_deaths	quote
+2026-07-22	69	both	national,ituri,nord_kivu	272	174	*Harmonisation de données avec les provinces de l'Ituri et du Nord-Kivu à la date du 22 juillet 2026. Les augmentations importantes observées dans les cumuls résultent principalement de l'intégration des bases provinciales harmonisées et ne reflètent pas uniquement les nouvelles notifications des dernières 24 heures.
+2026-08-02	80	deaths	national,nord_kivu,haut_uele	0	10	+40 décès du jour (Ituri 23 · N-Kivu 14 · H-Uélé 3) · +10 par harmonisation) [banner]; "le cumul des décès progresse ainsi de 23 unités alors que la province n'a enregistré que 14 décès confirmés au cours des dernières 24 heures ... les 9 unités restantes sont des décès antérieurs rattachés rétrospectivement" [Nord-Kivu]; "une harmonisation rétrospective qui porte le cumul des décès de 30 à 34" [Haut-Uélé]

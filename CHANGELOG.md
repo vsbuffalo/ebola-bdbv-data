@@ -16,6 +16,102 @@ carries the rest.
 
 ---
 
+## `data/2026-08-29-r3` — 2026-08-31 — the notified count by province, and a family with the declared backlogs taken out
+
+**Not breaking. Fourteen files added**, no file removed or renamed, no column
+changed on any existing stream.
+
+### What is new
+
+**Six per-province notified streams.** `cases_notified_{ituri,nord_kivu,haut_uele}.tsv`
+and the three matching `deaths_notified_*`. The source prints its 24-hour count
+with a province breakdown beside it — "+62 décès (Ituri 45 · Nord-Kivu 14 ·
+Haut-Uele 3)" — and that breakdown is the same reading that licenses the
+national total, so these are read rather than apportioned. The split closes to
+the national figure on all 63 (date, quantity) pairs that carry one.
+
+A province the tile does not name carries **0, not a hole**. The tile states a
+total over five provinces and a breakdown summing to it exactly, so an unnamed
+province contributed nothing; the reports say the same in words on those days
+("Haut-Uélé : Aucun nouveau cas confirmé ni décès n'a été rapporté"). This is
+the opposite of the coverage situation in the laboratory and care families,
+where an unmentioned province is silence with no total to close against. The
+`printed` column in `data/build/series/daily_notified.csv` keeps the two apart.
+The one report day licensed by the prose sentence alone, 2026-07-12, has no
+printed breakdown and so no province rows at all.
+
+**Eight excluding-backlog streams.** `cases_excluding_backlog_*` and
+`deaths_excluding_backlog_*`, for all four places: the differenced daily series
+with the days the source *says* hold records from earlier days replaced by the
+report's own same-day count. This is the family to fit if you want one series
+and do not want to maintain a patch.
+
+### Which rows differ from the differenced family, in full
+
+| file | date | differenced | becomes |
+|---|---|---|---|
+| `cases_excluding_backlog_national` | 2026-07-22 | 369 | 97 |
+| `cases_excluding_backlog_ituri` | 2026-07-22 | 347 | 73 |
+| `cases_excluding_backlog_nord_kivu` | 2026-07-22 | 16 | **18** |
+| `deaths_excluding_backlog_national` | 2026-07-22 | 236 | 62 |
+| | 2026-08-02 | 50 | 40 |
+| `deaths_excluding_backlog_ituri` | 2026-07-22 | 213 | 45 |
+| `deaths_excluding_backlog_nord_kivu` | 2026-07-22 | 20 | 14 |
+| | 2026-08-02 | 23 | 14 |
+| `deaths_excluding_backlog_haut_uele` | 2026-08-02 | 4 | 3 |
+
+That is the complete list. `cases_excluding_backlog_haut_uele` is identical to
+`cases_daily_haut_uele`.
+
+Note that Nord-Kivu's 22 July cases go **up**: its cumulative moved 16 while it
+notified 18, so the source revised two out of its books that day. This is not
+uniformly "remove a backlog", which is why the substitution is stated row by
+row rather than described as a correction.
+
+### Which days are substituted, and why not the others
+
+The rule is in `registers/retrospective_batches.tsv`, one row per declared
+batch, with the source's words quoted. It is a reading of the documents, not a
+threshold on the size of a difference — a threshold would have caught 22 July
+and also swept up eight zone reclassifications that are not backlogs, and would
+have missed 2 August, whose difference is 10.
+
+The register carries a **place scope, which is the source's scope and not
+wherever the numbers differ.** The 22 July footnote names Ituri and Nord-Kivu.
+Haut-Uélé's two readings also differ that day, by one case and one death, and
+those stay at the differenced value because the source does not say they belong
+to earlier days.
+
+**2 August is the day the source shows its work at both levels.** The banner
+declares "+40 décès du jour (Ituri 23 · N-Kivu 14 · H-Uélé 3) · +10 par
+harmonisation"; the Nord-Kivu narrative says nine of its deaths are "décès
+antérieurs rattachés rétrospectivement"; the Haut-Uélé narrative a retrospective
+harmonisation carrying its cumulative from 30 to 34. Nine plus one is the
+declared ten, and the province files close on it independently.
+
+### What this costs, stated
+
+The excluded records are scored **nowhere**. The source never says which
+earlier days they belong to, and the epidemic curve by symptom onset did not
+receive them on the day the aggregate did, so excluding them is the only
+treatment that does not invent a date.
+
+- `cases_excluding_backlog_national` emits 5,640 against the differenced 5,912
+  — **272 cases excluded, 4.6%.**
+- `deaths_excluding_backlog_national` emits 2,674 against 2,858 — **184 deaths
+  excluded, 6.4%.**
+
+**These files do not sum to the source's cumulative, and are not meant to.**
+That invariant belongs to the `cases` and `deaths` families, which are
+unchanged. If you need the total complete, fit those and accept that 22 July is
+misdated, or declare a window of your own.
+
+`days_covered` means what it means in the differenced families: both
+substituted dates carry one-day rows there, so replacing a value changes
+nothing about what a row spans.
+
+---
+
 ## `data/2026-08-29-r2` — 2026-08-30 — the day's own notification count, beside the cumulative's movement
 
 **Not breaking. Two files added**, no file removed or renamed, no column

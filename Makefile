@@ -152,6 +152,7 @@ streams:
 		--caveat data/build/series/provisional_caveat.csv \
 		--banner data/build/series/banner.csv \
 		--notified data/build/series/daily_notified.csv \
+		--batches registers/retrospective_batches.tsv \
 		--care data/build/series/care_prose.csv \
 		--geojson data/raw/health_zones.geojson \
 		--population data/raw/zone_population.csv \

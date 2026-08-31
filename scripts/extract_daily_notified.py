@@ -3,11 +3,12 @@
 SOURCE       The INSP situation reports' page-1 banner. Primary -- read from
              the tile the page draws, not from anyone's transcription and not
              by differencing anything.
-PRODUCES     One row per (report, quantity) for `cases`, `deaths` and
+PRODUCES     One row per (report, quantity, place) for `cases`, `deaths` and
              `recovered`: how many the source says were notified in the last
-             24 hours. These are daily *flows* stated outright, and they are a
-             different measurement from the differenced cumulative streams
-             even though they measure the same events.
+             24 hours, nationally and for each province. These are daily
+             *flows* stated outright, and they are a different measurement
+             from the differenced cumulative streams even though they measure
+             the same events.
 FITTED       Not itself fitted. It exists so a consumer can tell the day's
              notifications apart from the cumulative's movement, which are
              the same number on most days and are not on the days that
@@ -95,6 +96,11 @@ PROVINCES = {
     "hautuele": "Haut-Uélé", "huele": "Haut-Uélé",
     "tshopo": "Tshopo",
 }
+#: The five provinces in the order the banner totals them, deduplicated from
+#: the alias table above -- `PROVINCES.values()` repeats a name once per
+#: abbreviation, which would emit a province twice.
+PLACES = ("Ituri", "Nord-Kivu", "Haut-Uélé", "Sud-Kivu", "Tshopo")
+
 PROVINCE = re.compile(
     r"(Ituri|Nord[-\s]*Kivu|N[-\s]*Kivu|Sud[-\s]*Kivu|S[-\s]*Kivu"
     r"|Haut[-\s]*U[ée]l[ée]|H[-\s]*U[ée]l[ée]|Tshopo)[\s*:.\-]*(\d{1,4})", re.I)
@@ -130,6 +136,7 @@ PROSE = (
 #: at the first position it is tried, so the sentence would never be read that
 #: far and the count would be silently absent on every report.
 PROSE_RECOVERED = re.compile(r"et\s+(\d{1,4})\s+gu[ée]ri", re.I)
+
 
 def _key(s: str) -> str:
     t = unicodedata.normalize("NFKD", s)
@@ -244,13 +251,43 @@ def extract(pdf: Path) -> tuple[list[dict], list[dict]]:
                 "tile": re.sub(r"\s+", " ", tile)[:150]})
             continue
         rows.append({
-            "quantity": quantity, "notified": total,
+            "quantity": quantity, "place": "national", "notified": total,
+            "printed": True,
             "breakdown_sum": breakdown,
             "breakdown": "; ".join(f"{p} {v}" for p, v in pairs),
             "harmonised_declared": int(harmonised.group(1)) if harmonised else None,
             "prose_notified": stated,
             "licence": licence,
             "tile": re.sub(r"\s+", " ", tile)[:220]})
+
+        # The province split, which the tile prints beside its total and which
+        # is the same reading that licensed the total. Emitted only where the
+        # breakdown closes: on a row licensed by prose alone there is no split
+        # to publish, and apportioning the national figure would manufacture a
+        # division the source never made.
+        #
+        # A province the tile does NOT name is a zero, not a hole, and the
+        # arithmetic is what says so rather than any judgement about coverage.
+        # The tile states a total over five provinces and a breakdown that sums
+        # to it exactly, so a province missing from the breakdown contributed
+        # nothing to the total. The reports corroborate it in words on the same
+        # days -- sitrep 074, "Haut-Uélé : Aucun nouveau cas confirmé ni décès
+        # n'a été rapporté"; sitrep 070 prints "Haut-Uélé : 2 nouveaux cas
+        # confirmés ... et 0 décès" against a deaths tile naming only Ituri and
+        # Nord-Kivu. This is the opposite of the coverage situation in the
+        # laboratory and care families, where a province going unmentioned is
+        # silence with no total to close against, and `printed` keeps the two
+        # cases apart on the row rather than in a reader's memory.
+        if licence != "prose":
+            named = dict(pairs)
+            for province in PLACES:
+                rows.append({
+                    "quantity": quantity, "place": province,
+                    "notified": named.get(province, 0),
+                    "printed": province in named,
+                    "breakdown_sum": None, "breakdown": "",
+                    "harmonised_declared": None, "prose_notified": None,
+                    "licence": licence, "tile": ""})
     return rows, refused
 
 
@@ -272,33 +309,43 @@ def main() -> int:
         got, refused = extract(pdf)
         for r in got:
             rows.append({"sitrep": num, "date": date, **r})
-        status.append({"sitrep": num, "date": date, "n_parsed": len(got),
+        n_tiles = sum(1 for r in got if r["place"] == "national")
+        status.append({"sitrep": num, "date": date, "n_parsed": n_tiles,
                        "n_refused": len(refused),
                        "refused": "; ".join(f"{r['why']}({r['quantity']}"
                                             f"={r['total']})"
                                             for r in refused[:4])})
         if not args.quiet and (got or refused):
-            print(f"  {pdf.stem}  {len(got)} tile(s)"
+            print(f"  {pdf.stem}  {n_tiles} tile(s)"
                   + (f", refused {len(refused)}" if refused else ""))
 
     schema = {"sitrep": pl.Int64, "date": pl.Utf8, "quantity": pl.Utf8,
-              "notified": pl.Int64, "breakdown_sum": pl.Int64,
-              "breakdown": pl.Utf8, "harmonised_declared": pl.Int64,
-              "prose_notified": pl.Int64, "licence": pl.Utf8, "tile": pl.Utf8}
-    out = pl.DataFrame(rows, schema=schema).sort("date", "quantity")
+              "place": pl.Utf8, "notified": pl.Int64, "printed": pl.Boolean,
+              "breakdown_sum": pl.Int64, "breakdown": pl.Utf8,
+              "harmonised_declared": pl.Int64, "prose_notified": pl.Int64,
+              "licence": pl.Utf8, "tile": pl.Utf8}
+    out = pl.DataFrame(rows, schema=schema).sort("date", "quantity", "place")
     out.write_csv(args.out)
     st = pl.DataFrame(status)
     st.write_csv(args.out.with_name(args.out.stem + "_status.csv"))
 
-    days = out.filter(pl.col("quantity").is_in(["cases", "deaths"]))["date"]
+    nat = out.filter(pl.col("place") == "national")
+    days = nat.filter(pl.col("quantity").is_in(["cases", "deaths"]))["date"]
     n_ref = st.filter(pl.col("n_refused") > 0).height
-    print(f"\n{st.height} reports scanned; {out['date'].n_unique()} print a "
+    print(f"\n{st.height} reports scanned; {nat['date'].n_unique()} print a "
           f"daily notification tile ({out.height} rows, "
           f"{days.n_unique()} days carrying cases or deaths); "
           f"{n_ref} carry a tile no other part of the report corroborates "
           "(see the status file -- a refusal is never a guessed number)")
     if out.height and days.n_unique():
-        print(f"span {out['date'].min()} .. {out['date'].max()}")
+        split = out.filter((pl.col("place") != "national")
+                           & (pl.col("quantity") != "recovered"))
+        print(f"span {out['date'].min()} .. {out['date'].max()}; "
+              f"province split on {split['date'].n_unique()} of "
+              f"{days.n_unique()} days "
+              f"({split.filter(pl.col('printed')).height} printed values, "
+              f"{split.filter(~pl.col('printed')).height} zeros implied by a "
+              "breakdown that closes)")
     return 0
 
 
