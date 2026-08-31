@@ -14,6 +14,28 @@ Scope: stream files and `meta.json`. Extraction improvements that change
 *values* are noted only where they move a published series; the commit log
 carries the rest.
 
+## Release tags
+
+Every release is a git tag, `data/<date>-r<n>`, where `<date>` is the data date
+— the newest situation report the build read — and `<n>` is the revision. **The
+first release of a day is `-r0`**, from 2026-09-01 onwards.
+
+Before that date the first release of a day is the bare `data/<date>`, and that
+form was read inconsistently even here: `data/2026-08-15` is followed by `-r2`
+with no `-r1`, so that day's bare tag stands for revision one, while every other
+day's stands for revision zero. That ambiguity is why the explicit `-r0` exists.
+Historical tags are **not** renamed.
+
+**Published tags are immutable.** A tag, once pushed, never moves to a different
+commit and is never deleted. Consumers pin a tag per fit, so a tag that moves
+takes a fit's provenance with it. Every tag published is recorded in
+`registers/released_tags.tsv` with the commit it names, and a test fails if one
+is deleted or moved — the register is append-only, and a failure means the tag
+should be restored, not the register edited.
+
+A release may be superseded by a later one, and often is. Superseded is not the
+same as withdrawn: the older tag stays exactly where it is.
+
 ---
 
 ## `data/2026-08-29-r3` — 2026-08-31 — the notified count by province, and a family with the declared backlogs taken out

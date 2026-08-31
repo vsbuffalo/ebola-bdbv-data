@@ -3998,3 +3998,71 @@ def test_the_totals_the_register_and_release_notes_claim_are_real():
     reg = FAMILIES.read_text()
     assert "272 of 5,912 national cases, 4.6%" in reg
     assert "184 of 2,858 national deaths, 6.4%" in reg
+
+
+# --------------------------------------------------------------------------
+# Release tags are part of the data contract
+# --------------------------------------------------------------------------
+
+import re                                                       # noqa: E402
+
+RELEASED = ROOT / "registers" / "released_tags.tsv"
+
+
+def _git(*args: str) -> str:
+    import subprocess
+    return subprocess.run(("git", "-C", str(ROOT), *args),
+                          capture_output=True, text=True).stdout.strip()
+
+
+@pytest.mark.skipif(not (ROOT / ".git").exists(), reason="not a git checkout")
+def test_every_published_release_tag_is_still_where_it_was():
+    """A consumer pins a tag per fit, so a tag that moves or disappears takes a
+    fit's data with it. The modelling side had two vintages vendored, fitted
+    against and overwritten before any commit of theirs captured them; for that
+    period the reproducibility of twelve fits rested on a tag here continuing to
+    exist. That makes immutability a property of the contract, and this is the
+    check that makes it one rather than a promise.
+
+    If this fails, restore the tag. Do not edit the register to match.
+    """
+    reg = pl.read_csv(RELEASED, separator="\t", comment_prefix="#",
+                      infer_schema_length=None)
+    assert reg.height >= 30, "the register lost rows; it is append-only"
+    live = set(_git("tag", "-l", "data/*").split())
+    missing = [r["tag"] for r in reg.iter_rows(named=True)
+               if r["tag"] not in live]
+    assert not missing, f"published release tags have been deleted: {missing}"
+    moved = [(r["tag"], r["commit"], got)
+             for r in reg.iter_rows(named=True)
+             if (got := _git("rev-list", "-n", "1", r["tag"])) != r["commit"]]
+    assert not moved, f"published release tags now name a different commit: {moved}"
+
+
+@pytest.mark.skipif(not (ROOT / ".git").exists(), reason="not a git checkout")
+def test_new_release_tags_are_added_to_the_register():
+    """The register is only a guarantee if it is complete. A tag published and
+    not recorded is one nothing would notice the loss of."""
+    reg = pl.read_csv(RELEASED, separator="\t", comment_prefix="#",
+                      infer_schema_length=None)
+    known = set(reg["tag"].to_list())
+    live = set(_git("tag", "-l", "data/*").split())
+    assert not (live - known), (
+        f"release tags exist that the register does not record: "
+        f"{sorted(live - known)}. Append them to {RELEASED.name}.")
+
+
+@pytest.mark.skipif(not (ROOT / ".git").exists(), reason="not a git checkout")
+def test_releases_from_september_carry_an_explicit_revision_number():
+    """From 2026-09-01 the first release of a day is `-r0`, so every tag has one
+    shape and a consumer's parser needs no special case. The bare form was read
+    inconsistently even here: 2026-08-15 runs bare, r2, r3 ... with no r1, so
+    that day's bare tag stood for revision one, while every other day's stood
+    for revision zero. Historical tags are not renamed — published fits point
+    at them."""
+    bare = [t for t in _git("tag", "-l", "data/*").split()
+            if re.fullmatch(r"data/\d{4}-\d\d-\d\d", t)]
+    late = [t for t in bare if t.removeprefix("data/") >= "2026-09-01"]
+    assert not late, (
+        f"these tags are missing an explicit revision: {sorted(late)}. "
+        "The first release of a day is `-r0`.")

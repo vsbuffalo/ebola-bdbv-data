@@ -1,0 +1,59 @@
+# Every `data/*` release tag this repository has published, and the commit it
+# names. Append-only.
+#
+# Why this exists. The modelling repository pins a tag per fit: 79 of its fits
+# name one of these, and two vintages were vendored, fitted against and
+# overwritten before any commit of theirs captured them -- so for a period the
+# reproducibility of those fits rested on a tag here continuing to exist. That
+# makes tag immutability a property of the data contract rather than a habit,
+# and a property nobody checks is a promise rather than a guarantee.
+#
+# What it asserts. Each tag below still exists and still resolves to the commit
+# recorded here. `tests/test_extraction.py::test_every_published_release_tag_is_
+# still_where_it_was` fails if one is deleted or moved, which is the only way a
+# consumer's pinned vintage can become unreachable.
+#
+# NEVER edit or remove a row to make the check pass. A row that no longer
+# resolves means a published tag moved, and the fix is to restore the tag, not
+# to update the register to match the damage.
+#
+# `commit` is the commit the tag names -- the dereferenced target for an
+# annotated tag, which all of these are.
+#
+# Naming. From 2026-09-01 the first release of a day is `-r0`; before that it
+# is the bare `data/<date>`, and the bare form was read inconsistently even
+# here (2026-08-15 runs bare, r2, r3 ... with no r1, so that day's bare tag
+# stood for r1, while every other day's stood for r0). Historical tags are not
+# renamed: they are what published fits point at.
+#
+tag	released	commit
+data/2026-08-15	2026-08-17	55aa324c21c9c4466b768a7fc93427c13dbfac87
+data/2026-08-15-r2	2026-08-17	fb601211bdfd160345047c3c74f43575b0ec2c3a
+data/2026-08-15-r3	2026-08-17	7ac73e6b96de9076f03f6dfafa80750b82d114d7
+data/2026-08-15-r4	2026-08-17	7a136e14d9fa73dd2400b4c9e49f030fc1cb8a86
+data/2026-08-15-r5	2026-08-18	30eafecbf256435d70d94678c77d3921601487b6
+data/2026-08-15-r6	2026-08-18	779329f8049f58fe50e4526141abb07186f71a10
+data/2026-08-15-r7	2026-08-19	e5e473aa9f81702a27a34889592688d62499ffcb
+data/2026-08-15-r8	2026-08-21	944d7120e8b174f3a1fa16c032505b47c5fc1f33
+data/2026-08-18	2026-08-21	091783aa8edabf8ff20d28c2225c59621f1e4ed7
+data/2026-08-18-r1	2026-08-22	f3095a192b3f1dc0df8733ccc577c1c1c2fa3925
+data/2026-08-18-r2	2026-08-22	b5fe60a3a9ce99311ac9af42e4d52131691db94e
+data/2026-08-18-r3	2026-08-23	a2589f19c568715a83183c1ac654668673d0efcf
+data/2026-08-18-r4	2026-08-23	e6008520a62f873e4d8d33fa05d4e5dc50f8a3c6
+data/2026-08-18-r5	2026-08-23	f7610da02dc01acf87a469d52146e71d3a877a68
+data/2026-08-22	2026-08-23	e92d62f1245380776832d0163fd4fa9f4055a0b5
+data/2026-08-22-r1	2026-08-24	fd803fe46c6ae4d4127ce2ce47a44371dbc2a6b4
+data/2026-08-22-r2	2026-08-24	ca39415cee1a7939d00ae32afc35f4baffde59ee
+data/2026-08-22-r3	2026-08-24	5d0e1b83b3907789fc20333d7b58c9dce54ee4a3
+data/2026-08-22-r4	2026-08-24	f10c0a0df0d5c0289ec9b3d00b25e0f50e57ce09
+data/2026-08-22-r5	2026-08-25	3b6f6c15e3c7047ac3ace27d4bde0ccb78032426
+data/2026-08-22-r6	2026-08-25	4af00cbba170010194483ee84af4e7a8b803a714
+data/2026-08-23	2026-08-25	6027ef46182ffcdac17c61de295298a22d5dd8c5
+data/2026-08-24	2026-08-25	1820c3fa5c6dbdead2ae6da1921670411b5a18b1
+data/2026-08-24-r1	2026-08-25	6e40061d068279e3ea57bd1785e3dccf0078e1a3
+data/2026-08-24-r2	2026-08-25	8314d9cd26c3f64b32bfb09e076f7df14b7fb775
+data/2026-08-24-r3	2026-08-25	12a6006375dcffa53d1a98f193c6623a3770e476
+data/2026-08-29	2026-08-29	cc811b8430cec2eaba7508daacc4d6ba0126e146
+data/2026-08-29-r1	2026-08-29	2ccb79ca8bab75edaf661cf644b071ddd7790398
+data/2026-08-29-r2	2026-08-30	50fdb741e2b13fcad488d76695881177aa6e7c21
+data/2026-08-29-r3	2026-08-31	b44899aefdb1fd74c364e0bfadea0c8c09fcae8d
