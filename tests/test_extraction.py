@@ -4066,3 +4066,35 @@ def test_releases_from_september_carry_an_explicit_revision_number():
     assert not late, (
         f"these tags are missing an explicit revision: {sorted(late)}. "
         "The first release of a day is `-r0`.")
+
+
+@pytest.mark.skipif(not (ROOT / "data/build/figures/latest").exists(),
+                    reason="no build in this checkout")
+def test_every_committed_figure_came_from_the_release_directory():
+    """`figures/` is the captioned subset of the current release, and nothing
+    else. That sentence is only true if every committed PNG is byte-identical
+    to the one in `data/build/figures/<release>/` it was copied from.
+
+    It went untrue once, quietly. `make compare` drew its two comparison
+    figures straight into `data/build/compare/` and copied them to the
+    committed directory from there, so they never passed through the release
+    directory at all — which made `latest/` not a superset of what shipped, and
+    made "which release is this figure from" unanswerable for three of the
+    sixteen. Both targets now draw into the release directory and copy out of
+    it, and this is the check that keeps it that way.
+    """
+    latest = ROOT / "data/build/figures/latest"
+    missing, differ = [], []
+    for png in sorted(FIGURE_DIR.glob("*.png")):
+        built = latest / png.name
+        if not built.exists():
+            missing.append(png.name)
+        elif built.read_bytes() != png.read_bytes():
+            differ.append(png.name)
+    assert not missing, (
+        f"committed figures with no counterpart in {latest.name}/: {missing}. "
+        "Every figure must be drawn into the release directory and copied "
+        "from there, so the release it belongs to is answerable.")
+    assert not differ, (
+        f"committed figures that differ from the current build: {differ}. "
+        "Run `make figures && make compare`.")

@@ -275,8 +275,8 @@ compare:
 		--geojson data/raw/health_zones.geojson \
 		--inrb $(INRB_DIR) --scan $(SCAN) \
 		--out-dir data/build/compare \
-		--figure data/build/compare/comparison.png \
-		--series-figure data/build/compare/comparison_series.png
+		--figure $(FIGDIR)/comparison.png \
+		--series-figure $(FIGDIR)/comparison_series.png
 	# also writes: data/build/compare/inrb_disagreements.csv
 	#              data/build/compare/scan_comparison.csv
 	#              data/build/compare/banner_comparison.csv
@@ -288,15 +288,16 @@ compare:
 	# what the comparison shows, and belongs in the commit that caused it.
 	# These three carry captions in figures/README.md like the rest,
 	# and `make test` fails if one of them stops having a section there.
-	# SLIDE FIGURE, 16:9, built HERE rather than in `figures` because it reads
+	# SLIDE FIGURE, 16:9, drawn HERE rather than in `figures` because it reads
 	# this target's outputs: three lineages against each other, and what each
-	# one covers.
+	# one covers. Like every other figure it lands in $(FIGDIR) first and is
+	# copied to figures/ from there, so the release directory is a strict
+	# superset of what is committed -- which `make test` checks.
 	uv run python scripts/plot_figures.py --figure validation \
 		--out $(FIGDIR)/validation.png
 	mkdir -p figures
 	cp $(FIGDIR)/validation.png figures/
-	cp data/build/compare/comparison.png \
-	   data/build/compare/comparison_series.png figures/
+	cp $(FIGDIR)/comparison.png $(FIGDIR)/comparison_series.png figures/
 
 ## onset -- OFFLINE. The symptom-onset reporting triangle, read out of the
 ##          sitrep figures' pixels. The chart is an embedded raster with no
