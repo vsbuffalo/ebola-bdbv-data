@@ -4312,7 +4312,18 @@ def draw_zone_spread(inputs: dict[str, Path], out: Path) -> None:
     axes = axes.ravel()
     top = max(max(d.values(), default=0) for d in cum.values())
     norm = mcolors.LogNorm(vmin=1, vmax=max(top, 10))
-    cmap = plt.get_cmap("Blues")
+    # THE RAMP DOES NOT START AT WHITE. `Blues` bottoms out near #F7FBFF, which
+    # against any grey light enough to read as "not part of the outbreak" is
+    # indistinguishable -- a zone with one case looked exactly like a zone with
+    # none, which is the single most important distinction on the figure. The
+    # ramp is truncated to its upper 72% so the palest CASE is unambiguously
+    # blue, and the no-case grey is darkened to sit clearly apart from it. The
+    # two are then separated by hue as well as by lightness, which is what
+    # survives being printed, projected, or seen by a colour-blind reader.
+    cmap = mcolors.LinearSegmentedColormap.from_list(
+        "cases", [plt.get_cmap("Blues")(0.28 + 0.72 * i / 255)
+                  for i in range(256)])
+    NONE = "#D9D9D9"
     NEW = "#D55E00"
 
     xs = [c for f in geo["features"] for pth in _geom_paths(f["geometry"])
@@ -4327,7 +4338,7 @@ def draw_zone_spread(inputs: dict[str, Path], out: Path) -> None:
         for f in geo["features"]:
             k = BS_canonical(f["properties"]["nom"])
             n = counts.get(k, 0)
-            face = cmap(norm(n)) if n > 0 else "#F0F0F0"
+            face = cmap(norm(n)) if n > 0 else NONE
             edge, lw = (NEW, 1.0) if k in new else ("white", 0.35)
             for pth in _geom_paths(f["geometry"]):
                 ax.add_patch(PathPatch(pth, facecolor=face, edgecolor=edge,
@@ -4346,7 +4357,7 @@ def draw_zone_spread(inputs: dict[str, Path], out: Path) -> None:
     cb = fig.colorbar(sm, ax=axes.tolist(), fraction=0.02, pad=0.01)
     cb.set_label("confirmed cases, cumulative (log scale)", fontsize=8.5)
     cb.ax.tick_params(labelsize=8)
-    fig.legend(handles=[Patch(facecolor="#F0F0F0", edgecolor="white",
+    fig.legend(handles=[Patch(facecolor=NONE, edgecolor="white",
                               label="no confirmed case"),
                         Patch(facecolor="white", edgecolor=NEW, linewidth=1.0,
                               label="first case reported this fortnight")],
