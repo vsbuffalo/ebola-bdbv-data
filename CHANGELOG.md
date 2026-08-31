@@ -312,6 +312,20 @@ province-day in the whole archive was over capacity and it read as an outlier;
 the province now ends the archive saturated. If you use the care census as a
 capacity-bounded quantity, that bound is now being hit.
 
+> **Correction, 2026-08-31.** "Exactly one province-day in the whole archive
+> was over capacity" is wrong, and it is wrong because of a defect here rather
+> than a change in the source. The reports put Nord-Kivu over capacity on at
+> least seven province-days before this release — 126.2%, 123.4%, 123.1%,
+> 128.4% and 128.4% on 16–20 July, **143.3%** on 30 July, 128.4% on 1 August —
+> every one worse than the late-August figures above. `care_prose.csv`
+> captured `printed_occupancy_pct` on **0 of 20** Nord-Kivu report days
+> between 13 July and 12 August, and `beds` on 1 of 20, even where the report
+> prints the rate in words (sitrep 077: «202 malades sont en isolement … pour
+> un taux d'occupation de 143,3 %»). Late-August saturation is a return to a
+> summer level, not a first. Two analyses on 31 August were framed around the
+> false premise before it was caught, so if you read this entry as evidence
+> that overcrowding was new, it is not.
+
 The series extends to 2026-08-28. `n_days` 98 to 102.
 
 ---
