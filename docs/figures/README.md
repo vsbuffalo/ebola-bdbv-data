@@ -155,9 +155,8 @@ modelling side most needs.
 
 The same split as `ascertainment.png`, one row per province, because the
 national share is not one quantity. It is a weighted average over provinces
-that run from about half to about two-thirds, over weights that move as the
-outbreak shifts between them: Ituri 59%, Nord-Kivu 68%, Haut-Uélé 51%, against
-a national 61%.
+that run 51% to 68%, over weights that move as the outbreak shifts between
+them: Ituri 59%, Nord-Kivu 68%, Haut-Uélé 51%, against a national 61%.
 
 - **Why that matters for a model.** A single national ascertainment
   probability is fitting that average. When the outbreak's centre of mass moves

@@ -4192,10 +4192,15 @@ def draw_ascertainment_provinces(inputs: dict[str, Path], out: Path) -> None:
         loc="upper left", fontsize=7.5, frameon=False, ncols=3,
         bbox_to_anchor=(0, 1.30))
 
-    spread = max(r["pooled"] for r in rows) - min(r["pooled"] for r in rows)
+    # The range is stated from the ROUNDED shares shown beside it, not from
+    # the underlying floats. Haut-Uélé is 50.7% and Nord-Kivu 68.3%, so a
+    # spread computed before rounding prints "18% apart" next to a 51% and a
+    # 68% that differ by 17 -- a reader who checks the arithmetic finds it
+    # wrong, and is right.
+    shares = sorted(round(100 * r["pooled"]) for r in rows)
     _header(fig, "Where confirmed deaths were found, by province",
-            f"The national share is an average over provinces "
-            f"{spread:.0%} apart · "
+            f"The national share is an average over provinces running "
+            f"{shares[0]}% to {shares[-1]}% · "
             + " · ".join(f"{r['name']} {r['pooled']:.0%}" for r in rows)
             + f" · national {nat_pooled:.0%}")
     fig.savefig(out, dpi=200)
