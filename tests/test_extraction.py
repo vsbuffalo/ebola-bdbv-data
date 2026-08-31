@@ -3763,3 +3763,120 @@ def test_the_care_census_worked_example_is_still_true():
     reg = FAMILIES.read_text()
     for frag in ("602 to 531", "287 to 304", "315 to 227"):
         assert frag in reg, f"the worked example lost {frag!r} from the register"
+
+
+# --------------------------------------------------------------------------
+# The day's own notification count, read from the banner tile
+# --------------------------------------------------------------------------
+
+import extract_daily_notified as N                                 # noqa: E402
+
+
+def test_a_tile_is_read_by_column_not_by_flattening():
+    """Sitrep 069's deaths tile closes its parenthesis two lines down, and the
+    suspected-case tile occupies those same lines further right. Flattening
+    the page splices "318 Ituri 188 · N-Kivu 119" into the deaths tile, whose
+    breakdown then cannot sum to 62 and whose licence would refuse a page that
+    is in fact perfectly well formed.
+    """
+    page = (
+        "          +97 nouveaux cas (Ituri 73 · N-Kivu 18-\n"
+        "          Haut-Uele 6)\n"
+        "                                                        "
+        "+62 décès (Ituri 45 · Nord-Kivu 14 –   318 Ituri 188 · N-Kivu 119\n"
+        "                                                        "
+        "Haut-Uele 3)                           Uélé 7 · Tshopo 4\n")
+    got = {N._quantity(N.TILE.search(t).group(2)): t for t in N.tiles(page)}
+    assert "318" not in got["deaths"], "a neighbouring tile leaked in"
+    assert N.PROVINCE.findall(got["deaths"]) == [
+        ("Ituri", "45"), ("Nord-Kivu", "14"), ("Haut-Uele", "3")]
+
+
+def test_a_province_name_may_wrap_mid_word():
+    """Sitrep 071 breaks the line after "Haut-" and closes "Uele 4)" below."""
+    page = ("     +45 décès (Ituri 35 · Nord-Kivu 6 – Haut-\n"
+            "     Uele 4)\n")
+    tile, = N.tiles(page)
+    assert sum(int(v) for _, v in N.PROVINCE.findall(tile)) == 45
+
+
+def test_a_footnote_marker_may_stand_between_a_province_and_its_count():
+    """Sitrep 073 prints "Nord-Kivu* 8". Dropping the province silently would
+    leave the tile short of its own total rather than refusing."""
+    tile = "+32 décès (Ituri 23 · Nord-Kivu* 8 - Haut-Uele 1)"
+    assert sum(int(v) for _, v in N.PROVINCE.findall(tile)) == 32
+
+
+def test_a_declared_harmonisation_is_followed_past_its_parenthesis():
+    """Sitrep 077 ends the line on "+ 7" and opens the next with
+    "harmonisés". The tile's own parentheses balance before that, so a
+    parenthesis-only continuation rule stops early and loses the one number
+    the source went out of its way to state separately."""
+    page = ("     +24 décès (Ituri 20 · Nord-Kivu 4) + 7\n"
+            "     harmonisés (Haut-Uélé)\n")
+    tile, = N.tiles(page)
+    assert N.HARMONISED.search(tile).group(1) == "7"
+
+
+def test_an_uncorroborated_total_is_refused_rather_than_published():
+    """The licence is the point: a banner number that neither its own
+    breakdown nor the report's 24-hour sentence agrees with is a misread digit
+    away from shipping silently, so it does not ship at all."""
+    assert N.read_prose("au cours des dernières 24 heures, 58 nouveaux cas "
+                        "confirmés, 37 décès confirmés et 19 guérisons") == {
+        "cases": 58, "deaths": 37, "recovered": 19}
+    # the per-province sentences state the same nouns and never sign them, so
+    # they cannot be mistaken for the country's total
+    assert N.read_prose("Ituri : 73 nouveaux cas confirmés et 45 décès") == {}
+
+
+@needs_pdfs
+def test_the_22_july_backlog_is_still_272_cases_and_174_deaths():
+    """The whole reason this stream exists, pinned against both files.
+
+    On 2026-07-22 the national confirmed cumulative moved 369 while the report
+    says 97 were notified that day; its own footnote attributes the rest to
+    integrating the harmonised Ituri and Nord-Kivu provincial databases. A
+    consumer differencing the cumulative reads 369 as one day's incidence.
+    """
+    for stem, moved, notified in (("cases", 369, 97), ("deaths", 236, 62)):
+        d = BS.read_stream(STREAMS / f"{stem}_daily_national.tsv")
+        n = BS.read_stream(STREAMS / f"{stem}_notified_national.tsv")
+        row = d.filter(pl.col("time") == "2026-07-22")
+        assert int(row[f"{stem}_national"][0]) == moved
+        assert int(row["days_covered"][0]) == 1, "not a one-day window"
+        assert int(n.filter(pl.col("time") == "2026-07-22")
+                   [f"{stem}_notified_national"][0]) == notified
+
+
+@needs_pdfs
+def test_the_one_day_the_source_declares_the_split_closes_exactly():
+    """2026-08-02 is the single day the reports print both halves: "+40 décès
+    du jour (...) · +10 par harmonisation". The differenced stream moved 50.
+    That 40 + 10 = 50 is the strongest evidence in the archive that these two
+    readings differ by retrospective attribution and by nothing else -- so if
+    it ever stops holding, one of the two extractions has drifted.
+    """
+    d = BS.read_stream(STREAMS / "deaths_daily_national.tsv")
+    n = BS.read_stream(STREAMS / "deaths_notified_national.tsv")
+    moved = int(d.filter(pl.col("time") == "2026-08-02")["deaths_national"][0])
+    row = n.filter(pl.col("time") == "2026-08-02")
+    stated = int(row["deaths_notified_national"][0])
+    assert "harmonisation_declared=10" in row["flags"][0]
+    assert stated == 40 and moved == 50
+    assert stated + 10 == moved
+
+
+@needs_pdfs
+def test_the_notified_series_spans_only_the_window_the_source_printed_one():
+    """It exists for sitreps 059-083 and nowhere else, which is the same
+    stretch the reports flag as consolidating. The register says so, and a
+    span claimed in prose that the file does not have is the kind of drift
+    these pins exist to catch."""
+    n = BS.read_stream(STREAMS / "cases_notified_national.tsv")
+    assert n["time"].min() == "2026-07-12"
+    assert n["time"].max() == "2026-08-05"
+    scored = n.filter(pl.col("n_report_days") > 0)
+    assert scored.height == 23, "every report day in the window carries one"
+    reg = FAMILIES.read_text()
+    assert "2026-07-12 to 2026-08-05" in reg

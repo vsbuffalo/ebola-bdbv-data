@@ -567,6 +567,23 @@ def stream_identity(stem: str) -> tuple[str, str]:
     return stem, "national"
 
 
+def _with_declared(flags: str, n: int | None) -> str:
+    """`flags` with the source's own harmonisation count appended.
+
+    The reports print it twice, both times for deaths: "+24 décès (...) + 7
+    harmonisés (Haut-Uélé)" on 2026-07-30 and "+40 décès du jour (...) · +10
+    par harmonisation" on 2026-08-02. On the second the arithmetic closes
+    exactly against the differenced stream -- 40 notified plus 10 harmonised
+    is the 50 the cumulative moved -- which is the clearest evidence in the
+    archive that the two readings differ by retrospective attribution and by
+    nothing else.
+    """
+    if n is None:
+        return flags
+    tag = f"harmonisation_declared={int(n)}"
+    return tag if flags in ("-", "", None) else f"{flags};{tag}"
+
+
 def daily_increments(cum: pl.DataFrame, report_dates: pl.Series) -> pl.DataFrame:
     """One row per REPORT DAY: the cumulative's movement since the previous
     report day, and the length of the interval that movement covers.
@@ -1418,6 +1435,7 @@ VALUE_SPAN = {
     "cases": "interval", "deaths": "interval",
     # a printed 24-hour figure, gridded onto calendar days
     "community_deaths": "report_day", "lab": "report_day",
+    "cases_notified": "report_day", "deaths_notified": "report_day",
     "care_admissions": "report_day", "care_exits": "report_day",
     "care_exits_recovered": "report_day", "care_exits_noncase": "report_day",
     "care_exits_absconded": "report_day", "care_exits_deaths": "report_day",
@@ -1515,6 +1533,11 @@ def main() -> None:
     ap.add_argument("--caveat", type=Path, default=None,
                     help="provisional_caveat.csv, so daily rows carry the "
                          "source's own consolidation flags")
+    ap.add_argument("--notified", type=Path, default=None,
+                    help="daily_notified.csv: the count the banner states "
+                         "for the report day itself, so the day's own "
+                         "notifications can be told from the cumulative's "
+                         "movement on the days the two differ")
     ap.add_argument("--exceptions", type=Path,
                     default=ROOT / "registers/reconciliation_exceptions.tsv",
                     help="the exception register, for the stale-distribution "
@@ -1547,6 +1570,8 @@ def main() -> None:
               if args.banner and args.banner.exists() else None)
     care = (pl.read_csv(args.care, infer_schema_length=None)
             if args.care and args.care.exists() else None)
+    notified = (pl.read_csv(args.notified, infer_schema_length=None)
+                if args.notified and args.notified.exists() else None)
 
     # THE REPORT-DAY CALENDAR: every date the archive holds a report for, which
     # is the denominator the coverage columns are counted against. Taken from
@@ -2026,6 +2051,105 @@ def main() -> None:
             emit_daily(f"{stem}_daily_national", f"{stem}_national", cum,
                        printed["date"], "national")
 
+    # ------------------------------------------------------------------
+    # The day's own notification count, published beside the cumulative's
+    # movement rather than inside it.
+    #
+    # Why a separate file and not a column. `cases_daily_national` is
+    # differenced from a cumulative, so its value spans the *interval* since
+    # the previous row; this figure is the count the banner states for the
+    # report day itself, so its value spans *one report day*. They are the same events
+    # measured two ways, and on the days they disagree they disagree by a lot
+    # -- but a file mixing an `interval` column with a `report_day` column has
+    # no single answer to "what does one row cover", which is the one question
+    # `VALUE_SPAN` exists to answer. Two families, two files, two spans.
+    #
+    # The disagreement is the point. On 2026-07-22 the national confirmed
+    # cumulative moved 369 while the banner says 97 were notified; the report's
+    # footnote attributes the rest to integrating the harmonised Ituri and
+    # Nord-Kivu provincial databases. A consumer with only the differenced
+    # stream reads 369 as one day's incidence. The reconciliation below names
+    # every day the two readings part company, so the disagreement travels in
+    # `meta.json` rather than having to be rediscovered.
+    if notified is not None and not notified.is_empty():
+        nd = notified.with_columns(pl.col("date").str.to_date())
+        for stem in ("cases", "deaths"):
+            q = nd.filter(pl.col("quantity") == stem).sort("date")
+            if q.is_empty():
+                continue
+            name, obs = f"{stem}_notified_national", f"{stem}_notified_national"
+            g = on_calendar_day_grid(
+                q.select("date", pl.col("notified").alias(obs),
+                         "harmonised_declared"),
+                report_days, time_col="date")
+            # The harmonisation count the source prints beside the day's own
+            # is a statement ABOUT the row, not a second observation on it, so
+            # it travels in `flags` with the report's other self-descriptions.
+            # As a column it would be empty on all but two scored rows, which
+            # is exactly the shape the empty-cell gate exists to reject: an
+            # observation column that is blank on a row marked scored cannot
+            # be told from a hole the source left.
+            declared = dict(zip(
+                g["date"].dt.to_string("%Y-%m-%d").to_list(),
+                g["harmonised_declared"].to_list()))
+            g = g.with_columns(
+                daily_flags(g["date"], caveat, exceptions, "national"))
+            g = g.with_columns(
+                pl.struct("date", "flags").map_elements(
+                    lambda r: _with_declared(
+                        r["flags"], declared.get(str(r["date"]))),
+                    return_dtype=pl.Utf8).alias("flags"))
+            write_stream(
+                g.select(pl.col("date").dt.to_string("%Y-%m-%d").alias("time"),
+                         obs, "days_covered",
+                         "n_report_days", "n_report_days_silent", "flags"),
+                args.out_dir / f"{name}.tsv", DAILY)
+
+            # Against the differenced stream, on the report days where both
+            # exist and the differenced row covers exactly one day. A row
+            # covering more than one day is excluded rather than counted as a
+            # disagreement: 2026-07-30 follows two days nobody published on,
+            # so its movement holds three days of notifications against a
+            # banner figure that covers the last of them, and calling that a
+            # backlog would invent one.
+            diff = read_stream(args.out_dir / f"{stem}_daily_national.tsv")
+            both = (diff.select(pl.col("time"),
+                                pl.col(f"{stem}_national").cast(pl.Int64)
+                                .alias("moved"),
+                                pl.col("days_covered").cast(pl.Int64))
+                    .join(g.select(pl.col("date").dt.to_string("%Y-%m-%d")
+                                   .alias("time"),
+                                   pl.col(obs).alias("stated"),
+                                   "harmonised_declared"),
+                          on="time", how="inner")
+                    .filter(pl.col("moved").is_not_null()
+                            & pl.col("stated").is_not_null()))
+            one_day = both.filter(pl.col("days_covered") == 1)
+            apart = one_day.filter(pl.col("moved") != pl.col("stated"))
+            recon[name] = {
+                "kind": "notified",
+                "n_obs": int(g["n_report_days"].sum()),
+                "n_rows": g.height,
+                "first_date": str(g["date"][0]), "last_date": str(g["date"][-1]),
+                "notified_total": int(q["notified"].sum()),
+                "harmonisation_declared_by_source": {
+                    str(r["date"]): int(r["harmonised_declared"])
+                    for r in q.filter(
+                        pl.col("harmonised_declared").is_not_null())
+                    .iter_rows(named=True)},
+                "vs_cumulative": {
+                    "n_days_compared": one_day.height,
+                    "n_days_agreeing": one_day.height - apart.height,
+                    "n_days_excluded_multi_day": both.height - one_day.height,
+                    "days_apart": [
+                        {"date": r["time"], "cumulative_moved": r["moved"],
+                         "source_says_notified": r["stated"],
+                         "difference": r["moved"] - r["stated"],
+                         "source_declared_harmonisation":
+                             r["harmonised_declared"]}
+                        for r in apart.sort("time").iter_rows(named=True)]},
+            }
+
     # The daily ascertainment split: these columns are ALREADY the day's own
     # 24-hour flows as the source prints them, so a row covers ONE day and
     # `days_covered` says 1. The report days on which no page classified a
@@ -2502,6 +2626,16 @@ def main() -> None:
             print(f"  {name:<26} {r['n_obs']:>3} obs   {r['first_value']} "
                   f"({r['first_date']}) -> {r['last_value']} ({r['last_date']})"
                   f"   [stock, no accumulation window]")
+            continue
+        if r.get("kind") == "notified":
+            v = r["vs_cumulative"]
+            apart = ", ".join(f"{d['date']} ({d['cumulative_moved']} moved "
+                              f"vs {d['source_says_notified']} notified)"
+                              for d in v["days_apart"]) or "none"
+            print(f"  {name:<26} {r['n_obs']:>3} obs   notified "
+                  f"{r['notified_total']:>5}   vs cumulative: "
+                  f"{v['n_days_agreeing']}/{v['n_days_compared']} equal, "
+                  f"apart on {apart}")
             continue
         if "tests" in r:                 # a testing stream
             pv = r.get("positives_vs_new_cases")

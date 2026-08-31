@@ -16,6 +16,122 @@ carries the rest.
 
 ---
 
+## `data/2026-08-29-r2` — 2026-08-30 — the day's own notification count, beside the cumulative's movement
+
+**Not breaking. Two files added**, no file removed or renamed, no column
+changed on any existing stream. A consumer that ignores the new files reads
+exactly what it read before.
+
+### The defect in the source this addresses
+
+The national confirmed cumulative is published every report day, and the
+obvious daily incidence is its first difference. That reading is right on
+almost every day of the archive and badly wrong on one: **on 2026-07-22 the
+cumulative moved 369 cases and 236 deaths, while the report says 97 cases and
+62 deaths were notified in the preceding 24 hours.** Its own footnote says
+why — "Harmonisation de données avec les provinces de l'Ituri et du Nord-Kivu
+à la date du 22 juillet 2026 … les augmentations importantes observées dans
+les cumuls résultent principalement de l'intégration des bases provinciales
+harmonisées et ne reflètent pas uniquement les nouvelles notifications des
+dernières 24 heures."
+
+So roughly 272 cases and 174 deaths were notified before 22 July and added to
+the national books that day. Anyone differencing the cumulative — following
+this contract's own stated invariant, that a row's value covers the interval
+since the previous row — fits them as one day's incidence.
+
+The `consolidating` flag shipped in `data/2026-08-29-r1` marks the whole
+24-day window 2026-07-13 to 08-05 uniformly. It says the source was
+reconciling; it cannot say which row carries the backlog.
+
+### What is new
+
+`cases_notified_national.tsv` and `deaths_notified_national.tsv` — the count
+the front-page banner states **for the report day itself**, one row per
+calendar day, `NA` on days no report was published.
+
+These are the same events as `cases_daily_national` and
+`deaths_daily_national` measured a different way, and the two must never be
+fitted together. The differenced family has `value_span` `interval`; these
+have `report_day`. That difference in span is why they are separate files
+rather than extra columns.
+
+`meta.json` gains `reconciliation.{cases,deaths}_notified_national`, holding
+`vs_cumulative`: every report day on which the two readings part company,
+with the difference.
+
+### What the two readings say
+
+Over the 22 single-day report days where both exist, **16 agree exactly.**
+The six that do not:
+
+| date | cases moved | notified | | deaths moved | notified |
+|---|---|---|---|---|---|
+| 2026-07-12 | 37 | 31 | | 16 | 10 |
+| 2026-07-13 | 48 | 54 | | 36 | 28 |
+| 2026-07-16 | 57 | 56 | | — | — |
+| 2026-07-18 | 77 | 83 | | 37 | 40 |
+| **2026-07-22** | **369** | **97** | | **236** | **62** |
+| 2026-08-02 | 54 | 58 | | 50 | 40 |
+| 2026-08-04 | — | — | | 50 | 52 |
+
+Every one but 22 July differs by 10 or less, and each falls on a day the
+source footnotes a reclassification between zones or provinces — the
+Nia-Nia/Wamba transfer on 12–13 July, the Haut-Uélé/Nia-Nia harmonisation on
+18 July, the Katwa and Butembo retrospective attachments on 2 August.
+
+**On 2026-08-02 the source prints both halves and they close exactly**: "+40
+décès du jour (Ituri 23 · N-Kivu 14 · H-Uélé 3) · +10 par harmonisation", and
+the cumulative moved 50. That is the clearest evidence in the archive that
+the two series differ by retrospective attribution and by nothing else. Where
+the source states such a count it travels in `flags` as
+`harmonisation_declared=<n>`, on 2026-07-30 (7 deaths) and 2026-08-02 (10).
+
+### What a consumer should do
+
+If you fit the differenced daily national series, **either drop 2026-07-22 or
+score it against the notified count instead.** Nothing else in the archive
+needs changing on this account.
+
+Two limits, stated rather than implied:
+
+**The series exists only for 2026-07-12 to 2026-08-05.** The banner prints a
+daily figure in sitreps 059–083 and nowhere else — which is the same stretch
+the reports flag as consolidating, and that is not a coincidence: the day's
+own count is printed exactly when the cumulative stopped being safe to
+difference. Outside those dates this check cannot be run.
+
+**The source never dates the backlog.** It names the mechanism and the two
+provinces, not a period. The epidemic curve by symptom onset (Figure 4, the
+DHIS2 line list) did not absorb those cases on 22 July either — it gained 22
+cases across that vintage transition, against 192 and 248 on the transitions
+either side —
+so the published record places them in no interval at all. `days_covered`
+therefore stays 1 on that row: widening it would assert a window the source
+does not give.
+
+Also not a backlog, and left alone: **2026-07-30 carries 245 cases over
+`days_covered` 3** because no report was published on 28 or 29 July. The
+banner says 73 were notified in the last 24 hours, leaving 172 for the two
+unpublished days — about 86 a day, inside the surrounding range. The
+comparison excludes multi-day rows for this reason.
+
+### One more thing found while reading these banners
+
+**Sitreps 079 and 080 print a stale banner heading.** Both say "Indicateurs
+clés — cumul au 31 juillet 2026", the heading sitrep 078 carried, while their
+own `Date de rapportage` reads 1 and 2 August. The figures beneath are
+current — cumulative deaths move 1,621 → 1,657 → 1,707 across the three — so
+this is a heading that was not updated, not stale data. These are the only two
+reports in the archive where the two disagree.
+
+Nothing in this repository is affected: every series is dated from `Date de
+rapportage`, never from the banner heading. It is recorded because a reader
+dating the banner figures by the heading above them would collapse three
+reports onto 31 July and lose two days.
+
+---
+
 ## `data/2026-08-29-r1` — 2026-08-29 — sitreps 103–106, and two extraction defects they exposed
 
 **Not breaking. Values change** — four reports of new data, and two earlier

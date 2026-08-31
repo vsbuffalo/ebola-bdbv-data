@@ -96,6 +96,13 @@ build:
 	uv run python scripts/extract_banner.py \
 		--pdfs data/raw/sitrep_pdfs --quiet \
 		--out data/build/series/banner.csv
+	# The count the banner states for the report day itself, which exists
+	# only for sitreps 059-083 -- the stretch the source was reconciling
+	# over, and the only stretch in which differencing its cumulative is
+	# not a safe reading of one day's incidence.
+	uv run python scripts/extract_daily_notified.py \
+		--pdfs data/raw/sitrep_pdfs --quiet \
+		--out data/build/series/daily_notified.csv
 	# exit 1 = some reports print no total to check against (a reported gap
 	# in the evidence, not a failure); exit 2 = a total disagrees, stop.
 	uv run python scripts/aggregate_provinces.py \
@@ -112,6 +119,7 @@ build:
 	#   data/build/series/lab_prose_status.csv
 	#   data/build/series/care_prose_status.csv
 	#   data/build/series/banner_status.csv
+	#   data/build/series/daily_notified_status.csv
 	#   data/build/series/province_series_reconciliation.csv
 
 ## streams -- OFFLINE. The weekly observation streams the models fit.
@@ -143,6 +151,7 @@ streams:
 		--lab data/build/series/lab_prose.csv \
 		--caveat data/build/series/provisional_caveat.csv \
 		--banner data/build/series/banner.csv \
+		--notified data/build/series/daily_notified.csv \
 		--care data/build/series/care_prose.csv \
 		--geojson data/raw/health_zones.geojson \
 		--population data/raw/zone_population.csv \
