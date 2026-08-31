@@ -89,9 +89,28 @@ the source states such a count it travels in `flags` as
 
 ### What a consumer should do
 
-If you fit the differenced daily national series, **either drop 2026-07-22 or
-score it against the notified count instead.** Nothing else in the archive
+Fit one series, not both. Keep `cases_daily_national` as you have it and
+**change one value**:
+
+```
+  2026-07-22   369  ->  97      (cases,  from cases_notified_national)
+  2026-07-22   236  ->  62      (deaths, from deaths_notified_national)
+```
+
+The row stays a one-day observation. The 272 cases and 174 deaths then go
+unscored, which is the honest treatment of a batch the source never dates —
+4.6% of the archive's cases and 6.1% of its deaths. Nothing else in the archive
 needs changing on this account.
+
+**Do not try to widen a window by blanking rows to `NA`.** In camdl an `NA` row
+is a hole that still *closes* the incidence bin (the accumulator resets on the
+observation schedule, not on value presence — pomp's `accumvars` convention,
+`docs/camdl-data-spec.md`, "Missing observations"). A row preceded by nine `NA`
+rows is scored against one day of flow, not ten. Deleting a row is what widens
+the following row's window. That is also why `cases_daily_national` has no rows
+at all for 28–29 July, when nobody published: 30 July's 245 is meant to be
+scored over the 3 days its `days_covered` claims, and blanking those two days
+would break it.
 
 Two limits, stated rather than implied:
 
