@@ -4074,6 +4074,134 @@ def draw_positivity_provinces(inputs: dict[str, Path], out: Path) -> None:
     plt.close(fig)
 
 
+#: The three provinces that publish an ascertainment split, in the order the
+#: reports rank them by burden. Fixed, never derived from whichever province
+#: happens to lead in a given build: a panel that changes place between
+#: releases cannot be compared across them, which is the whole point of
+#: drawing it per province.
+ASCERTAINMENT_PROVINCES = (("Ituri", "ituri"),
+                           ("Nord-Kivu", "nord_kivu"),
+                           ("Haut-Uélé", "haut_uele"))
+
+
+def draw_ascertainment_provinces(inputs: dict[str, Path], out: Path) -> None:
+    """The same split as `ascertainment`, one row per province.
+
+    Why it is worth drawing apart. The national community share sits near 61%
+    and is flat, which reads as one stable quantity. It is not: it is a
+    weighted average over provinces that run from about half to about
+    two-thirds, over weights that move as the outbreak shifts between them. A
+    model fitting a single national ascertainment probability is fitting that
+    average, and will attribute a change in WHERE deaths occur to a change in
+    HOW they are found.
+
+    Two columns, one axis each, and deliberately not one panel with two
+    scales. Counts and a share are different measures; drawing the share on a
+    twin axis over the bars is the commonest way to make a chart that cannot
+    be read. Left is the count of classified deaths per report day, stacked
+    into where they were found. Right is the share found in the community, on
+    a common 0-100% scale so the three provinces can be read against each
+    other and against the national line repeated in every row.
+
+    The counts column is what stops the share column being over-read. Haut-Uélé
+    carries 71 classified deaths in total against Ituri's 1,273, so its share
+    swings between 0 and 1 on days when two deaths were classified. The bars
+    say which points are worth believing; the dashed pooled line per row is
+    the province's own average over the whole window, which is.
+    """
+    nat = pl.read_csv(inputs["national"], separator="\t", try_parse_dates=True,
+                      null_values="NA")
+    nat = (nat.drop_nulls(["community_deaths_national", "deaths_split_national"])
+           .filter(pl.col("deaths_split_national") > 0).sort("time"))
+    nat_pooled = (nat["community_deaths_national"].sum()
+                  / nat["deaths_split_national"].sum())
+
+    rows = []
+    for name, slug in ASCERTAINMENT_PROVINCES:
+        d = pl.read_csv(inputs[slug], separator="\t", try_parse_dates=True,
+                        null_values="NA")
+        d = (d.drop_nulls([f"community_deaths_{slug}", f"deaths_split_{slug}"])
+             .filter(pl.col(f"deaths_split_{slug}") > 0).sort("time"))
+        comm = d[f"community_deaths_{slug}"].to_list()
+        tot = d[f"deaths_split_{slug}"].to_list()
+        rows.append({
+            "name": name,
+            "t": [mdates.date2num(x) for x in d["time"].to_list()],
+            "comm": comm, "cte": [a - b for a, b in zip(tot, comm)],
+            "share": [c / s for c, s in zip(comm, tot)],
+            "pooled": sum(comm) / sum(tot), "n": sum(tot)})
+
+    COMM, ETC = "#D55E00", "#0072B2"
+    fig, axes = plt.subplots(len(rows), 2, figsize=(13.333, 7.5),
+                             sharex=True, gridspec_kw={"width_ratios": [1.35, 1]},
+                             layout="constrained")
+    lo = min(min(r["t"]) for r in rows) - 1
+    hi = max(max(r["t"]) for r in rows) + 1
+
+    for i, r in enumerate(rows):
+        ax, sh = axes[i]
+        # A 2px surface gap between stacked segments, so the boundary reads as
+        # a boundary and not as a colour change inside one bar.
+        ax.bar(r["t"], r["comm"], width=0.8, color=COMM, linewidth=0)
+        ax.bar(r["t"], r["cte"], width=0.8, bottom=r["comm"], color=ETC,
+               linewidth=0.9, edgecolor="white")
+        ax.set_ylabel(f"{r['name']}\nclassified deaths/day", fontsize=8.5)
+        ax.tick_params(labelsize=8)
+        ax.grid(axis="y", color="#DDDDDD", linewidth=0.6)
+        ax.set_axisbelow(True)
+        for side in ("top", "right"):
+            ax.spines[side].set_visible(False)
+
+        sh.axhline(nat_pooled, color="#999999", linewidth=1.0, linestyle=(0, (4, 3)))
+        sh.plot(r["t"], r["share"], color=COMM, linewidth=1.4,
+                marker="o", markersize=3.4, markeredgecolor="white",
+                markeredgewidth=0.6)
+        sh.axhline(r["pooled"], color=COMM, linewidth=1.0, linestyle=(0, (2, 2)))
+        sh.set_ylim(0, 1)
+        sh.set_yticks([0, 0.5, 1.0])
+        sh.set_yticklabels(["0%", "50%", "100%"], fontsize=8)
+        sh.set_ylabel("found in community", fontsize=8.5)
+        sh.tick_params(labelsize=8)
+        sh.grid(axis="y", color="#DDDDDD", linewidth=0.6)
+        sh.set_axisbelow(True)
+        for side in ("top", "right"):
+            sh.spines[side].set_visible(False)
+        # A white box behind it: Haut-Uélé's share reaches both 0% and 100%
+        # on a 71-death denominator, so there is no corner of that panel the
+        # line reliably stays out of.
+        sh.text(0.985, 0.06,
+                f"{r['name']} {r['pooled']:.0%} · national {nat_pooled:.0%} "
+                f"· n={r['n']:,}",
+                transform=sh.transAxes, ha="right", va="bottom", fontsize=7.5,
+                color="#444444",
+                bbox={"facecolor": "white", "edgecolor": "none",
+                      "boxstyle": "square,pad=0.25", "alpha": 0.88})
+
+    for ax in axes[-1]:
+        ax.set_xlim(lo, hi)
+        ax.xaxis.set_major_locator(mdates.WeekdayLocator(byweekday=mdates.MO))
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %-d"))
+        ax.tick_params(axis="x", labelsize=8)
+
+    axes[0][0].legend(
+        handles=[Patch(facecolor=COMM, label="died in the community — found by "
+                                             "post-mortem swab"),
+                 Patch(facecolor=ETC, label="died in a treatment centre"),
+                 Line2D([], [], color="#999999", linestyle=(0, (4, 3)),
+                        label=f"national pooled share ({nat_pooled:.0%})")],
+        loc="upper left", fontsize=7.5, frameon=False, ncols=3,
+        bbox_to_anchor=(0, 1.30))
+
+    spread = max(r["pooled"] for r in rows) - min(r["pooled"] for r in rows)
+    _header(fig, "Where confirmed deaths were found, by province",
+            f"The national share is an average over provinces "
+            f"{spread:.0%} apart · "
+            + " · ".join(f"{r['name']} {r['pooled']:.0%}" for r in rows)
+            + f" · national {nat_pooled:.0%}")
+    fig.savefig(out, dpi=200)
+    plt.close(fig)
+
+
 FIGURES = {
     # The declared inputs ARE the dependency set, so the stream files are
     # listed one by one rather than hidden behind a directory glob.
@@ -4087,6 +4215,12 @@ FIGURES = {
     "epi_curve": (draw_epi_curve,
                   {"cases": "data/build/streams/cases_daily_national.tsv",
                    "deaths": "data/build/streams/deaths_daily_national.tsv"}),
+    "ascertainment_provinces": (
+        draw_ascertainment_provinces,
+        {"national": "data/build/streams/community_deaths_daily_national.tsv",
+         "ituri": "data/build/streams/community_deaths_daily_ituri.tsv",
+         "nord_kivu": "data/build/streams/community_deaths_daily_nord_kivu.tsv",
+         "haut_uele": "data/build/streams/community_deaths_daily_haut_uele.tsv"}),
     "ascertainment": (draw_ascertainment,
                       {"split": "data/build/streams/"
                                 "community_deaths_daily_national.tsv",
@@ -4184,13 +4318,32 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--figure", required=True, choices=sorted(FIGURES))
     ap.add_argument("--out", required=True, type=Path)
+    #: The registry names every input under `data/build`, because that is where
+    #: a normal build puts them. Moving the ROOT -- and only the root -- lets
+    #: the same figure be drawn from a past release's build without the
+    #: registry ceasing to be the one place a figure's dependency set is
+    #: declared. Anything that rewrote the paths themselves would fork that.
+    ap.add_argument("--build-dir", type=Path, default=Path("data/build"),
+                    help="where this figure's declared inputs were built; "
+                         "used by `make figures-release` to draw a tagged "
+                         "release from its own build")
     args = ap.parse_args()
 
     draw, inputs = FIGURES[args.figure]
-    paths = {k: Path(v) for k, v in inputs.items()}
+    #: Only build OUTPUTS move. A few figures also declare a committed
+    #: register as an input -- `registers/lab_capacity_events.tsv` -- and
+    #: those are repository files that a past release read in exactly the
+    #: form this checkout holds, so they are read from where they are.
+    def _rebased(v: str) -> Path:
+        q = Path(v)
+        return (args.build_dir / q.relative_to("data/build")
+                if q.is_relative_to("data/build") else q)
+
+    paths = {k: _rebased(v) for k, v in inputs.items()}
     missing = [str(p) for p in paths.values() if not p.exists()]
     if missing:
-        sys.exit(f"inputs not built: {missing}\nRun `make build` first.")
+        sys.exit(f"inputs not built: {missing}\nRun `make build` first "
+                 f"(or `make figures-release TAG=...` for a past release).")
     draw(paths, args.out)
     print(f"  {args.out}")
 

@@ -69,6 +69,7 @@ import polars as pl
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from lib.report_date import FILENAME, report_key
+from lib.archive import held_pdfs, report_skipped  # noqa: E402
 
 PROVINCES = {
     "ituri": "Ituri", "nord kivu": "Nord-Kivu", "sud kivu": "Sud-Kivu",
@@ -347,7 +348,9 @@ def main() -> None:
     args.out.parent.mkdir(parents=True, exist_ok=True)
 
     rows, status = [], []
-    for pdf in sorted(args.pdfs.glob("*.pdf")):
+    pdfs, extra = held_pdfs(args.pdfs)
+    report_skipped(extra)
+    for pdf in pdfs:
         if not FILENAME.search(pdf.stem):
             continue
         num, date = report_key(pdf)

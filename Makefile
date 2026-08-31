@@ -2,7 +2,7 @@
 # by design: `build` and `doc` never touch the network, so a rebuild can never
 # silently change what the source says.
 
-.PHONY: watch-data-channel release-check escape-fraction care-ledger oneoff-testing oneoff-death-split oneoff-death-flow cron-install cron-uninstall check fetch refresh manifest verify build streams compare figures onset external \
+.PHONY: figures-release figures-compare watch-data-channel release-check escape-fraction care-ledger oneoff-testing oneoff-death-split oneoff-death-flow cron-install cron-uninstall check fetch refresh manifest verify build streams compare figures onset external \
 	external-update scan-refresh doc serve test
 
 ## check   -- is the archive current, and does the source still look the same?
@@ -336,6 +336,11 @@ figures:
 	# count of people rather than a gap between two estimates.
 	uv run python scripts/plot_figures.py --figure outcomes \
 		--out data/build/figures/outcomes.png
+	# SLIDE FIGURE, 16:9. The same split per province: the national share is a
+	# weighted average over provinces 18 points apart, so a model fitting one
+	# national ascertainment probability is fitting that average.
+	uv run python scripts/plot_figures.py --figure ascertainment_provinces \
+		--out data/build/figures/ascertainment_provinces.png
 	uv run python scripts/plot_figures.py --figure province_series \
 		--out data/build/figures/province_series.png
 	# THE PROVINCE FLOWS AND THE NATIONAL-ONLY SERIES ARE TWO FIGURES, not
@@ -400,6 +405,7 @@ figures:
 	cp data/build/figures/care_ledger.png docs/figures/
 	cp data/build/figures/release_grid.png docs/figures/
 	cp data/build/figures/ascertainment.png docs/figures/
+	cp data/build/figures/ascertainment_provinces.png docs/figures/
 	cp data/build/figures/outcomes.png docs/figures/
 	cp data/build/figures/epi_curve.png docs/figures/
 	cp data/build/figures/response_timeline.png docs/figures/
@@ -407,6 +413,42 @@ figures:
 	cp data/build/figures/positivity_provinces.png docs/figures/
 	cp data/build/figures/positivity_provinces_annotated.png docs/figures/
 	cp data/build/figures/lab_effort.png docs/figures/
+
+## figures-release -- OFFLINE. Rebuild a past release's figures into
+##            data/build/figures/releases/<tag>/, so two releases can be
+##            looked at side by side.
+##              make figures-release TAG=data/2026-08-22
+##              make figures-release DISTINCT=1     # one set per input set
+##            TODAY's extraction over THAT RELEASE's inputs, recovered from
+##            the manifest its tag pinned. A difference between two directories
+##            is therefore a difference in the reports read, never in the code
+##            that read them -- which is the only comparison that can be
+##            interpreted. What a release published AT THE TIME would need its
+##            code too, and mixing the two makes a moved line unattributable.
+##            Nothing here is committed: a figure set is 3.4 MB and the
+##            manifests make every set reconstructible on demand.
+##            THIRTY PUBLISHED TAGS SHARE NINE MANIFESTS, because most
+##            revisions fix an extraction rather than add a report, so
+##            DISTINCT=1 builds the nine that can differ and writes an index
+##            naming the tags that share each.
+figures-release:
+	uv run python scripts/build_release_figures.py \
+		$(if $(DISTINCT),--distinct,--tag $(TAG))
+
+## figures-compare -- OFFLINE. Which figures differ between two rebuilt
+##            releases, by bytes. Names where to look; it does not say how.
+##              make figures-compare FROM=data/2026-08-22 TO=data/2026-08-29-r1
+figures-compare:
+	@a="data/build/figures/releases/$(subst /,-,$(FROM))"; \
+	 b="data/build/figures/releases/$(subst /,-,$(TO))"; \
+	 test -d "$$a" || { echo "not built: $$a -- run make figures-release TAG=$(FROM)"; exit 2; }; \
+	 test -d "$$b" || { echo "not built: $$b -- run make figures-release TAG=$(TO)"; exit 2; }; \
+	 echo "$(FROM) -> $(TO)"; \
+	 for f in $$(ls "$$a"); do \
+		if [ ! -f "$$b/$$f" ]; then echo "  only in $(FROM): $$f"; \
+		elif cmp -s "$$a/$$f" "$$b/$$f"; then echo "  unchanged  $$f"; \
+		else echo "  CHANGED    $$f"; fi; \
+	 done
 
 ## watch-data-channel -- poll the shared data channel (which lives in the
 ##            modelling repo's tree) and exit as soon as they write, printing

@@ -48,6 +48,7 @@ import polars as pl
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from lib.pdftable import read
 from lib.report_date import FILENAME, report_key
+from lib.archive import held_pdfs, report_skipped  # noqa: E402
 from lib.tablespec import (ALL_SPECS, PROVINCIAL_SUMMARY, Role, SPECS,
                            TableSpec, norm, rows_are_provinces, select)
 
@@ -736,8 +737,9 @@ def main() -> None:
     # Five reports (10, 11, 21, 38, 59) have already needed date overrides for
     # exactly this shape. The skip is now a hard failure: fix the index's date
     # override, do not lose the report.
-    strays = sorted(p.name for p in args.pdfs.glob("*.pdf")
-                    if not FILENAME.search(p.stem))
+    pdfs, extra = held_pdfs(args.pdfs)
+    report_skipped(extra)
+    strays = sorted(p.name for p in pdfs if not FILENAME.search(p.stem))
     if strays:
         sys.exit("archive holds PDFs the extraction cannot recognise "
                  "(no `sitrep_NNN_YYYY-MM-DD` name):\n  "
@@ -747,7 +749,7 @@ def main() -> None:
                    "be silently absent from every series.")
 
     out, status, letality = [], [], []
-    for pdf in sorted(args.pdfs.glob("*.pdf")):
+    for pdf in pdfs:
         if not FILENAME.search(pdf.stem):
             continue
         # THE DATA DATE COMES FROM THE PAGE, not the filename: some uploads are

@@ -69,6 +69,7 @@ import polars as pl
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from lib.report_date import FILENAME, report_key
+from lib.archive import held_pdfs, report_skipped  # noqa: E402
 
 # Any sentence cautioning the reader. Deliberately WIDE: everything it catches
 # is either classified below or reported as unclassified, and a wide net with a
@@ -162,7 +163,9 @@ def main() -> None:
     args = ap.parse_args()
 
     rows, unclassified = [], []
-    for pdf in sorted(args.pdfs.glob("*.pdf")):
+    pdfs, extra = held_pdfs(args.pdfs)
+    report_skipped(extra)
+    for pdf in pdfs:
         if not FILENAME.search(pdf.stem):
             continue
         text = subprocess.run(["pdftotext", "-q", "-layout", str(pdf), "-"],

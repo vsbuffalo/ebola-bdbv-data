@@ -151,6 +151,33 @@ modelling side most needs.
   split ever appears. The second of those is our own decision about a page, not
   a failure of the source, and it is labelled as ours.
 
+## `ascertainment_provinces.png`
+
+The same split as `ascertainment.png`, one row per province, because the
+national share is not one quantity. It is a weighted average over provinces
+that run from about half to about two-thirds, over weights that move as the
+outbreak shifts between them: Ituri 59%, Nord-Kivu 68%, Haut-Uélé 51%, against
+a national 61%.
+
+- **Why that matters for a model.** A single national ascertainment
+  probability is fitting that average. When the outbreak's centre of mass moves
+  between provinces, the national share moves with it, and a model with no
+  province structure will read that as a change in how deaths are *found*
+  rather than in *where they happen*.
+- **Counts and share are two columns, not one panel with two scales.** They
+  are different measures, and drawing the share on a second y-axis over the
+  bars is the standard way to make a chart nobody can read.
+- **The counts column is what stops the share column being over-read.**
+  Haut-Uélé carries 71 classified deaths in total against Ituri's 1,273, so its
+  share swings between 0% and 100% on days when two deaths were classified. The
+  bars say which points carry weight; the dotted line per row is that
+  province's pooled share over the whole window, which is the number to quote.
+- **The province order is fixed in code, not derived from the data.** A panel
+  that changed place between releases could not be compared across them.
+- **Only three provinces appear**, because only three publish the split. Sud-Kivu
+  and Tshopo report confirmed deaths without ever classifying where they were
+  found, and Bas-Uélé is too recently affected to have any.
+
 ## `care_ledger.png`
 
 The treatment-centre ledger the reports state in **words**: whether it can be

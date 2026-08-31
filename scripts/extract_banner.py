@@ -120,6 +120,7 @@ import polars as pl
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from lib.pdftable import read as read_tables
 from lib.report_date import FILENAME, report_key
+from lib.archive import held_pdfs, report_skipped  # noqa: E402
 from extract_zone_table import to_int
 
 #: The tiles we read, by every spelling the series prints. `GUÉRIS` must not
@@ -603,7 +604,9 @@ def main() -> None:
     args.out.parent.mkdir(parents=True, exist_ok=True)
 
     rows, status = [], []
-    for pdf in sorted(args.pdfs.glob("*.pdf")):
+    pdfs, extra = held_pdfs(args.pdfs)
+    report_skipped(extra)
+    for pdf in pdfs:
         if not FILENAME.search(pdf.stem):
             continue
         num, date = report_key(pdf)
