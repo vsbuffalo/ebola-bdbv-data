@@ -4328,7 +4328,7 @@ def draw_zone_spread(inputs: dict[str, Path], out: Path) -> None:
             k = BS_canonical(f["properties"]["nom"])
             n = counts.get(k, 0)
             face = cmap(norm(n)) if n > 0 else "#F0F0F0"
-            edge, lw = (NEW, 1.5) if k in new else ("white", 0.35)
+            edge, lw = (NEW, 1.0) if k in new else ("white", 0.35)
             for pth in _geom_paths(f["geometry"]):
                 ax.add_patch(PathPatch(pth, facecolor=face, edgecolor=edge,
                                        linewidth=lw, zorder=2 if k in new else 1))
@@ -4348,7 +4348,7 @@ def draw_zone_spread(inputs: dict[str, Path], out: Path) -> None:
     cb.ax.tick_params(labelsize=8)
     fig.legend(handles=[Patch(facecolor="#F0F0F0", edgecolor="white",
                               label="no confirmed case"),
-                        Patch(facecolor="white", edgecolor=NEW, linewidth=1.5,
+                        Patch(facecolor="white", edgecolor=NEW, linewidth=1.0,
                               label="first case reported this fortnight")],
                loc="lower left", bbox_to_anchor=(0.01, 0.005), ncols=2,
                fontsize=8, frameon=False)
