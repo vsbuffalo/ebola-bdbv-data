@@ -60,6 +60,7 @@ ARCHIVE = ROOT / "data/raw/sitrep_pdfs"
 #: checkout. Kept short on purpose -- this is a comparison aid, not a mirror of
 #: `make figures`.
 FIGURES = ("epi_curve", "ascertainment", "ascertainment_provinces",
+           "zone_spread",
            "outcomes", "care_ledger",
            "national_detail", "streams_detail", "test_positivity",
            "lab_effort", "positivity_provinces")

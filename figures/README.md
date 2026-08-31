@@ -212,6 +212,39 @@ them: Ituri 59%, Nord-Kivu 68%, Haut-Uélé 51%, against a national 61%.
   and Tshopo report confirmed deaths without ever classifying where they were
   found, and Bas-Uélé is too recently affected to have any.
 
+## `zone_spread.png`
+
+Where the outbreak was at the end of each fortnight, and which health zones
+reported their first confirmed case during it. 60 of the 151 health zones in
+the six affected provinces have now reported one.
+
+- **Two encodings answering two questions.** The fill is the zone's cumulative
+  confirmed cases; the orange outline marks zones reporting their *first* case
+  in that fortnight. The outline exists because the fill cannot show arrival —
+  a zone going from 0 to 3 cases barely changes colour, and that arrival is the
+  most consequential thing on the panel.
+- **The fill is logarithmic.** Bunia ends near 700 cases while half the affected
+  zones never pass ten. On a linear ramp every zone but three would be the same
+  colour.
+- **Unaffected zones are drawn, in grey.** A map of only the affected zones
+  would make the outbreak look as though it covers the region. The unaffected
+  ones are the denominator, and 60 of 151 is the number worth carrying away.
+- **Fortnightly, not weekly.** Fifteen weekly panels at this size are each too
+  small to find a zone in. The quantity is cumulative so no interval is hidden,
+  but the exact week a zone first reported is not readable here — that is in
+  `data/build/series/zone_table.csv`.
+- **The panels do not date an arrival more finely than a fortnight**, and a zone
+  whose first case was retrospectively attributed appears when the report
+  published it, not when the case occurred. The 22 July harmonisation moved
+  roughly 272 cases into the books at once; zones first appearing in the
+  6-19 July and 20 July-2 August panels should be read with that in mind.
+- **Boundaries come from `data/raw/health_zones.geojson`** (151 zones, the six
+  affected provinces), whose per-province zone counts match the denominators
+  the reports themselves print — Ituri 36, Nord-Kivu 34, Sud-Kivu 34, Tshopo
+  23, Haut-Uélé 13, Bas-Uélé 11. 75 of the 76 zone names our extraction has
+  ever seen resolve to a geometry through the same alias registers the streams
+  use; the one that does not, `Bambu-mine`, appears once and carries no cases.
+
 ## `care_ledger.png`
 
 The treatment-centre ledger the reports state in **words**: whether it can be

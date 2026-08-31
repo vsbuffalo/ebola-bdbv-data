@@ -568,6 +568,26 @@ def harvest(seg: str) -> dict:
         m = PCT.search(p[beds[2]:beds[2] + PCT_WINDOW]) or OCC_NAMED.search(p)
         if m:
             r["printed_occupancy_pct"] = float(m.group(1).replace(",", "."))
+    else:
+        # The rate does not need the bed count. Some passages state occupancy
+        # in words and print no capacity at all, and reading the rate only as
+        # a companion to a bed count dropped them: four province-days, among
+        # them the whole-response figure on 13-15 July.
+        #
+        # This does NOT recover the days the reports put Nord-Kivu over
+        # capacity in July -- 123% to 143% between 16 July and 1 August. Those
+        # fail earlier, in passage segmentation: sitrep 077 yields no
+        # Nord-Kivu care row at all, so there is no passage for this to read.
+        # That is a separate defect and it is still open.
+        #
+        # Only the NAMED rate is taken here, never a bare percentage: with no
+        # bed count to anchor a window, the passage's other percentages -- the
+        # share of patients fed, per-centre saturation -- are equally close and
+        # nothing would tell them apart. `beds` stays null, because the source
+        # did not print one.
+        m = OCC_NAMED.search(p)
+        if m:
+            r["printed_occupancy_pct"] = float(m.group(1).replace(",", "."))
 
     # "179 confirmés sur 496 lits (36,1 %)" states the confirmed census, its
     # beds and its rate in one clause -- three numbers that check each other.

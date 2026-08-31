@@ -84,7 +84,10 @@ matplotlib.use("Agg")
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import polars as pl
+import matplotlib.colors as mcolors
 from matplotlib.lines import Line2D
+from matplotlib.path import Path as MplPath
+from matplotlib.patches import PathPatch
 from matplotlib.patches import Patch
 from matplotlib.ticker import MaxNLocator, MultipleLocator
 
@@ -4207,6 +4210,156 @@ def draw_ascertainment_provinces(inputs: dict[str, Path], out: Path) -> None:
     plt.close(fig)
 
 
+#: The map must resolve a printed zone name to a geometry the same way the
+#: streams resolve it to a series, or a zone silently vanishes from one and not
+#: the other. `build_streams.canonical_zone` and the two alias registers are
+#: that one rule, imported rather than restated.
+_ALIASES_LOADED = False
+
+
+def BS_canonical(name: str) -> str:
+    global _ALIASES_LOADED
+    import build_streams as _BS
+    if not _ALIASES_LOADED:
+        root = Path(__file__).resolve().parents[1]
+        _BS.ALIASES.update(_BS.load_aliases(
+            root / "data/raw/zone_aliases.csv",
+            root / "registers/zone_aliases_local.csv"))
+        _ALIASES_LOADED = True
+    return _BS.canonical_zone(name, "zone")
+
+
+#: Fortnightly, not weekly. Fifteen weekly panels of a map this size are each
+#: too small to find a zone in; eight fortnights hold the same story at a
+#: readable size, and the quantity drawn is a cumulative, so no interval is
+#: hidden by the coarser slicing -- only the exact week a zone first reported.
+#: That week is recoverable from `zone_table.csv`; the map is for the shape of
+#: the spread, not for dating an individual zone.
+SPREAD_BIN = "2w"
+
+
+def _geom_paths(geom: dict):
+    """Matplotlib paths for one GeoJSON geometry, holes included.
+
+    Written out rather than reached for through geopandas: the drawing needs
+    polygons and a colour, and geopandas would pull in shapely and pyproj to
+    supply what forty lines of `Path` assembly already does. The provinces here
+    sit within two degrees of the equator, so plotting longitude against
+    latitude with an equal aspect is within a fraction of a percent of an
+    equal-area projection at this scale -- and nothing is measured off this
+    figure, only located.
+    """
+    polys = (geom["coordinates"] if geom["type"] == "MultiPolygon"
+             else [geom["coordinates"]])
+    out = []
+    for rings in polys:
+        verts, codes = [], []
+        for ring in rings:                      # ring 0 is the shell, rest holes
+            verts.extend(ring)
+            codes.extend([MplPath.MOVETO] + [MplPath.LINETO] * (len(ring) - 2)
+                         + [MplPath.CLOSEPOLY])
+        out.append(MplPath(verts, codes))
+    return out
+
+
+def draw_zone_spread(inputs: dict[str, Path], out: Path) -> None:
+    """Where the outbreak was, fortnight by fortnight, and when each health
+    zone first reported a case.
+
+    Two things are drawn and they answer different questions. The FILL is the
+    zone's cumulative confirmed cases at the end of that fortnight, on a
+    logarithmic ramp because Bunia ends near 700 and half the affected zones
+    never pass ten -- on a linear ramp every zone but three is the same colour.
+    The OUTLINE marks zones reporting their first case inside that fortnight,
+    which is the arrival the fill cannot show: a zone that goes from 0 to 3
+    barely changes colour, and it is the most important thing on the panel.
+
+    Zones with no case are drawn, in grey. A map of only the affected zones
+    would make the outbreak look like it covers the region; the unaffected
+    ones are the denominator and the reason 60 of 151 is a number worth
+    knowing.
+    """
+    import json
+    geo = json.loads(inputs["geojson"].read_text())
+    z = pl.read_csv(inputs["zone_table"], infer_schema_length=20000)
+    z = (z.filter(pl.col("level") == "zone")
+         .with_columns(pl.col("cum_cases").cast(pl.String)
+                       .str.replace_all(r"[^0-9]", "").cast(pl.Int64, strict=False),
+                       pl.col("date").str.to_date())
+         .drop_nulls("cum_cases"))
+    z = z.with_columns(pl.col("zone_reported").map_elements(
+        lambda s: BS_canonical(s), return_dtype=pl.Utf8).alias("zk"))
+
+    bins = sorted(z.with_columns(pl.col("date").dt.truncate(SPREAD_BIN)
+                                 .alias("b"))["b"].unique().to_list())
+    # A zone's cumulative at a bin end is its last reading up to that date, not
+    # only a reading on it: the tables do not print every zone every day.
+    cum = {}
+    for b in bins:
+        upto = z.filter(pl.col("date") <= b + dt.timedelta(days=13))
+        last = (upto.sort("date").group_by("zk").agg(pl.col("cum_cases").last()))
+        cum[b] = dict(zip(last["zk"].to_list(), last["cum_cases"].to_list()))
+    first = {}
+    for b in bins:
+        for k, v in cum[b].items():
+            if v > 0 and k not in first:
+                first[k] = b
+
+    ncol = 4
+    nrow = (len(bins) + ncol - 1) // ncol
+    fig, axes = plt.subplots(nrow, ncol, figsize=(13.333, 7.5),
+                             layout="constrained")
+    axes = axes.ravel()
+    top = max(max(d.values(), default=0) for d in cum.values())
+    norm = mcolors.LogNorm(vmin=1, vmax=max(top, 10))
+    cmap = plt.get_cmap("Blues")
+    NEW = "#D55E00"
+
+    xs = [c for f in geo["features"] for pth in _geom_paths(f["geometry"])
+          for c in pth.vertices[:, 0]]
+    ys = [c for f in geo["features"] for pth in _geom_paths(f["geometry"])
+          for c in pth.vertices[:, 1]]
+    lim = (min(xs), max(xs), min(ys), max(ys))
+
+    for i, b in enumerate(bins):
+        ax = axes[i]
+        counts, new = cum[b], [k for k, v in first.items() if v == b]
+        for f in geo["features"]:
+            k = BS_canonical(f["properties"]["nom"])
+            n = counts.get(k, 0)
+            face = cmap(norm(n)) if n > 0 else "#F0F0F0"
+            edge, lw = (NEW, 1.5) if k in new else ("white", 0.35)
+            for pth in _geom_paths(f["geometry"]):
+                ax.add_patch(PathPatch(pth, facecolor=face, edgecolor=edge,
+                                       linewidth=lw, zorder=2 if k in new else 1))
+        ax.set_xlim(lim[0], lim[1]); ax.set_ylim(lim[2], lim[3])
+        ax.set_aspect("equal"); ax.set_axis_off()
+        affected = sum(1 for v in counts.values() if v > 0)
+        end = b + dt.timedelta(days=13)
+        ax.set_title(f"{b:%-d %b} – {end:%-d %b}\n{affected} zones affected"
+                     + (f" · {len(new)} new" if new else " · none new"),
+                     fontsize=8.5, linespacing=1.4)
+    for ax in axes[len(bins):]:
+        ax.set_axis_off()
+
+    sm = plt.cm.ScalarMappable(norm=norm, cmap=cmap)
+    cb = fig.colorbar(sm, ax=axes.tolist(), fraction=0.02, pad=0.01)
+    cb.set_label("confirmed cases, cumulative (log scale)", fontsize=8.5)
+    cb.ax.tick_params(labelsize=8)
+    fig.legend(handles=[Patch(facecolor="#F0F0F0", edgecolor="white",
+                              label="no confirmed case"),
+                        Patch(facecolor="white", edgecolor=NEW, linewidth=1.5,
+                              label="first case reported this fortnight")],
+               loc="lower left", bbox_to_anchor=(0.01, 0.005), ncols=2,
+               fontsize=8, frameon=False)
+    _header(fig, "How the outbreak reached each health zone",
+            f"{len(first)} of {len(geo['features'])} health zones in the six "
+            f"affected provinces have reported a confirmed case, "
+            f"{bins[0]:%-d %B} to {bins[-1] + dt.timedelta(days=13):%-d %B %Y}")
+    fig.savefig(out, dpi=200)
+    plt.close(fig)
+
+
 FIGURES = {
     # The declared inputs ARE the dependency set, so the stream files are
     # listed one by one rather than hidden behind a directory glob.
@@ -4220,6 +4373,9 @@ FIGURES = {
     "epi_curve": (draw_epi_curve,
                   {"cases": "data/build/streams/cases_daily_national.tsv",
                    "deaths": "data/build/streams/deaths_daily_national.tsv"}),
+    "zone_spread": (draw_zone_spread,
+                    {"geojson": "data/raw/health_zones.geojson",
+                     "zone_table": "data/build/series/zone_table.csv"}),
     "ascertainment_provinces": (
         draw_ascertainment_provinces,
         {"national": "data/build/streams/community_deaths_daily_national.tsv",

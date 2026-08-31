@@ -360,6 +360,12 @@ figures:
 	# national ascertainment probability is fitting that average.
 	uv run python scripts/plot_figures.py --figure ascertainment_provinces \
 		--out $(FIGDIR)/ascertainment_provinces.png
+	# SLIDE FIGURE, 16:9. Where the outbreak was, fortnight by fortnight, and
+	# which health zones reported their first case in each. Fill is the zone's
+	# cumulative cases; the outline is the arrival, which the fill cannot show
+	# because a zone going 0 -> 3 barely changes colour.
+	uv run python scripts/plot_figures.py --figure zone_spread \
+		--out $(FIGDIR)/zone_spread.png
 	uv run python scripts/plot_figures.py --figure province_series \
 		--out $(FIGDIR)/province_series.png
 	# THE PROVINCE FLOWS AND THE NATIONAL-ONLY SERIES ARE TWO FIGURES, not
@@ -425,6 +431,7 @@ figures:
 	cp $(FIGDIR)/release_grid.png figures/
 	cp $(FIGDIR)/ascertainment.png figures/
 	cp $(FIGDIR)/ascertainment_provinces.png figures/
+	cp $(FIGDIR)/zone_spread.png figures/
 	cp $(FIGDIR)/outcomes.png figures/
 	cp $(FIGDIR)/epi_curve.png figures/
 	cp $(FIGDIR)/response_timeline.png figures/
