@@ -23,12 +23,19 @@ That only works because every extractor reads the manifest rather than globbing
 the archive directory. Before that changed, a checkout of an old tag read
 whatever was on disk, so no past release could be rebuilt at all.
 
-Where the output goes. `data/build/figures/releases/<tag>/`, which is
-gitignored like the rest of `data/build`. Nothing here is committed: 3.4 MB per
-figure set against a repository that has already published thirty releases is
-not a thing to put in git when the manifests make it reconstructible on demand.
-`docs/figures/` continues to hold the current release's figures and nothing
-else, so every link into it keeps working.
+Where the output goes. `data/build/figures/<tag>/` — the same shape `make
+figures` writes the current build into, so a reconstructed release and the
+build in front of you are peers rather than an archive and a special case.
+Every figure this repository draws sits in a directory named for the data that
+made it.
+
+None of it is committed. A figure set is 2.5 MB and thirty releases have been
+published, so storing them would add roughly the weight of the repository again
+every fortnight, and the manifests make each one reconstructible on demand
+instead. `docs/figures/` still holds the current release's figures flat, which
+is what every link in the README, the changelog and the cross-repo channel
+points at; which release those are is answered by `git log` on that directory,
+because `release-check` requires them to match the committed state exactly.
 
 Reports that a release could not have read are skipped and counted, not
 silently dropped — see `lib.archive`.
@@ -135,7 +142,7 @@ def build_distinct(args) -> int:
                                    if len(tags) > 1 else ""))
         build_one(one)
         index.append((first, tags))
-    idx = ROOT / "data/build/figures/releases/INDEX.md"
+    idx = ROOT / "data/build/figures/INDEX.md"
     idx.parent.mkdir(parents=True, exist_ok=True)
     idx.write_text(
         "# Figure sets by input set\n\n"
@@ -182,7 +189,7 @@ def main() -> int:
         sys.exit(f"no such release tag: {tag}")
 
     work = ROOT / "data/build/releases" / slug(tag)
-    out = ROOT / "data/build/figures/releases" / slug(tag)
+    out = ROOT / "data/build/figures" / slug(tag)
     out.mkdir(parents=True, exist_ok=True)
 
     return build_one(args)
@@ -191,7 +198,7 @@ def main() -> int:
 def build_one(args) -> int:
     tag = args.tag
     work = ROOT / "data/build/releases" / slug(tag)
-    out = ROOT / "data/build/figures/releases" / slug(tag)
+    out = ROOT / "data/build/figures" / slug(tag)
     out.mkdir(parents=True, exist_ok=True)
     n = stage_archive(tag, work / "raw")
     pdfs = str(work / "raw/sitrep_pdfs")

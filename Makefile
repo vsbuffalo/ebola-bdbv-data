@@ -5,6 +5,22 @@
 .PHONY: figures-release figures-compare watch-data-channel release-check escape-fraction care-ledger oneoff-testing oneoff-death-split oneoff-death-flow cron-install cron-uninstall check fetch refresh manifest verify build streams compare figures onset external \
 	external-update scan-refresh doc serve test
 
+# WHERE A FIGURE LANDS SAYS WHICH DATA MADE IT. Every figure this repository
+# draws goes into a directory named for the release it was drawn from, so a PNG
+# is never a bare file whose vintage you have to remember. `git describe` names
+# a tagged build by its tag (`data-2026-08-29-r3`) and an untagged one by the
+# tag it descends from plus the commit (`data-2026-08-29-r3-3-g4bae79e`) --
+# which is the honest label for a build between releases, and not a release
+# name pretending to be one.
+#
+# `make figures-release TAG=...` writes into the SAME shape, so a reconstructed
+# release and the current build are peers rather than an archive and a special
+# case. `latest` points at whichever was built last, for anything that wants a
+# stable path.
+RELEASE := $(shell git describe --tags --always 2>/dev/null | tr '/' '-')
+FIGDIR  := data/build/figures/$(RELEASE)
+
+
 ## check   -- is the archive current, and does the source still look the same?
 ##            Exit 0 current, 1 behind, 2 the source moved, 3 unreachable,
 ##            4 current-but-the-source-has-gone-quiet.
@@ -249,6 +265,7 @@ scan-refresh:
 	cp ../epiforecast-repro/raw/insp_sitrep_scanned.csv data/raw/scan/insp_sitrep_scanned.csv
 
 compare:
+	@mkdir -p $(FIGDIR) && ln -sfn $(RELEASE) data/build/figures/latest
 	uv run python scripts/compare_extractions.py \
 		--zone-table data/build/series/zone_table.csv \
 		--summary data/build/series/province_summary.csv \
@@ -275,9 +292,9 @@ compare:
 	# this target's outputs: three lineages against each other, and what each
 	# one covers.
 	uv run python scripts/plot_figures.py --figure validation \
-		--out data/build/figures/validation.png
+		--out $(FIGDIR)/validation.png
 	mkdir -p docs/figures
-	cp data/build/figures/validation.png docs/figures/
+	cp $(FIGDIR)/validation.png docs/figures/
 	cp data/build/compare/comparison.png \
 	   data/build/compare/comparison_series.png docs/figures/
 
@@ -315,57 +332,58 @@ onset:
 
 ## figures -- OFFLINE. The EDA figures, from the built series.
 figures:
+	@mkdir -p $(FIGDIR) && ln -sfn $(RELEASE) data/build/figures/latest
 	uv run python scripts/plot_figures.py --figure availability \
-		--out data/build/figures/availability.png
+		--out $(FIGDIR)/availability.png
 	# SLIDE FIGURE, 16:9 at PowerPoint widescreen size (13.333 x 7.5 in).
 	# One cell per released stream x report day, over the format eras and the
 	# days whose own arithmetic does not close.
 	uv run python scripts/plot_figures.py --figure release_grid \
-		--out data/build/figures/release_grid.png
+		--out $(FIGDIR)/release_grid.png
 	# SLIDE FIGURE, 16:9. The outbreak itself -- the opening slide.
 	uv run python scripts/plot_figures.py --figure epi_curve \
-		--out data/build/figures/epi_curve.png
+		--out $(FIGDIR)/epi_curve.png
 	# SLIDE FIGURE, 16:9. The community share of confirmed deaths -- the
 	# quantity the models most need and the reason every page's arithmetic
 	# is checked.
 	uv run python scripts/plot_figures.py --figure ascertainment \
-		--out data/build/figures/ascertainment.png
+		--out $(FIGDIR)/ascertainment.png
 	# SLIDE FIGURE, 16:9. Of everyone ever confirmed, who appears in one of
 	# the published outcome ledgers and who appears in none of them. An
 	# arithmetic residual over four printed counts, so the top band is a
 	# count of people rather than a gap between two estimates.
 	uv run python scripts/plot_figures.py --figure outcomes \
-		--out data/build/figures/outcomes.png
+		--out $(FIGDIR)/outcomes.png
 	# SLIDE FIGURE, 16:9. The same split per province: the national share is a
 	# weighted average over provinces 18 points apart, so a model fitting one
 	# national ascertainment probability is fitting that average.
 	uv run python scripts/plot_figures.py --figure ascertainment_provinces \
-		--out data/build/figures/ascertainment_provinces.png
+		--out $(FIGDIR)/ascertainment_provinces.png
 	uv run python scripts/plot_figures.py --figure province_series \
-		--out data/build/figures/province_series.png
+		--out $(FIGDIR)/province_series.png
 	# THE PROVINCE FLOWS AND THE NATIONAL-ONLY SERIES ARE TWO FIGURES, not
 	# one. They were one, at 11 x 25.6 inches, which is not a readable aspect
 	# for either half; they still share a calendar so the two can be read
 	# against each other.
 	uv run python scripts/plot_figures.py --figure streams_detail \
-		--out data/build/figures/streams_detail.png
+		--out $(FIGDIR)/streams_detail.png
 	uv run python scripts/plot_figures.py --figure national_detail \
-		--out data/build/figures/national_detail.png
+		--out $(FIGDIR)/national_detail.png
 	# The care ledger the reports state in words: what validates the prose
 	# census against the front-page tile, occupancy against capacity per
 	# province, and the ledger flows with the absconder counts drawn as the
 	# isolated marks they are.
 	uv run python scripts/plot_figures.py --figure care_ledger \
-		--out data/build/figures/care_ledger.png
+		--out $(FIGDIR)/care_ledger.png
 	uv run python scripts/plot_figures.py --figure residuals \
-		--out data/build/figures/residuals.png
+		--out $(FIGDIR)/residuals.png
 	# SLIDE FIGURE, 16:9. Whether a claimed response scale-up can be checked
 	# against the reports at all, and what the epidemic did over the window
 	# it is claimed for. The middle panel is the load-bearing one: it dates
 	# the first appearance of every response quantity we extract, and all but
 	# one of them begin after the window closes.
 	uv run python scripts/plot_figures.py --figure response_timeline \
-		--out data/build/figures/response_timeline.png
+		--out $(FIGDIR)/response_timeline.png
 	# SLIDE FIGURE, 16:9. The share of samples returning positive, and what
 	# the positives were. THE NUMERATOR SPLITS AND THE DENOMINATOR DOES NOT:
 	# the laboratory paragraph prints one pool of samples per province with
@@ -373,24 +391,24 @@ figures:
 	# another for community deaths cannot be formed. The lower panel is
 	# therefore a composition and not a second rate.
 	uv run python scripts/plot_figures.py --figure test_positivity \
-		--out data/build/figures/test_positivity.png
+		--out $(FIGDIR)/test_positivity.png
 	# SLIDE FIGURE, 16:9. THE SECOND HALF OF A PAIR with the figure above and
 	# only meaningful as one: the same samples split by province, showing that
 	# the national rate is a weighted average of provinces three-fold apart
 	# over weights that swing between weeks. The grey dashed line here is the
 	# blue line there, so the two can be read against each other.
 	uv run python scripts/plot_figures.py --figure positivity_provinces \
-		--out data/build/figures/positivity_provinces.png
+		--out $(FIGDIR)/positivity_provinces.png
 	# THE SAME FIGURE WITHOUT THE CAPACITY REGISTER. Shown first and then
 	# replaced by the annotated one, the pair makes visible what reading the
 	# reports bought: a mark nothing else in the pipeline could supply.
 	uv run python scripts/plot_figures.py --figure positivity_provinces_annotated \
-		--out data/build/figures/positivity_provinces_annotated.png
+		--out $(FIGDIR)/positivity_provinces_annotated.png
 	# SLIDE FIGURE, 16:9. The two parts of the positivity ratio drawn apart,
 	# because a falling ratio is compatible with less disease OR more testing
 	# and only the parts separate them.
 	uv run python scripts/plot_figures.py --figure lab_effort \
-		--out data/build/figures/lab_effort.png
+		--out $(FIGDIR)/lab_effort.png
 	# COMMITTED COPIES, so the README, the data document and the cross-repo
 	# channel can link to figures that survive (data/build is gitignored).
 	# Everything copied here is gated twice: by `release-check`, which
@@ -400,22 +418,23 @@ figures:
 	# not license anyone to conclude. Adding a `cp` here without adding that
 	# section fails the suite.
 	mkdir -p docs/figures
-	cp data/build/figures/streams_detail.png docs/figures/
-	cp data/build/figures/national_detail.png docs/figures/
-	cp data/build/figures/care_ledger.png docs/figures/
-	cp data/build/figures/release_grid.png docs/figures/
-	cp data/build/figures/ascertainment.png docs/figures/
-	cp data/build/figures/ascertainment_provinces.png docs/figures/
-	cp data/build/figures/outcomes.png docs/figures/
-	cp data/build/figures/epi_curve.png docs/figures/
-	cp data/build/figures/response_timeline.png docs/figures/
-	cp data/build/figures/test_positivity.png docs/figures/
-	cp data/build/figures/positivity_provinces.png docs/figures/
-	cp data/build/figures/positivity_provinces_annotated.png docs/figures/
-	cp data/build/figures/lab_effort.png docs/figures/
+	cp $(FIGDIR)/streams_detail.png docs/figures/
+	cp $(FIGDIR)/national_detail.png docs/figures/
+	cp $(FIGDIR)/care_ledger.png docs/figures/
+	cp $(FIGDIR)/release_grid.png docs/figures/
+	cp $(FIGDIR)/ascertainment.png docs/figures/
+	cp $(FIGDIR)/ascertainment_provinces.png docs/figures/
+	cp $(FIGDIR)/outcomes.png docs/figures/
+	cp $(FIGDIR)/epi_curve.png docs/figures/
+	cp $(FIGDIR)/response_timeline.png docs/figures/
+	cp $(FIGDIR)/test_positivity.png docs/figures/
+	cp $(FIGDIR)/positivity_provinces.png docs/figures/
+	cp $(FIGDIR)/positivity_provinces_annotated.png docs/figures/
+	cp $(FIGDIR)/lab_effort.png docs/figures/
 
 ## figures-release -- OFFLINE. Rebuild a past release's figures into
-##            data/build/figures/releases/<tag>/, so two releases can be
+##            data/build/figures/<tag>/ -- the same shape `make figures`
+##            writes the current build into -- so two releases can be
 ##            looked at side by side.
 ##              make figures-release TAG=data/2026-08-22
 ##              make figures-release DISTINCT=1     # one set per input set
@@ -439,8 +458,8 @@ figures-release:
 ##            releases, by bytes. Names where to look; it does not say how.
 ##              make figures-compare FROM=data/2026-08-22 TO=data/2026-08-29-r1
 figures-compare:
-	@a="data/build/figures/releases/$(subst /,-,$(FROM))"; \
-	 b="data/build/figures/releases/$(subst /,-,$(TO))"; \
+	@a="data/build/figures/$(subst /,-,$(FROM))"; \
+	 b="data/build/figures/$(subst /,-,$(TO))"; \
 	 test -d "$$a" || { echo "not built: $$a -- run make figures-release TAG=$(FROM)"; exit 2; }; \
 	 test -d "$$b" || { echo "not built: $$b -- run make figures-release TAG=$(TO)"; exit 2; }; \
 	 echo "$(FROM) -> $(TO)"; \

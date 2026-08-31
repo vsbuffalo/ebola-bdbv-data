@@ -57,9 +57,9 @@ analysis/_explore_data.json
 pdfs/akilimali_et_al_2026.pdf
 pdfs/akilimali_et_al_2026_supp.pdf
 
-# Per-release figure reconstructions and their intermediate builds. Rebuilt on
-# demand by `make figures-release` from each tag's own manifest; a figure set is
-# 3.4 MB and thirty releases have been published, so these are reconstructible
-# rather than stored.
+# The staged archives `make figures-release` builds a past release against:
+# a directory of symlinks into data/raw/sitrep_pdfs plus that tag's manifest.
+# (The figures themselves are under data/build/figures/<release>/, already
+# ignored with the rest of data/build. They are reconstructible from the
+# manifests on demand, and a set is 2.5 MB against thirty published releases.)
 data/build/releases/
-data/build/figures/releases/
