@@ -286,17 +286,17 @@ compare:
 	# validation section travels with the repository (data/build is
 	# gitignored). Refreshed on every compare; a diff here is a change in
 	# what the comparison shows, and belongs in the commit that caused it.
-	# These three carry captions in docs/figures/README.md like the rest,
+	# These three carry captions in figures/README.md like the rest,
 	# and `make test` fails if one of them stops having a section there.
 	# SLIDE FIGURE, 16:9, built HERE rather than in `figures` because it reads
 	# this target's outputs: three lineages against each other, and what each
 	# one covers.
 	uv run python scripts/plot_figures.py --figure validation \
 		--out $(FIGDIR)/validation.png
-	mkdir -p docs/figures
-	cp $(FIGDIR)/validation.png docs/figures/
+	mkdir -p figures
+	cp $(FIGDIR)/validation.png figures/
 	cp data/build/compare/comparison.png \
-	   data/build/compare/comparison_series.png docs/figures/
+	   data/build/compare/comparison_series.png figures/
 
 ## onset -- OFFLINE. The symptom-onset reporting triangle, read out of the
 ##          sitrep figures' pixels. The chart is an embedded raster with no
@@ -414,23 +414,23 @@ figures:
 	# Everything copied here is gated twice: by `release-check`, which
 	# requires it to rebuild byte-identically from a fresh clone of the
 	# committed state, and by `make test`, which requires it to have a
-	# section in docs/figures/README.md saying what it shows and what it does
+	# section in figures/README.md saying what it shows and what it does
 	# not license anyone to conclude. Adding a `cp` here without adding that
 	# section fails the suite.
-	mkdir -p docs/figures
-	cp $(FIGDIR)/streams_detail.png docs/figures/
-	cp $(FIGDIR)/national_detail.png docs/figures/
-	cp $(FIGDIR)/care_ledger.png docs/figures/
-	cp $(FIGDIR)/release_grid.png docs/figures/
-	cp $(FIGDIR)/ascertainment.png docs/figures/
-	cp $(FIGDIR)/ascertainment_provinces.png docs/figures/
-	cp $(FIGDIR)/outcomes.png docs/figures/
-	cp $(FIGDIR)/epi_curve.png docs/figures/
-	cp $(FIGDIR)/response_timeline.png docs/figures/
-	cp $(FIGDIR)/test_positivity.png docs/figures/
-	cp $(FIGDIR)/positivity_provinces.png docs/figures/
-	cp $(FIGDIR)/positivity_provinces_annotated.png docs/figures/
-	cp $(FIGDIR)/lab_effort.png docs/figures/
+	mkdir -p figures
+	cp $(FIGDIR)/streams_detail.png figures/
+	cp $(FIGDIR)/national_detail.png figures/
+	cp $(FIGDIR)/care_ledger.png figures/
+	cp $(FIGDIR)/release_grid.png figures/
+	cp $(FIGDIR)/ascertainment.png figures/
+	cp $(FIGDIR)/ascertainment_provinces.png figures/
+	cp $(FIGDIR)/outcomes.png figures/
+	cp $(FIGDIR)/epi_curve.png figures/
+	cp $(FIGDIR)/response_timeline.png figures/
+	cp $(FIGDIR)/test_positivity.png figures/
+	cp $(FIGDIR)/positivity_provinces.png figures/
+	cp $(FIGDIR)/positivity_provinces_annotated.png figures/
+	cp $(FIGDIR)/lab_effort.png figures/
 
 ## figures-release -- OFFLINE. Rebuild a past release's figures into
 ##            data/build/figures/<tag>/ -- the same shape `make figures`
@@ -497,7 +497,7 @@ watch-data-channel:
 ##            figures are published artefacts -- the README embeds them and
 ##            the cross-repo channel links them -- so a stale one is a wrong
 ##            claim that travels. They went stale exactly once, silently:
-##            docs/figures/streams_detail.png still showed the pre-r1
+##            figures/streams_detail.png still showed the pre-r1
 ##            laboratory series after the death-split fix landed. Figure
 ##            output is byte-deterministic (verified: two builds from
 ##            identical data hash the same), so equality is a fair test and a
@@ -531,7 +531,7 @@ release-check:
 	ln -s $$(pwd)/external $(RC_DIR)/external
 	cd $(RC_DIR) && make build && make streams && make figures && make compare
 	@echo "--- committed figures must match what the committed state produces ---"
-	@for f in $$(git ls-files 'docs/figures/*.png'); do \
+	@for f in $$(git ls-files 'figures/*.png'); do \
 		cmp -s "$$f" "$(RC_DIR)/$$f" \
 			&& echo "    ok    $$f" \
 			|| { echo "    STALE $$f -- rebuild and commit it"; exit 3; }; \

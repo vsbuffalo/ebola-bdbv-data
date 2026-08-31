@@ -50,8 +50,8 @@ asserts in words comes from one of the small pure functions above its drawing
 code, and each of those is pinned by a test, so the claim in the caption and
 the claim in the test suite cannot drift apart.
 
-AND A COMMITTED FIGURE MAY NOT SHIP WITHOUT A CAPTION. `docs/figures/README.md`
-holds one section per figure in `docs/figures/`, naming what it shows and the
+AND A COMMITTED FIGURE MAY NOT SHIP WITHOUT A CAPTION. `figures/README.md`
+holds one section per figure in `figures/`, naming what it shows and the
 caveats that travel with it wherever it is used; a test fails if a committed
 figure has no section, or a section names no figure. What belongs there rather
 than on the figure is anything a reader can consult at leisure -- the limits on
@@ -1390,7 +1390,7 @@ def draw_outcomes(inputs: dict[str, Path], out: Path) -> None:
     in unknown proportion, and nothing in these four series separates them.
     The figure therefore asserts no cause.
 
-    WHERE THOSE LIMITS ARE WRITTEN DOWN. In `docs/figures/README.md`, the
+    WHERE THOSE LIMITS ARE WRITTEN DOWN. In `figures/README.md`, the
     caption every use of this figure carries, along with the three distinct
     causes of the breaks and the reason the June share is not comparable with
     the August one. They are not on the figure: this is a slide, read in
@@ -1477,7 +1477,7 @@ def draw_outcomes(inputs: dict[str, Path], out: Path) -> None:
     # GAPS ARE HOLES, never a band drawn through them, and they are marked
     # rather than captioned. A rotated label in each span is a row of small
     # rotated text at slide size, which nobody reads; the legend says what a
-    # pale span means, and `docs/figures/README.md` names the three causes
+    # pale span means, and `figures/README.md` names the three causes
     # `outcome_gaps` distinguishes.
     for g in gaps:
         lo_x = mdates.date2num(g["lo"]) - (1 - OUTCOME_PAD)
@@ -1561,7 +1561,7 @@ def draw_outcomes(inputs: dict[str, Path], out: Path) -> None:
     # response was locating: recent cases have no outcome recorded yet, and
     # the recovery and ward ledgers begin inside that window. That belongs in
     # the caption, where it can be said in a sentence, rather than being
-    # enforced by deleting the data. `docs/figures/README.md` says it.
+    # enforced by deleting the data. `figures/README.md` says it.
     shown = led
     for seg in _outcome_segments(shown):
         c = seg.drop_nulls("unaccounted_share")

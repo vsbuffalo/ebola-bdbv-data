@@ -391,15 +391,15 @@ printed totals (rings), and INRB-UMIE's transcription (dashed). The bottom
 row is the differences — ours − INRB mixes value disagreements with
 row-coverage gaps in their file; ours − printed is pure arithmetic against
 the page, zero except the registered source
-self-disagreements.](docs/figures/comparison_series.png)
+self-disagreements.](figures/comparison_series.png)
 
 ![Every zone-day on the identity line against INRB-UMIE, and the
-disagreements, signed, over time.](docs/figures/comparison.png)
+disagreements, signed, over time.](figures/comparison.png)
 
-These figures are committed copies (`docs/figures/`), refreshed by
+These figures are committed copies (`figures/`), refreshed by
 `make compare` so they always show the current build's comparison; a diff in
 them is a change in what the comparison shows. Every committed figure carries a
-caption in [`docs/figures/README.md`](docs/figures/README.md) — what it shows,
+caption in [`figures/README.md`](figures/README.md) — what it shows,
 and the caveats that belong with it wherever it is used. That is where to look
 before putting one of these on a slide; a test fails if a committed figure has
 no section there.
@@ -435,12 +435,22 @@ not yet built, stops the render. There are no typed numbers to go stale.
 | Path          | What                                                                                                                                    |
 | ------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | `data/raw/`   | fetched inputs: the PDF archive (manifest-pinned; uncommitted except the three reports INSP does not serve), the INSP index, shapefile, populations, the hand-recorded Uganda series |
-| `data/build/` | derived, regenerable: per-report series, the province panel, weekly streams, figures, comparisons                                       |
+| `data/build/` | derived, regenerable, **never committed and always safe to delete**: per-report series, the province panel, weekly streams, comparisons, and figures under `figures/<release>/` named for the release that drew them |
+| `figures/`    | the images documents outside the pipeline link to — the only derived artefacts committed, gated by a byte-identical rebuild. See `figures/README.md` |
 | `registers/`  | **hand-authored judgements** — the only unregenerable content. See `registers/README.md`                                                |
 | `scripts/`    | everything the Makefile calls; `scripts/lib/` is the geometry and vocabulary substrate                                                  |
 | `analysis/`   | the data document and its fail-closed guard                                                                                             |
 | `external/`   | comparison sources, cloned by `make external`, gitignored, pinned by `.commit` files                                                    |
 | `notes/`      | dated lab notes: the architecture, the measured dead ends, the port rationale                                                           |
+
+**One rule decides what is committed.** A release is a git tag, and everything
+under `data/build/` is reproducible from that tag — `data/raw/` pins the inputs
+and its manifest pins which of them a release read, so a consumer clones at a
+tag and rebuilds rather than receiving files. Committing a derived artefact
+would create a second source of truth able to drift from the rule that makes
+it, so it needs a reason, and there is exactly one: an image that must render
+for someone who is not running the pipeline. That is `figures/`, and it is
+checked against a fresh rebuild on every release.
 
 ## Conventions
 

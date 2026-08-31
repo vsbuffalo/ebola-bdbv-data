@@ -32,7 +32,7 @@ made it.
 None of it is committed. A figure set is 2.5 MB and thirty releases have been
 published, so storing them would add roughly the weight of the repository again
 every fortnight, and the manifests make each one reconstructible on demand
-instead. `docs/figures/` still holds the current release's figures flat, which
+instead. `figures/` still holds the current release's figures flat, which
 is what every link in the README, the changelog and the cross-repo channel
 points at; which release those are is answered by `git log` on that directory,
 because `release-check` requires them to match the committed state exactly.

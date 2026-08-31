@@ -1,10 +1,45 @@
-# Figure captions
+# Published figures, and their captions
 
-The PNGs beside this file are the **committed copies** of the figures the
-repository publishes. `make figures` and `make compare` write them; `make
-release-check` rebuilds them in a fresh clone and requires them to be
-byte-identical to the ones in git, because the README embeds them and the
-cross-repo channel links them, so a stale one is a wrong claim that travels.
+## Why this directory exists at all
+
+Nothing else this pipeline derives is committed. `data/build/` holds every
+extracted series, every observation stream and every figure, and it is
+gitignored in full: a release is a **git tag**, and everything a consumer needs
+is reproducible from that tag by `make build && make streams && make figures`,
+because `data/raw/` pins the inputs and the manifest pins which of them a
+release read. The modelling repository consumes it exactly that way — it clones
+this repository at a tag, rebuilds, and commits the result on its own side
+against a lock file.
+
+Committing a derived artefact creates a second source of truth that can drift
+from the rule that produces it, so it needs a reason. There is exactly one:
+**an image that has to render for someone who is not running the pipeline** —
+the README on a web page, a caption in the cross-repo channel, a figure pasted
+into a deck. That is what these are, and it is the whole of the exception.
+
+`make figures` and `make compare` write the full set into
+`data/build/figures/<release>/`, named for the release that produced it, and
+copy this subset here. `make release-check` rebuilds them in a fresh clone and
+requires them to be byte-identical to the ones in git, so a committed figure
+cannot fall behind the data it claims to show.
+
+**They are not put inside `data/build/`.** That directory means *derived and
+disposable* — it must stay safe to delete at any moment, and this pipeline does
+delete it. A tracked file living inside it would make `rm -rf data/build` a
+destructive act on the repository, which is precisely the property that makes
+the layer boundary worth having.
+
+## The layers, in one table
+
+| directory | what it holds | committed? |
+|---|---|---|
+| `data/raw/` | inputs, pinned by `sitrep_pdfs.manifest.tsv` | the manifest and the small unrecoverable sources; not the PDF archive |
+| `registers/` | the human judgements the build reads, each with its evidence | yes |
+| `data/build/` | everything derived, per release | **never** — reproducible from a tag |
+| `figures/` | the images documents outside the pipeline link to | yes, gated by a byte-identical rebuild |
+| `notes/` | dated working notes | yes |
+
+## The captions
 
 **One section per figure, and the section is the caption.** It says what the
 figure shows in a sentence or two, and then the caveats that must travel with

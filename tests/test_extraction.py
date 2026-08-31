@@ -3216,7 +3216,7 @@ def test_every_hole_in_the_outcome_composition_carries_a_reason():
     and there are three different causes: INSP published nothing that day, the
     report printed no health-zone table, or the table printed only its 24-hour
     columns. Every break must carry which -- none may fall through to an
-    unlabelled default -- because the caption in `docs/figures/README.md`
+    unlabelled default -- because the caption in `figures/README.md`
     states that there are three and names them, and a fourth cause appearing
     silently would make that caption wrong."""
     import plot_figures as P
@@ -3256,8 +3256,8 @@ def test_the_figure_registry_declares_every_input_each_figure_reads():
 # --------------------------------------------------------------------------
 # THE CAPTION DOCUMENT
 #
-# `docs/figures/` holds the committed copies of the published figures, and
-# `docs/figures/README.md` holds the caption each one travels with: what it
+# `figures/` holds the committed copies of the published figures, and
+# `figures/README.md` holds the caption each one travels with: what it
 # shows, and the limits on what it licenses a reader to conclude. Several of
 # these figures are drawn at slide proportions and carry almost no text, which
 # is only defensible while the caption exists -- so this pair of tests is the
@@ -3266,7 +3266,7 @@ def test_the_figure_registry_declares_every_input_each_figure_reads():
 # or a figure that was dropped without its caption going with it.
 # --------------------------------------------------------------------------
 
-FIGURE_DIR = ROOT / "docs" / "figures"
+FIGURE_DIR = ROOT / "figures"
 CAPTIONS = FIGURE_DIR / "README.md"
 
 
@@ -3291,7 +3291,7 @@ def test_every_committed_figure_has_a_caption():
     NOT mean is the failure this document exists to prevent."""
     captioned = set(_caption_sections(CAPTIONS))
     shipped = sorted(p.name for p in FIGURE_DIR.glob("*.png"))
-    assert shipped, "no committed figures found; has docs/figures/ moved?"
+    assert shipped, "no committed figures found; has figures/ moved?"
     for name in shipped:
         assert name in captioned, \
             f"{name} is committed but has no section in {CAPTIONS.name}"
