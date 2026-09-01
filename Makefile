@@ -114,15 +114,6 @@ build:
 	# swabbed can never be confirmed, so this bounds what the confirmed-death
 	# series can see -- the quantity a model declares as an ascertainment
 	# constant, previously read out of prose by hand.
-	# Onset-to-report delay, per onset cohort. `cases_*` is indexed by report
-	# date while a model's projected quantity is a confirmation event, so a
-	# consumer needs this to know how far apart the two instants are. Not a
-	# constant: the May and June cohorts are retrospective reconstruction of
-	# the epidemic's early history, not a reporting delay.
-	uv run python scripts/build_reporting_delay.py \
-		--triangle data/build/onset/triangle.csv \
-		--out data/build/series/reporting_delay.csv \
-		--summary data/build/series/reporting_delay.json
 	uv run python scripts/extract_burial_alerts.py \
 		--pdf-dir data/raw/sitrep_pdfs \
 		--out data/build/series/burial_alerts.csv \
@@ -335,6 +326,15 @@ compare:
 ##          reader's conclusions drawn onto them, for the human check).
 onset:
 	uv run python scripts/extract_onset_curve.py
+	# Onset-to-report delay, per onset cohort. `cases_*` is indexed by report
+	# date while a model's projected quantity is a confirmation event, so a
+	# consumer needs this to know how far apart the two instants are. Not a
+	# constant: the May and June cohorts are retrospective reconstruction of
+	# the epidemic's early history, not a reporting delay.
+	uv run python scripts/build_reporting_delay.py \
+		--triangle data/build/onset/triangle.csv \
+		--out data/build/series/reporting_delay.csv \
+		--summary data/build/series/reporting_delay.json
 	# THE TRIANGLE, DRAWN: every vintage on one axis (the fan closing is
 	# the reporting process completing) and the empirical delay shape
 	# (each settled onset date's climb to its final count).
@@ -607,7 +607,7 @@ release-check:
 	# offline gate must stay offline.
 	@test -d external || { echo "release-check needs external/ -- run 'make external'"; exit 2; }
 	ln -s $$(pwd)/external $(RC_DIR)/external
-	cd $(RC_DIR) && make build && make streams && make figures && make compare
+	cd $(RC_DIR) && make build && make onset && make streams && make figures && make compare
 	@echo "--- committed figures must match what the committed state produces ---"
 	@for f in $$(git ls-files 'figures/*.png'); do \
 		cmp -s "$$f" "$(RC_DIR)/$$f" \

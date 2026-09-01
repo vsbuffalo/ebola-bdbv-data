@@ -1564,6 +1564,21 @@ def populations(geojson: Path, pop_csv: Path) -> dict[str, int]:
     return rounded
 
 
+def _reporting_delay() -> dict:
+    """The onset-to-report delay summary, which `make onset` writes.
+
+    Absent means the onset step has not run, not that there is no delay, and a
+    consumer cannot tell those apart from an empty field. So it stops the build
+    rather than publishing silence.
+    """
+    p = ROOT / "data/build/series/reporting_delay.json"
+    if not p.exists():
+        sys.exit(f"{p.relative_to(ROOT)} is missing: run `make onset` before "
+                 "`make streams`. Publishing an empty reporting-delay field "
+                 "would read as 'no delay' rather than 'not measured'.")
+    return json.loads(p.read_text())
+
+
 def swab_coverage(burial_csv: Path) -> dict:
     """Per-province swab coverage, pooled from the burial pillar's own rows.
 
@@ -2862,8 +2877,7 @@ def main() -> None:
         # when a publication decision changed.
         # How far apart the report instant and the confirmation instant are.
         # Carried here so a consumer pins it by tag rather than deriving it.
-        "reporting_delay": json.loads(rd.read_text()) if (
-            rd := ROOT / "data/build/series/reporting_delay.json").exists() else {},
+        "reporting_delay": _reporting_delay(),
         "swab_coverage": swab_coverage(
             args.burial_alerts if args.burial_alerts
             else ROOT / "data/build/series/burial_alerts.csv"),
