@@ -2487,6 +2487,61 @@ def test_the_committed_pdfs_are_the_bytes_the_register_names():
 
 
 # --------------------------------------------------------------------------
+# The population table is geography, not a publication decision
+#
+# A consumer sums it to a national susceptible pool. It was derived by
+# iterating the publication list, so publishing three provinces gave 18.3M and
+# publishing six gave 31.9M for a population that had not changed by one
+# person -- a reference constant moving under a downstream model because of a
+# choice made here. These pin the decoupling and the arithmetic.
+# --------------------------------------------------------------------------
+
+import build_streams as BS                                        # noqa: E402
+
+GEOJSON = ROOT / "data" / "raw" / "health_zones.geojson"
+POPCSV = ROOT / "data" / "raw" / "zone_population.csv"
+
+
+def test_the_population_table_covers_the_geography_not_the_published_set(
+        monkeypatch):
+    """Publishing fewer provinces must not shrink the denominator.
+
+    The guard loop still runs over `STREAM_PROVINCES`, so narrowing it only
+    removes checks; the table itself comes from the geojson and stays whole.
+    """
+    full = BS.populations(GEOJSON, POPCSV)
+    monkeypatch.setattr(BS, "STREAM_PROVINCES", {"Ituri": "ituri"})
+    narrowed = BS.populations(GEOJSON, POPCSV)
+    assert narrowed == full, (
+        "the population table tracked the publication list; a province we "
+        "stop publishing would silently leave the susceptible pool")
+    assert set(full) == {"bas_uele", "haut_uele", "ituri", "nord_kivu",
+                         "sud_kivu", "tshopo"}
+
+
+def test_the_population_parts_add_to_the_whole_exactly():
+    """Rounding each province and reporting an unrounded total, or vice versa,
+    leaves a consumer whose components disagree with the sum by a few people
+    and no way to tell which is authoritative."""
+    pops = BS.populations(GEOJSON, POPCSV)
+    assert all(isinstance(v, int) and v > 0 for v in pops.values())
+    assert sum(pops.values()) == 31_898_994
+
+
+def test_a_zone_with_population_but_no_geography_stops_the_build(tmp_path):
+    """Its people would belong to no province and vanish from the denominator
+    silently, which is the one way this can be wrong without looking wrong."""
+    import csv as _c
+    bad = tmp_path / "pop.csv"
+    with bad.open("w", newline="") as fh:
+        w = _c.writer(fh)
+        w.writerow(["zone", "population"])
+        w.writerow(["Nowhere-At-All", 100000])
+    with pytest.raises(SystemExit, match="no geography"):
+        BS.populations(GEOJSON, bad)
+
+
+# --------------------------------------------------------------------------
 # Unreachable is not revised
 #
 # The held-file check makes one HEAD request per report and can fail in two

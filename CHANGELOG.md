@@ -38,6 +38,62 @@ same as withdrawn: the older tag stays exactly where it is.
 
 ---
 
+## `data/2026-08-30-r2` — 2026-09-01 — `population` is the source's frame, and says so in the file
+
+**Not breaking. One field changes type, one field is added, no stream file
+changes.** `meta["population"]` values become integers; their sum is
+**31,898,994, exactly as in `r1`**. Re-vendor to pick up the declaration; no fit
+result moves.
+
+### What `population` is a population of, which the file did not previously say
+
+The table was built by iterating the publication list, so publishing three
+provinces gave a national denominator of 18,334,303 and publishing six gave
+31,898,994 — for a population that had not changed by one person. A consumer
+deriving a susceptible pool from it was being re-scaled by an extraction
+decision made here. That is the wrong coupling and it is removed: the table is
+now derived from the geography and is unaffected by which provinces this build
+publishes.
+
+**The frame is the source's own, and the six-province sum is the right one.**
+Sitrep 108: «60 des 151 (39,7%) zones de santé *des six provinces* restent
+affectées depuis le début de l'épidémie en RDC». Six provinces, 151 health
+zones, and the pinned geojson holds exactly those 151. So `population` is the
+denominator the reports' own affected-zone fraction is a fraction of, and the
+old 18.3M was our publication list narrowing it, not a different definition.
+
+It is also stable in the way that matters: a seventh province reporting a case
+does not move it, because it is fixed by geography rather than by case counts.
+Extending it would mean adding geography, which is a deliberate and visible act.
+
+### `population_frame`, new
+
+So that no consumer has to sum a dictionary and infer what the sum means:
+
+```json
+"population_frame": {
+  "provinces": 6, "health_zones": 151, "national": 31898994,
+  "definition": "The six provinces of the response geography, all 151 health
+                 zones, affected or not. ...",
+  "source":     "WorldPop raster counts aggregated to health zone; ..."
+}
+```
+
+Bind `population_frame.national` rather than summing `population`: the sum is
+correct today only because the keys happen to be the frame, which is the
+coupling this release removes.
+
+### Whole people
+
+The underlying figures are WorldPop raster counts aggregated to health zone, so
+they come out fractional — `bas_uele` was `1970167.3391360808`. Provinces are
+now rounded, and `national` is the sum of the *rounded* provinces, so the parts
+add to the whole exactly rather than by a few people. A zone carrying a
+population but no geography now stops the build; its people would otherwise
+belong to no province and leave the denominator silently.
+
+---
+
 ## `data/2026-08-30-r1` — 2026-09-01 — no data change; the fetch survives a transient network failure
 
 **Not breaking. No value changes and no file is added, removed or renamed.**

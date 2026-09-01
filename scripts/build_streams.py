@@ -72,6 +72,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import re
 import sys
 from pathlib import Path
 from typing import NamedTuple
@@ -1501,36 +1502,66 @@ def care_state(checks: str, scope: tuple[str, ...]) -> str:
     return "closes" if all(v == "pass" for _, v in rel) else "contradicts"
 
 
-def populations(geojson: Path, pop_csv: Path) -> dict[str, float]:
-    """Full-province denominators: every zone in the province, affected or not.
-
-    Accent folding runs on BOTH sides, through one folding function. The old
-    comparison folded one accent on one side only, so a geojson spelling
-    `Haut-Uélé` produced a denominator of ZERO -- `sum()` over an empty
-    generator -- and the zero went into the meta file as a population. A
-    denominator of zero is never a population; it stops the build.
-    """
+def _slug(name: str) -> str:
+    """`Haut-Uélé` -> `haut_uele`. Accent-folded, so the geojson's spelling and
+    the reports' spelling of a province reach the same key."""
     import unicodedata
+    t = unicodedata.normalize("NFKD", name or "")
+    t = "".join(c for c in t if not unicodedata.combining(c))
+    return re.sub(r"[^a-z0-9]+", "_", t.lower()).strip("_")
 
-    def fold(s: str) -> str:
-        t = unicodedata.normalize("NFKD", s or "")
-        t = "".join(c for c in t if not unicodedata.combining(c))
-        return t.lower().replace("-", " ").strip()
 
+def populations(geojson: Path, pop_csv: Path) -> dict[str, int]:
+    """Full-province denominators for the response frame: every zone in the
+    geography, whether or not the province is affected or published.
+
+    The frame is the source's own, not ours. Sitrep 108: «60 des 151 (39,7%)
+    zones de santé *des six provinces* restent affectées depuis le début de
+    l'épidémie en RDC» -- six provinces, 151 health zones, and the geojson
+    holds exactly those 151. So this is the population the reports' own
+    affected-zone fraction is a fraction of.
+
+    Derived from the geojson rather than from `STREAM_PROVINCES`, which is the
+    publication list and a different thing entirely. Iterating the publication
+    list made a *reference constant* move whenever a publication decision
+    changed: three provinces published gave a national denominator of 18.3M
+    and six gave 31.9M, for a population that had not changed by one person.
+    A consumer summing this to a susceptible pool would have been silently
+    re-scaled by an extraction decision. Geography and publication are now
+    independent, which is what they always were.
+
+    Integers, and the national total is the sum of the *rounded* provinces, so
+    the parts add to the whole exactly. The underlying figures are WorldPop
+    raster counts aggregated to health zone (see PROVENANCE.tsv), which come
+    out fractional; a population reported to ten decimal places is false
+    precision, and one that does not sum to its own total is a trap.
+    """
     geo = json.loads(geojson.read_text())
     zone_prov = {f["properties"]["nom"]: f["properties"]["province"]
                  for f in geo["features"]}
     pop = dict(pl.read_csv(pop_csv).iter_rows())
+
+    missing = sorted(set(pop) - set(zone_prov))
+    if missing:
+        sys.exit(f"{len(missing)} zone(s) carry a population but no geography, "
+                 f"so their people belong to no province and would vanish from "
+                 f"the denominator: {', '.join(missing[:5])}")
+
     out: dict[str, float] = {}
+    for zone, people in pop.items():
+        out[_slug(zone_prov[zone])] = out.get(_slug(zone_prov[zone]), 0.0) + people
+    rounded = {k: int(round(v)) for k, v in sorted(out.items())}
+
+    # Every province we publish must have a denominator. The old failure was a
+    # spelling drift between the geojson and the reports producing a zero, and
+    # a denominator of zero is never a population.
     for prov, slug in STREAM_PROVINCES.items():
-        total = sum(v for z, v in pop.items()
-                    if fold(zone_prov.get(z, "")) == fold(prov))
-        if not total > 0:
-            sys.exit(f"population for {prov} came out {total}: the geojson "
-                     "province spellings no longer match STREAM_PROVINCES, "
-                     "and zero is not a population")
-        out[slug] = total
-    return out
+        if not rounded.get(slug, 0) > 0:
+            sys.exit(f"population for {prov} (slug {slug}) came out "
+                     f"{rounded.get(slug, 0)}: the geojson province spellings "
+                     f"no longer fold onto STREAM_PROVINCES, and zero is not a "
+                     f"population")
+    return rounded
 
 
 def main() -> None:
@@ -2750,6 +2781,8 @@ def main() -> None:
         }
 
     last = panel.filter(pl.col("date") == panel["date"].max())
+    pops = populations(args.geojson, args.population)
+    n_zones = len(json.loads(args.geojson.read_text())["features"])
     meta = {
         "day0": str(DAY0),
         "bin_days": BIN_DAYS,
@@ -2761,7 +2794,30 @@ def main() -> None:
         "n_days": int((dt.date.fromisoformat(panel["date"].max())
                        - DAY0).days) + 1,
         "provinces": list(STREAM_PROVINCES.values()),
-        "population": populations(args.geojson, args.population),
+        "population": pops,
+        # What that table is a population OF, stated rather than inferred. A
+        # consumer needs a national susceptible pool and would otherwise sum
+        # the dict, which is only correct as long as the dict's keys happen to
+        # be the right frame -- exactly the coupling that made this number move
+        # when a publication decision changed.
+        "population_frame": {
+            "provinces": len(pops),
+            "health_zones": n_zones,
+            "national": sum(pops.values()),
+            "definition":
+                "The six provinces of the response geography, all 151 health "
+                "zones, affected or not. This is the source's own frame: "
+                "sitrep 108 reads «60 des 151 (39,7%) zones de sante des six "
+                "provinces restent affectees depuis le debut de l'epidemie en "
+                "RDC». It is fixed by the geography, not by which provinces "
+                "this build publishes streams for, and a seventh province "
+                "reporting a case does not move it.",
+            "source":
+                "WorldPop raster counts aggregated to health zone; see "
+                "data/raw/PROVENANCE.tsv for the pinned file and its hash. "
+                "Provinces are rounded to whole people and `national` is the "
+                "sum of the rounded provinces, so the parts add to the whole.",
+        },
         "dropped_provinces": {(r[0] or "unattributed"): r[1]
                               for r in dropped.iter_rows()},
         "reconciliation": recon,
