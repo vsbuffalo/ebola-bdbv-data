@@ -1,30 +1,29 @@
 # The extraction repo, and whether the parsing rules are forced
 
-Date: 2026-08-16
-Project: ebola-bdbv-data
-Status: trial run; the geometric reading is measured, not proposed
-Tags: repo-split, pdf-extraction, table-geometry
+Date: 2026-08-16 Project: ebola-bdbv-data Status: trial run; the geometric
+reading is measured, not proposed Tags: repo-split, pdf-extraction,
+table-geometry
 
 ---
 
 # Trial result — the geometric reading reproduces the reference exactly
 
 Run: `scripts/trial_geometric_table2.py`, reading Table 2 from the drawn rules
-via `scripts/lib/pdftable.py`, compared row by row against
-`sitrep_table2.csv` from the `pdftotext` parser. Outputs under `data/trial/`.
+via `scripts/lib/pdftable.py`, compared row by row against `sitrep_table2.csv`
+from the `pdftotext` parser. Outputs under `data/trial/`.
 
 Restricting to the **39 reports where the page's own arithmetic closes on the
 geometric read** — the province rows sum to the report's printed `Total`, which
 is the same identity the existing pipeline uses as its acceptance test:
 
-| | |
-| --- | --- |
+|                                                     |       |
+| --------------------------------------------------- | ----- |
 | rows matched to the reference on (report, row name) | 1,702 |
-| cumulative cases agree | 1,701 |
-| cumulative deaths agree | 1,701 |
-| **rows where a value disagrees** | **0** |
-| rows present only in the reference | 0 |
-| rows present only in the geometric read | 34 |
+| cumulative cases agree                              | 1,701 |
+| cumulative deaths agree                             | 1,701 |
+| **rows where a value disagrees**                    | **0** |
+| rows present only in the reference                  | 0     |
+| rows present only in the geometric read             | 34    |
 
 The single non-agreeing row on each count is a null on both sides, not a
 conflict. Where the geometric read is self-consistent it does not differ from
@@ -33,7 +32,7 @@ the regex parser anywhere, and it does not miss anything the regex parser found.
 **Report coverage.** The reference reaches 63 reports; the geometric reader
 reaches 71 with a single code path. Twelve of the extra are reports the
 reference's Table 2 route does not produce: sitreps 005–015 are covered in the
-existing pipeline by a *second* parser (`parse_early_zone_table.py`, feeding
+existing pipeline by a _second_ parser (`parse_early_zone_table.py`, feeding
 `sitrep_early_zones.csv`), so that comparison is not like-for-like — but the
 fact that one geometric reader covers both the early and the main table layouts,
 where the current pipeline needs two parsers with disjoint rule sets, is the
@@ -58,12 +57,14 @@ closes on 3 of 10, which is the vintage the handoff already flags as churning
 (renamed series, dropped caveat, dropped PPL table, `A ventiler` rows).
 
 The one substantive selection bug I traced: on sitrep 083 the trial picks the
-per-zone *outcomes* table (`Zone de santé | Cas confirmés | Guéris | En
-hospitalisation | Décès`) instead of Table 2, because that table's heading also
-names a health zone, a case count and a death count. It then reads Bunia as 35
-cases where Table 2 prints 967. The heading vocabulary is too loose a key and
-needs the cumulative/daily distinction to discriminate. That is a half-day of
-work on the selector, not a problem with the grid.
+per-zone _outcomes_ table
+(`Zone de santé | Cas confirmés | Guéris | En
+hospitalisation | Décès`) instead
+of Table 2, because that table's heading also names a health zone, a case count
+and a death count. It then reads Bunia as 35 cases where Table 2 prints 967. The
+heading vocabulary is too loose a key and needs the cumulative/daily distinction
+to discriminate. That is a half-day of work on the selector, not a problem with
+the grid.
 
 This is the honest split: **cell reading is validated and exact; table selection
 is unfinished.** The 400 lines of wrap-shape and column-ruler machinery in
@@ -100,8 +101,8 @@ Two recommendations, and the second is the load-bearing one.
 **Move the extraction layer here as planned.** The seam is clean: the modelling
 side reads exactly seven small TSV files and nothing else. `scripts/lib/` is
 100% data-side with no model importer. All three test files are data-side. No
-rule in `workflow/data.smk` touches a model, a posterior, or the `camdl`
-binary. There is nothing to disentangle — only things to leave behind.
+rule in `workflow/data.smk` touches a model, a posterior, or the `camdl` binary.
+There is nothing to disentangle — only things to leave behind.
 
 **Do not port the Table 2 parser as written.** The situation reports are
 Microsoft Word exports that draw every table cell as a vector rectangle. The
@@ -135,17 +136,18 @@ between the report and the parser.
 ## What the source documents actually are
 
 Every one of the 82 archived PDFs is a Word export or a re-encoding of one. The
-producers observed across the corpus: `Microsoft® Word LTSC`, `Microsoft® Word
-2016`, `Microsoft® Word for Microsoft 365`, `www.ilovepdf.com` (a re-encode),
-and `macOS … Quartz PDFContext` (opened in Preview and re-saved). None is a
-scan; 67 of 82 carry a structure tree (`Tagged: yes`).
+producers observed across the corpus: `Microsoft® Word LTSC`,
+`Microsoft® Word
+2016`, `Microsoft® Word for Microsoft 365`, `www.ilovepdf.com`
+(a re-encode), and `macOS … Quartz PDFContext` (opened in Preview and re-saved).
+None is a scan; 67 of 82 carry a structure tree (`Tagged: yes`).
 
 Word draws table borders as thin filled rectangles. On page 4 of sitrep 080 —
 the page whose Ituri row is the subject of one of the longest comments in the
 parser — `pdfplumber` reports 248 horizontal rules, 91 vertical rules, and 80
 cell-body rectangles. The horizontal rules sit at 31 distinct vertical
-positions, and those positions *are* the row boundaries, including the tall
-rows that hold a name too wide for its column.
+positions, and those positions _are_ the row boundaries, including the tall rows
+that hold a name too wide for its column.
 
 `pdftotext -layout` renders none of this. It emits a character grid in which a
 tall cell becomes several text lines and a cell's column membership must be
@@ -201,7 +203,7 @@ Nord-Kivu | Katwa          |   1 |  0 |  1 | ND
 Two things to note. The vertically merged province cell resolves correctly —
 `Ituri` spans four zone rows in the source and lands on the row its rectangle
 centres on, which is the behaviour `parse_early_zone_table.py` documents at
-length as a hazard. And the header row extracts as clean column *names*, which
+length as a hazard. And the header row extracts as clean column _names_, which
 suggests that table identification could key on header cells rather than on a
 title regular expression plus a lookahead window plus a terminator — the
 mechanism whose failure twice sent the Table 2 span running into the alerts
@@ -215,19 +217,19 @@ direction rather than a demonstrated result.
 It would be easy to overclaim here, so being explicit about scope.
 
 **Addressed by geometry.** The five row shapes in `parse_zone_deaths` (`ROW`,
-`ORPHAN`, `SPLIT_HEAD`/`SPLIT_TAIL`/`FRAGMENT`, `NO_LETALITY`, `AVENTILER`);
-the learnt column ruler (`_cluster`, `_anchors`, `_fit`, `COL_GAP`, and the
+`ORPHAN`, `SPLIT_HEAD`/`SPLIT_TAIL`/`FRAGMENT`, `NO_LETALITY`, `AVENTILER`); the
+learnt column ruler (`_cluster`, `_anchors`, `_fit`, `COL_GAP`, and the
 two-candidate-ruler logic for the reports whose columns shift mid-page); the
 blank-cell-versus-missing-cell problem that the module docstring identifies as
-the reason the table must be read by character position at all; the
-positional slicing in `parse_tables.py`; and the centred-province-label and
-three-line-wrap rules in `parse_early_zone_table.py`. Call it 400 lines of code
-across three files, plus the roughly 250 lines of comment that explain them.
+the reason the table must be read by character position at all; the positional
+slicing in `parse_tables.py`; and the centred-province-label and three-line-wrap
+rules in `parse_early_zone_table.py`. Call it 400 lines of code across three
+files, plus the roughly 250 lines of comment that explain them.
 
 **Partly addressed.** `parse_sitrep_national.py` reads dashboard tiles rather
 than a table, matching a value to its label by column proximity. Real
 coordinates are better than character columns here, but the genuine ambiguity —
-the value sits *above* its label in some vintages and *below* in others —
+the value sits _above_ its label in some vintages and _below_ in others —
 remains.
 
 **Not addressed at all.** `parse_laboratory.py`, `parse_provisional_caveat.py`
@@ -260,7 +262,7 @@ proliferation look inevitable.
    documents. Largely removable.
 2. **Source vocabulary.** French labels, spelling variants, sentinel spellings,
    province names. Forced by the documents, irreducible in content, but it is
-   *data* and belongs in a declarative table rather than in six sets of Python
+   _data_ and belongs in a declarative table rather than in six sets of Python
    constants.
 3. **Source semantics.** Stock versus flow, `ND` versus zero, start-date versus
    hole, which identity holds at which level, which residuals are verified
@@ -279,21 +281,21 @@ twelve call sites, ten byte-identical, plus one helper in `parse_zone_deaths.py`
 that is defined and never called while the same call is inlined five lines
 later. Four parsers run `pdftotext` twice per PDF because they call
 `report_key(pdf)` without passing the text they are about to extract anyway.
-`SPACES = "   "` is declared six times. The
-title-regex-to-terminator span search has six near-identical implementations,
-one of which is a hand-copy of `lib/indicator_table.span`. Nine parsers write a
-`_status.csv` sibling with the same line. `parse_alerts_table.main` and
-`parse_care_table.main` are the same function.
+`SPACES = "   "` is declared six times. The title-regex-to-terminator span
+search has six near-identical implementations, one of which is a hand-copy of
+`lib/indicator_table.span`. Nine parsers write a `_status.csv` sibling with the
+same line. `parse_alerts_table.main` and `parse_care_table.main` are the same
+function.
 
 One consequence of this is a live correctness contradiction worth recording.
-`lib/report_date.py` documents that the filename date is the *publication* date
+`lib/report_date.py` documents that the filename date is the _publication_ date
 on six reports, that trusting it made three pairs of consecutive days look like
 duplicates, and that the de-duplication which followed deleted sitreps 19, 23
 and 50 outright. Three parsers still take the date from the filename, and
 `parse_alerts_table.py` then re-implements that same de-duplication —
-deliberately, with a fourteen-line comment — on the same three report pairs.
-Two files in one directory hold opposite beliefs about the same three reports.
-It has not caused harm because both parsers are unwired from the workflow. It is
+deliberately, with a fourteen-line comment — on the same three report pairs. Two
+files in one directory hold opposite beliefs about the same three reports. It
+has not caused harm because both parsers are unwired from the workflow. It is
 the clearest available argument for a single entry point.
 
 ## An unrelated finding about the source
@@ -304,14 +306,15 @@ essentially exactly: 34 of 34 rows on sitrep 081, 35 of 35 on sitrep 092, and
 similar for every other report — with one exception.
 
 **On sitrep 080 the letality column matches its own row in 7 of 31 rows.** I
-rendered page 4 and read it: the page prints `Rimba 9 4 29,6%`, `Goma 1 0
-76,1%`, `Kalunguta 7 4 0,0%` and `Vuhovi 2 1 100,0%`, all arithmetically
-impossible against their own cases and deaths. The cases and deaths columns of
-that same page reconcile exactly — Nord-Kivu's twelve zone rows sum to the 414
-cases and 285 deaths its province row prints — so the two columns the pipeline
-keeps are sound and only the derived column is wrong. The likeliest reading is
-that the letality column was carried over from an earlier vintage of the table
-while the counts were updated.
+rendered page 4 and read it: the page prints `Rimba 9 4 29,6%`,
+`Goma 1 0
+76,1%`, `Kalunguta 7 4 0,0%` and `Vuhovi 2 1 100,0%`, all
+arithmetically impossible against their own cases and deaths. The cases and
+deaths columns of that same page reconcile exactly — Nord-Kivu's twelve zone
+rows sum to the 414 cases and 285 deaths its province row prints — so the two
+columns the pipeline keeps are sound and only the derived column is wrong. The
+likeliest reading is that the letality column was carried over from an earlier
+vintage of the table while the counts were updated.
 
 Three other reports (034, 049, 073) show a handful of mismatched rows rather
 than a whole bad column.
@@ -345,10 +348,10 @@ prevent, and the gate is therefore doing real work rather than ceremonial work.
 
 **What comes here.** `workflow/data.smk` (21 rules, none model-touching), all
 eight parsers, all four `build_*` stream scripts, `check_carried_forward.py`,
-`check_upstream.py`, the two `fetch_sitrep_*.py` scripts, the three data
-figure scripts, the whole of `scripts/lib/`, all of `tests/`, all of
-`data/raw/`, `analysis/data.qmd` and `analysis/_guard.py`, and the six
-hand-authored registers.
+`check_upstream.py`, the two `fetch_sitrep_*.py` scripts, the three data figure
+scripts, the whole of `scripts/lib/`, all of `tests/`, all of `data/raw/`,
+`analysis/data.qmd` and `analysis/_guard.py`, and the six hand-authored
+registers.
 
 **What stays.** `workflow/model.smk`, `models/`, `scripts/camdl_fit.py`,
 `compare_fits.py`, `plot_posterior_predictive.py`, `plot_latent_states.py`,
@@ -360,9 +363,9 @@ sites across `workflow/`, `Makefile`, `scripts/`, `analysis/`, `tests/` and
 `models/`: `build_sitrep_typology.py`, `plot_sitrep_typology.py`,
 `plot_epidemic_curve.py`, `plot_zone_deaths.py`, `parse_care_table.py`,
 `parse_alerts_table.py`, `plot_observation_streams.py`, `publish_artifact.sh`,
-and the old-trunk chain `parse_tables.py` → `build_series.py` → `clean_zones.py`.
-The last three are superseded by the 2026-08-15 rebuild that made our own parse
-the trunk instead of the INRB extraction. Note that dropping
+and the old-trunk chain `parse_tables.py` → `build_series.py` →
+`clean_zones.py`. The last three are superseded by the 2026-08-15 rebuild that
+made our own parse the trunk instead of the INRB extraction. Note that dropping
 `parse_care_table.py` takes `lib/indicator_table.py` with it — it is that
 module's only importer, and `data/README.md`'s claim that row reading is shared
 with `parse_indicator_tables.py` is stale.
@@ -377,16 +380,17 @@ document and would need a new one.
 **Four scripts are unwired but must come anyway**, because they produce
 committed `data/raw/` inputs that the DAG depends on and that nothing else can
 regenerate: `fetch_shapes.py` (the geojson, the alias table, and the province
-list), `fetch_connectivity.py` (the population denominators),
-`fetch_inrb.py`, `fetch_vintages.py`.
+list), `fetch_connectivity.py` (the population denominators), `fetch_inrb.py`,
+`fetch_vintages.py`.
 
 ## Defects to fix during the move, not after
 
-- `workflow/report.smk` does not declare `data/build/series/indicator_tables.csv`
-  as an input, although `analysis/data.qmd:137` reads it. The guard passes
-  because it *is* a declared output of `data.smk`, so nothing fails — the
-  document simply will not re-render when that artefact changes, which is the
-  exact failure the explicit input list exists to prevent.
+- `workflow/report.smk` does not declare
+  `data/build/series/indicator_tables.csv` as an input, although
+  `analysis/data.qmd:137` reads it. The guard passes because it _is_ a declared
+  output of `data.smk`, so nothing fails — the document simply will not
+  re-render when that artefact changes, which is the exact failure the explicit
+  input list exists to prevent.
 - `analysis/_guard.py`'s `source()` hardcodes a tab separator and is passed a
   `.csv` at `data.qmd:988`. It parses to a single column and the row count that
   depends on it is right by luck. `load()` infers the separator from the suffix;
@@ -421,7 +425,7 @@ it determines whether `data/build/` stays ignored.
 files in the source repo and the dominant contributor to its 91 MB pack. It also
 holds the only copy of `archive/data_old.smk`, which `data.smk` names as the
 reference for the rebuild and which is the record of which rules deliberately
-did *not* come across. It should not be copied wholesale into a fresh repo.
+did _not_ come across. It should not be copied wholesale into a fresh repo.
 Suggest keeping `data_old.smk` alone, in `docs/dev/`, and leaving the rest
 behind in the modelling repo's history.
 
@@ -441,7 +445,7 @@ behind in the modelling repo's history.
    exception register, that is the result; if it does not, we have lost nothing
    and learned where the geometry is not enough.
 4. Fold the incidental duplication into a shared substrate afterwards, when
-   there is a second geometric parser to share it *with* — not before, or the
+   there is a second geometric parser to share it _with_ — not before, or the
    substrate will be shaped by the parsers we are trying to replace.
 
 Step 3 before step 2 would be the mistake. The current parsers, whatever their
@@ -488,11 +492,11 @@ currently in the pipeline, and it would apply to 67 of 82 reports.
 ## What I have not checked
 
 - Whether the drawn-rule grid yields a correct table on all 82 reports. The
-  rules are *present* on every report I sampled across all five producers,
+  rules are _present_ on every report I sampled across all five producers,
   including the `ilovepdf` re-encodes and the macOS Preview re-saves, and I
   verified extraction against the rendered page on sitrep 080 and sitrep 005.
   That is four reports read closely, not a corpus run.
-- Table *selection* — finding Table 2 among the thirteen tables on a page — is
+- Table _selection_ — finding Table 2 among the thirteen tables on a page — is
   the one part of the current parser the geometry does not obviously replace. I
   showed that header cells extract cleanly, which suggests keying on column
   names, but I did not build it.

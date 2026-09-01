@@ -1,9 +1,7 @@
 # The extraction architecture
 
-Date: 2026-08-16
-Project: ebola-bdbv-data
-Status: all 83 held reports contribute data; 3 residuals open
-Tags: architecture, pdf-extraction, table-geometry
+Date: 2026-08-16 Project: ebola-bdbv-data Status: all 83 held reports contribute
+data; 3 residuals open Tags: architecture, pdf-extraction, table-geometry
 
 ## The one design decision everything follows from
 
@@ -21,17 +19,17 @@ Indexing by heading read every zone's death count as its case count.
 Indexing by fixed position fails too: sitrep 090's table carries a leading
 spacer column and the early layout carries two label columns.
 
-So vocabulary answers *which table this is*, and geometry read from the **data
-rows** answers *which column is which*.
+So vocabulary answers _which table this is_, and geometry read from the **data
+rows** answers _which column is which_.
 
 ## Layers
 
-| Layer | File | Knows | Does not know |
-| --- | --- | --- | --- |
-| Geometry | `scripts/lib/pdftable.py` | PDF rectangles, lines, curves; turning drawn rules into a cell grid | French, Ebola, what any column means |
-| Vocabulary | `scripts/lib/tablespec.py` | French headings; the left-to-right order each layout prints its quantities in | PDFs; what the numbers imply |
-| Domain | `scripts/extract_zone_table.py` | Provinces, subtotals, unallocated rows, the page's own identity | Geometry |
-| Aggregation | `scripts/aggregate_provinces.py` | The province carry, the closed province set, what must sum to what | How anything was read |
+| Layer       | File                             | Knows                                                                         | Does not know                        |
+| ----------- | -------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------ |
+| Geometry    | `scripts/lib/pdftable.py`        | PDF rectangles, lines, curves; turning drawn rules into a cell grid           | French, Ebola, what any column means |
+| Vocabulary  | `scripts/lib/tablespec.py`       | French headings; the left-to-right order each layout prints its quantities in | PDFs; what the numbers imply         |
+| Domain      | `scripts/extract_zone_table.py`  | Provinces, subtotals, unallocated rows, the page's own identity               | Geometry                             |
+| Aggregation | `scripts/aggregate_provinces.py` | The province carry, the closed province set, what must sum to what            | How anything was read                |
 
 `pdftable` is project-agnostic and could be lifted out as a package. Its whole
 public surface is `read(pdf) -> list[Table]`.
@@ -82,9 +80,10 @@ only inside shaded banner rows, leaving sitrep 018's borders in 94 disconnected
 islands. Collinear pieces within 36 pt are joined before components form; a
 coalesced run still shorter than 10 pt is dropped, which removes isolated dots
 without removing the rules they compose. 36 pt rather than 30 because a
-double-height row — one whose name wraps, like `Autres ZS (données non
-ventilées)` — is 32 pt tall and otherwise falls in the crack, taking its 94
-unallocated Ituri cases with it.
+double-height row — one whose name wraps, like
+`Autres ZS (données non
+ventilées)` — is 32 pt tall and otherwise falls in the
+crack, taking its 94 unallocated Ituri cases with it.
 
 ### How columns are indexed
 
@@ -95,7 +94,7 @@ em-dashes is still a value column, and calling it a label would shift every
 later column one place.
 
 Value columns are then zipped, left to right, against the spec's declared
-`values` order. Order within a layout is stable even though *count* is not: the
+`values` order. Order within a layout is stable even though _count_ is not: the
 daily block appears from 13 July and extends the sequence rather than reordering
 it, so shorter tables stop early. That absorbs the spacer column and the
 two-label case without a special case for either.
@@ -112,7 +111,7 @@ spec declares an order rather than indices.
 Candidates are **ranked, not taken in order**. Heading vocabulary does not
 single this table out and no tightening of it did: the provincial summary sits
 above this table on the same page and states the same things about itself,
-because it *is* a summary of it. Every phrase that excluded the summary also
+because it _is_ a summary of it. Every phrase that excluded the summary also
 excluded some vintage of the real table, since the title text bleeds across the
 heading row into arbitrary cells. The difference that holds is structural — the
 summary has one row per province, this table one per health zone — so candidates
@@ -124,20 +123,20 @@ summary to the page-4 zone table to the page-7 laboratory table. The 8 pt
 tolerance was tuned end to end: 10 pt takes province-reports reconciling from
 198 down to 180, and an overlap-fraction test is worse still at 146, because
 nearly every table spans most of the text width and containment scores a perfect
-match. Sitrep 090's two pages begin 8.5 pt apart and are therefore left
-unjoined — buying that one report costs eighteen others.
+match. Sitrep 090's two pages begin 8.5 pt apart and are therefore left unjoined
+— buying that one report costs eighteen others.
 
 ## Measured state
 
 Against the reference `pdftotext` extraction, on the **64 reports where the
 page's own arithmetic closes**:
 
-| | |
-| --- | --- |
-| rows matched on (report, row name) | 2,403 |
-| values disagreeing | **0** |
-| reports returning rows | 74 of 82 |
-| health-zone rows | 2,514 |
+|                                    |          |
+| ---------------------------------- | -------- |
+| rows matched on (report, row name) | 2,403    |
+| values disagreeing                 | **0**    |
+| reports returning rows             | 74 of 82 |
+| health-zone rows                   | 2,514    |
 
 Aggregation: **226 of 247 province-reports reconcile**, 7 carry a verified
 exception, 4 disagree, 10 print no total to check against.
@@ -147,8 +146,8 @@ Tests: 73 passing, 1 strict xfail. Every case names the report it came from.
 ## The exception register
 
 `data/raw/reconciliation_exceptions.tsv` holds judgements about specific
-documents. An entry asserts: *I opened this page, added the printed rows, and
-the source does not agree with itself.* Seven entries so far, each read against
+documents. An entry asserts: _I opened this page, added the printed rows, and
+the source does not agree with itself._ Seven entries so far, each read against
 the rendered page before being written.
 
 Three design properties make it a record rather than a mute button.
@@ -166,10 +165,10 @@ checked, so the register is rejected outright rather than applied on trust: an
 exception not tied to a document is a suppression.
 
 The strongest entry is sitrep 059, where the page explains its own gap. The note
-beneath its zone table reads *"Ituri : la répartition cumulée par zone de santé
+beneath its zone table reads _"Ituri : la répartition cumulée par zone de santé
 correspond à la dernière distribution consolidée (10/07) ; le total provincial
 (1 772 cas / 608 décès) est le cumul du 12/07, l'écart avec la somme des ZS
-reflétant les cas et décès accumulés depuis cette distribution"* — the zone rows
+reflétant les cas et décès accumulés depuis cette distribution"_ — the zone rows
 are the 10 July distribution and the province row the 12 July cumulative. Where
 an entry infers rather than quotes, it says so: the same report's Nord-Kivu and
 Tshopo gaps have the same shape, but the note names only Ituri.
@@ -183,8 +182,8 @@ requirement let the cumulative spec match the early table, so sitrep 005's
 Mongbwalu was recorded with **309 confirmed cases where the page prints 309
 suspected and 13 confirmed**. Figures plausible, columns internally consistent,
 page arithmetic closing — the whole table had been read one concept to the left.
-The rule that follows is now in the code: *each relaxation of the heading
-vocabulary has to be paid for with a discriminator.*
+The rule that follows is now in the code: _each relaxation of the heading
+vocabulary has to be paid for with a discriminator._
 
 **The thousands separator had been flattened** from ASCII + no-break + narrow
 no-break to three ordinary spaces, invisible in any diff, rejecting every count
@@ -204,12 +203,12 @@ twenty-eight and Ituri came up 265 cases short.
 - **Overlap-fraction page matching** instead of two-edge: 146 province-reports
   against 216. Nearly every table spans most of the text width, so containment
   scores a perfect match.
-- **Edge tolerance of 10 pt** instead of 8: measured 180 reconciling against
-  198 — and that conclusion was WRONG. Two defects elsewhere (a heading
-  truncated by an empty row, and numbered rows discarded) were doing the damage
-  and the looser tolerance was being blamed. With both fixed, 10 pt gives 238
-  against 226 and is now the value in use. A tuning parameter measured against
-  a buggy pipeline gives the wrong answer confidently.
+- **Edge tolerance of 10 pt** instead of 8: measured 180 reconciling against 198
+  — and that conclusion was WRONG. Two defects elsewhere (a heading truncated by
+  an empty row, and numbered rows discarded) were doing the damage and the
+  looser tolerance was being blamed. With both fixed, 10 pt gives 238 against
+  226 and is now the value in use. A tuning parameter measured against a buggy
+  pipeline gives the wrong answer confidently.
 - **Forbidding `Zones de santé touchées`** to exclude the provincial summary:
   gains two reconciling province-reports, loses four whole reports, because the
   phrase also lands in this table's own heading where the title bleeds.
@@ -234,21 +233,22 @@ Sitrep 014 states only a national cumulative, so that is what it contributes:
 `national_only` is what the page says, not a gap in the reading.
 
 The provincial summary also runs on every report that has one (70 of 83) as an
-independent within-document check: where it and the zone-derived sums both
-exist they agree exactly on 57 of 66 reports, and most of the differences are
-already in the exception register at the same values.
+independent within-document check: where it and the zone-derived sums both exist
+they agree exactly on 57 of 66 reports, and most of the differences are already
+in the exception register at the same values.
 
 Three layouts are in use, and each is a declared spec rather than a code path:
 
-| Spec | Reports | What it carries |
-| --- | --- | --- |
-| `zone_cumulative` | 68 | cumulative confirmed cases and deaths, letality, and from 13 July the daily ascertainment block |
-| `zone_early` | 8 | suspected cases and deaths, confirmed cases, contacts — no letality, no cumulative deaths |
-| `zone_mixed` | 1 | both at once: new suspected, new confirmed, THEN cumulative cases and deaths |
+| Spec              | Reports | What it carries                                                                                 |
+| ----------------- | ------- | ----------------------------------------------------------------------------------------------- |
+| `zone_cumulative` | 68      | cumulative confirmed cases and deaths, letality, and from 13 July the daily ascertainment block |
+| `zone_early`      | 8       | suspected cases and deaths, confirmed cases, contacts — no letality, no cumulative deaths       |
+| `zone_mixed`      | 1       | both at once: new suspected, new confirmed, THEN cumulative cases and deaths                    |
 
-The mixed layout is the reason order is declared rather than inferred: `Nouveaux
-cas confirmés` and `Cumul de cas Confirmés` are adjacent columns and only their
-sequence tells them apart.
+The mixed layout is the reason order is declared rather than inferred:
+`Nouveaux
+cas confirmés` and `Cumul de cas Confirmés` are adjacent columns and
+only their sequence tells them apart.
 
 **Three residuals open**, all ours. Sitrep 033 recovers one part of Ituri; 083
 and 089 are each one death short.

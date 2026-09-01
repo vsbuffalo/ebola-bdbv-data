@@ -66,7 +66,49 @@ from functools import cached_property
 from pathlib import Path
 from typing import Iterator
 
+import logging
+
 import pdfplumber
+
+
+class _FontBBoxCounter(logging.Filter):
+    """Swallow pdfminer's per-font `FontBBox` warning and count it instead.
+
+    What it means. A PDF font descriptor is supposed to carry a `FontBBox`, the
+    bounding box of the font's glyphs. Some of these reports embed fonts whose
+    descriptor omits it or gives something that is not four numbers, and
+    pdfminer falls back to a zero box and logs a warning -- once per font, per
+    page, per document, which is twenty lines of noise for one report and
+    thousands across a build.
+
+    Why silencing it is safe here. Nothing in this extraction reads a font's
+    bounding box. Columns are found from word positions and rules, and every
+    table read is checked against the page's own printed arithmetic, so a bad
+    glyph box cannot quietly move a number -- it would have to survive that
+    check. Suppressing the line is removing noise, not a signal.
+
+    Why it is COUNTED rather than dropped. A warning nobody can see is one
+    nobody can notice changing. If a future vintage embeds fonts so broken that
+    the count jumps, that is worth knowing, so the total is reported once at the
+    end of a run instead of a line at a time.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.n = 0
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if "FontBBox" in record.getMessage():
+            self.n += 1
+            return False
+        return True
+
+
+FONT_BBOX = _FontBBoxCounter()
+logging.getLogger("pdfminer").addFilter(FONT_BBOX)
+#: pdfminer attaches its handler to the child logger, so the filter has to sit
+#: where the record is emitted rather than only on the parent.
+logging.getLogger("pdfminer.pdffont").addFilter(FONT_BBOX)
 
 SNAP_X = 6.0
 SNAP_Y = 2.5

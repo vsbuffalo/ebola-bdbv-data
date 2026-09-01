@@ -2,7 +2,7 @@
 # by design: `build` and `doc` never touch the network, so a rebuild can never
 # silently change what the source says.
 
-.PHONY: figures-release figures-compare watch-data-channel release-check escape-fraction care-ledger oneoff-testing oneoff-death-split oneoff-death-flow cron-install cron-uninstall check fetch refresh manifest verify build streams compare figures onset external \
+.PHONY: verdict figures-release figures-compare watch-data-channel release-check escape-fraction care-ledger oneoff-testing oneoff-death-split oneoff-death-flow cron-install cron-uninstall check fetch refresh manifest verify build streams compare figures onset external \
 	external-update scan-refresh doc serve test
 
 # WHERE A FIGURE LANDS SAYS WHICH DATA MADE IT. Every figure this repository
@@ -476,6 +476,16 @@ figures-compare:
 		elif cmp -s "$$a/$$f" "$$b/$$f"; then echo "  unchanged  $$f"; \
 		else echo "  CHANGED    $$f"; fi; \
 	 done
+
+## verdict -- OFFLINE. One screen: is this build safe to release? Reads the
+##            status files the build already wrote and sorts what it found into
+##            BLOCKING (stop), SOURCE (the reports contradict themselves —
+##            expected, recorded, not ours) and READER (a wording we refused
+##            rather than guessed — costs coverage, never correctness). Exits 1
+##            if anything is blocking, so CI can use it. Colour only at a
+##            terminal; NO_COLOR is honoured.
+verdict:
+	@uv run python scripts/build_verdict.py
 
 ## watch-data-channel -- poll the shared data channel (which lives in the
 ##            modelling repo's tree) and exit as soon as they write, printing

@@ -3993,11 +3993,16 @@ def test_the_totals_the_register_and_release_notes_claim_are_real():
         b = BS.read_stream(STREAMS / f"{stem}_excluding_backlog_national.tsv")
         got[stem] = (int(a[f"{stem}_national"].sum()),
                      int(b[f"{stem}_national"].sum()))
-    assert got["cases"] == (5912, 5640)      # 272 excluded, 4.6%
-    assert got["deaths"] == (2858, 2674)     # 184 excluded, 6.4%
+    # Pin the exclusion, not the totals. The archive total grows on every
+    # fetch -- it went 5,912 to 6,067 the day two reports landed -- so a test
+    # asserting it fails for the right reason at the worst time, on a release.
+    # What must not move is how many records the substitution takes out: that
+    # is two fixed historical batches and a change in it is a real defect.
+    assert got["cases"][0] - got["cases"][1] == 272
+    assert got["deaths"][0] - got["deaths"][1] == 184
     reg = FAMILIES.read_text()
-    assert "272 of 5,912 national cases, 4.6%" in reg
-    assert "184 of 2,858 national deaths, 6.4%" in reg
+    assert "272 national cases excluded" in reg
+    assert "184 national deaths" in reg
 
 
 # --------------------------------------------------------------------------

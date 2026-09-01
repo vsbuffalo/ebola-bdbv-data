@@ -49,6 +49,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from lib.pdftable import read
 from lib.report_date import FILENAME, report_key
 from lib.archive import held_pdfs, report_skipped  # noqa: E402
+from lib.pdftable import FONT_BBOX  # noqa: E402
 from lib.tablespec import (ALL_SPECS, PROVINCIAL_SUMMARY, Role, SPECS,
                            TableSpec, norm, rows_are_provinces, select)
 
@@ -891,6 +892,14 @@ def main() -> None:
     s = pl.DataFrame(status)
     print(f"\n{s.height} reports; {s.filter(pl.col('identity') == 'ok').height} "
           f"satisfy the page's own arithmetic")
+    # Reported once rather than a line per font per page. See
+    # lib.pdftable._FontBBoxCounter for why it is safe to suppress and why it
+    # is still counted.
+    if FONT_BBOX.n:
+        print(f"  {FONT_BBOX.n} embedded font(s) carry no usable FontBBox; "
+              "pdfminer's per-font warning is suppressed. Nothing here reads a "
+              "glyph box, and every table is checked against the page's own "
+              "arithmetic.")
     print(s.group_by("status").len().sort("len", descending=True))
     tally: dict[str, int] = {}
     for c in letality:

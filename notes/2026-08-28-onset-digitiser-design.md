@@ -3,64 +3,63 @@
 Date: 2026-08-28 Project: ebola-bdbv-data Tags: onset-curve, digitisation,
 design, types, pipeline Requirements:
 `notes/2026-08-28-onset-digitiser-requirements.md` (the measured failure
-analysis this design answers) and `notes/2026-08-26-onset-curve-reporting-triangle.md` (what
-the stream is and why we want it). Every requirement label used below — G1–G7,
-A1–A5, P1–P4, S1–S4 — refers to the requirements note.
+analysis this design answers) and
+`notes/2026-08-26-onset-curve-reporting-triangle.md` (what the stream is and why
+we want it). Every requirement label used below — G1–G7, A1–A5, P1–P4, S1–S4 —
+refers to the requirements note.
 
 ## The design, plainly
 
 Start from what is knowable before reading a single pixel. The figure is a
-stacked bar chart: for each onset date, a blue rectangle (cases alive as of
-the snapshot) with a red rectangle on top (cases dead). Bar heights are whole
-numbers of cases — a bar holds 28 cases or 29, never 28.4. And the y-axis
-prints the exchange rate between pixels and cases: if the gridlines sit 25
-cases apart and 108 pixels apart, one case is 4.32 pixels. So the entire
-content of one bar is a pair of small integers — call them *a* (alive) and
-*d* (dead) — and the resolution at which the image can express them is known
-exactly.
+stacked bar chart: for each onset date, a blue rectangle (cases alive as of the
+snapshot) with a red rectangle on top (cases dead). Bar heights are whole
+numbers of cases — a bar holds 28 cases or 29, never 28.4. And the y-axis prints
+the exchange rate between pixels and cases: if the gridlines sit 25 cases apart
+and 108 pixels apart, one case is 4.32 pixels. So the entire content of one bar
+is a pair of small integers — call them _a_ (alive) and _d_ (dead) — and the
+resolution at which the image can express them is known exactly.
 
 How upstream read a bar: start at the baseline and climb one pixel at a time,
-asking each pixel "are you blue?" or "are you red?" against hard RGB
-thresholds such as `R < 210`; after seven consecutive pixels answering
-neither, stop and declare the bar finished. JPEG compression smears colours
-slightly, so in the 088 render a few pale-blue rows near one bar's top failed
-the rule — two of them by a single unit on one channel — the climb hit seven
-misses one row below the bar's red cap, and a 43-case bar read as 27. The
-structural flaw is not the particular thresholds; it is that any one pixel is
-allowed to terminate the measurement.
+asking each pixel "are you blue?" or "are you red?" against hard RGB thresholds
+such as `R < 210`; after seven consecutive pixels answering neither, stop and
+declare the bar finished. JPEG compression smears colours slightly, so in the
+088 render a few pale-blue rows near one bar's top failed the rule — two of them
+by a single unit on one channel — the climb hit seven misses one row below the
+bar's red cap, and a 43-case bar read as 27. The structural flaw is not the
+particular thresholds; it is that any one pixel is allowed to terminate the
+measurement.
 
-This design never asks a pixel to decide anything. It reads each bar twice,
-by two methods that share no mechanism, and accepts the bar only when they
-agree.
+This design never asks a pixel to decide anything. It reads each bar twice, by
+two methods that share no mechanism, and accepts the bar only when they agree.
 
 **Reader one — discrete optimisation against a rendered bar.** Invert the
-problem: instead of interrogating pixels, enumerate every admissible answer
-and ask how well each explains the picture. For a candidate pair (a, d) we
-know exactly what the bar should look like — blue fill for the first
-`a x 4.32` pixels of height, red for the next `d x 4.32`, background above —
-so render that hypothesis, score it against the observed pixels, and do this
-for *every* pair of whole numbers the panel could hold. Keep the
-best-scoring pair. This is maximum-likelihood estimation by exhaustive
-enumeration: the integer lattice makes the hypothesis space finite and small,
-so the global optimum is found by sweeping it, with no optimiser and no
-thresholds. A smeared pixel now shifts one candidate's score by a sliver;
-roughly two thousand pixels vote per bar; nothing can truncate anything.
+problem: instead of interrogating pixels, enumerate every admissible answer and
+ask how well each explains the picture. For a candidate pair (a, d) we know
+exactly what the bar should look like — blue fill for the first `a x 4.32`
+pixels of height, red for the next `d x 4.32`, background above — so render that
+hypothesis, score it against the observed pixels, and do this for _every_ pair
+of whole numbers the panel could hold. Keep the best-scoring pair. This is
+maximum-likelihood estimation by exhaustive enumeration: the integer lattice
+makes the hypothesis space finite and small, so the global optimum is found by
+sweeping it, with no optimiser and no thresholds. A smeared pixel now shifts one
+candidate's score by a sliver; roughly two thousand pixels vote per bar; nothing
+can truncate anything.
 
-**Reader two — the outline-edge reader.** The chart draws every bar segment
-with a thin dark outline, a much darker stroke than either fill. So the two
-quantities of interest — the bar's top, and the internal blue-to-red
-boundary — exist in the image a second time, as dark horizontal lines,
-findable by looking for sharp darkness minima along each pixel column without
-ever classifying a fill colour. Reader two measures the same (a, d) from
-those lines alone. It fails in different circumstances than reader one (blur
-versus wash), which is the point: agreement between two mechanisms that share
-no blind spot is evidence; upstream's two implementations were ports of one
-algorithm and misread 088 identically.
+**Reader two — the outline-edge reader.** The chart draws every bar segment with
+a thin dark outline, a much darker stroke than either fill. So the two
+quantities of interest — the bar's top, and the internal blue-to-red boundary —
+exist in the image a second time, as dark horizontal lines, findable by looking
+for sharp darkness minima along each pixel column without ever classifying a
+fill colour. Reader two measures the same (a, d) from those lines alone. It
+fails in different circumstances than reader one (blur versus wash), which is
+the point: agreement between two mechanisms that share no blind spot is
+evidence; upstream's two implementations were ports of one algorithm and misread
+088 identically.
 
 Around that core, every vintage passes through whole-figure gates — the bars
-must sum to the total the title prints; totals over onset dates old enough to
-be settled may never fall between vintages — implemented as pure functions of
-the published CSVs, so they run over all of history on every build. Upstream's
+must sum to the total the title prints; totals over onset dates old enough to be
+settled may never fall between vintages — implemented as pure functions of the
+published CSVs, so they run over all of history on every build. Upstream's
 decisive check existed and lived in a comment beside one vintage; here the
 checks are the build.
 
@@ -162,23 +161,21 @@ Published artifacts, each a `make` target:
 - `registers/onset_reader_overrides.tsv` — hand exclusions with reasons, in the
   style of the existing override registers. Empty until something earns a row.
 - `data/build/onset/images/<date>-<sitrep>-<sha12>.png` — the extracted chart
-  itself, one per distinct decoded image, named by the *earliest* report date
-  and sitrep that carried it plus the first 12 hex of the decoded-pixel
-  SHA-256 (so `2026-08-10-088-0f69d3208a41.png` also stands for the 089–091
-  reprints; `vintages.csv` holds the full mapping and the full hash).
-  `pdfimages` pulls the embedded raster object directly, so these are the
-  exact pixels the PDF carries, not a re-rendered crop; they are what every
-  downstream number was read from, published so a human can look without
-  opening a PDF.
+  itself, one per distinct decoded image, named by the _earliest_ report date
+  and sitrep that carried it plus the first 12 hex of the decoded-pixel SHA-256
+  (so `2026-08-10-088-0f69d3208a41.png` also stands for the 089–091 reprints;
+  `vintages.csv` holds the full mapping and the full hash). `pdfimages` pulls
+  the embedded raster object directly, so these are the exact pixels the PDF
+  carries, not a re-rendered crop; they are what every downstream number was
+  read from, published so a human can look without opening a PDF.
 - `data/build/onset/proof/<date>-<sitrep>-<sha12>.png` — the same chart with the
   reader's conclusions drawn on top: detected panel and gridlines, the date
   assigned to each bar, each bar's fitted alive/dead heights as outlines with
   the counts beside them, flagged bars in a warning colour. This is the human
   check built into the build: a one-day date misregistration that no CSV row
-  reveals is instantly visible as every outline sitting beside its bar, and
-  the anchor register's saved crops are cut from these. Same idea as the
-  laboratory extraction carrying the sentence it read — the artifact ships
-  its own audit.
+  reveals is instantly visible as every outline sitting beside its bar, and the
+  anchor register's saved crops are cut from these. Same idea as the laboratory
+  extraction carrying the sentence it read — the artifact ships its own audit.
 
 ## Module boundaries and seams
 
@@ -216,112 +213,107 @@ The seams, and what each buys:
 
 ## Reader one: discrete optimisation against a rendered bar (the primary)
 
-**Setup.** Calibration hands the reader, for one bar: the strip of pixel
-columns the bar occupies, the baseline row it grows from, the exchange rate
-`c = px_per_case`, and the palette (the fill colours sampled from this
-image's own legend). The unknowns are two non-negative integers, the alive
-count *a* and the dead count *d*.
+**Setup.** Calibration hands the reader, for one bar: the strip of pixel columns
+the bar occupies, the baseline row it grows from, the exchange rate
+`c = px_per_case`, and the palette (the fill colours sampled from this image's
+own legend). The unknowns are two non-negative integers, the alive count _a_ and
+the dead count _d_.
 
 **The hypothesis space.** Every pair (a, d) with `(a + d) * c` no taller than
 the panel is a candidate — at 4.32 px per case and a ~420 px panel, a few
-thousand pairs. That finiteness is the gift of the integer lattice: because
-the truth is a pair of whole numbers, the space of possible answers can be
-swept exhaustively rather than searched.
+thousand pairs. That finiteness is the gift of the integer lattice: because the
+truth is a pair of whole numbers, the space of possible answers can be swept
+exhaustively rather than searched.
 
-**What one hypothesis predicts.** If (a, d) were the truth, the strip would
-look like: alive fill from the baseline up `a * c` rows; dead fill for the
-next `d * c` rows; background above (white, gridline dots, or the pink
-incomplete-band overlay, whichever the calibration says is behind this bar);
-and a one-pixel dark outline at each boundary. Inside the incomplete band the
-fills are the alpha-composited faded colours — one compositing formula, not a
-second code path (A5).
+**What one hypothesis predicts.** If (a, d) were the truth, the strip would look
+like: alive fill from the baseline up `a * c` rows; dead fill for the next
+`d * c` rows; background above (white, gridline dots, or the pink
+incomplete-band overlay, whichever the calibration says is behind this bar); and
+a one-pixel dark outline at each boundary. Inside the incomplete band the fills
+are the alpha-composited faded colours — one compositing formula, not a second
+code path (A5).
 
 **Scoring a hypothesis is evaluating a likelihood.** Model each pixel as its
 predicted class colour plus noise: the pixel's contribution is a clipped
 distance to the palette colour of the class the hypothesis assigns it, which
 makes the total a robust log-likelihood — Gaussian in colour space near the
 palette, flattened in the tails so no single aberrant pixel dominates. One
-refinement carries real weight: rows within one pixel of a hypothesised
-boundary get weight zero. JPEG concentrates its worst smearing exactly at
-colour transitions, so those rows carry almost no information about which
-class sits on either side — down-weighting them is a heteroskedastic noise
-model, the principled form of "ignore the smeared pixels". The seven washed
-rows that killed upstream's read of the 25 July bar sat precisely at the
-blue-red boundary: in this fit they are zero-weight rows, and even if scored
-they would be seven votes among two thousand.
+refinement carries real weight: rows within one pixel of a hypothesised boundary
+get weight zero. JPEG concentrates its worst smearing exactly at colour
+transitions, so those rows carry almost no information about which class sits on
+either side — down-weighting them is a heteroskedastic noise model, the
+principled form of "ignore the smeared pixels". The seven washed rows that
+killed upstream's read of the 25 July bar sat precisely at the blue-red
+boundary: in this fit they are zero-weight rows, and even if scored they would
+be seven votes among two thousand.
 
-**Computation.** Compute, once per strip, three per-row aggregate scores —
-this row's pixels scored as alive fill, as dead fill, and as background:
-`S_alive[r]`, `S_dead[r]`, `S_bg[r]`. The objective for (a, d) is then the
-sum of `S_alive` over the first `a*c` rows, `S_dead` over the next `d*c`, and
-`S_bg` above — three contiguous ranges, so with prefix sums each candidate
-evaluates in O(1) after O(H) preparation, and the full sweep is O(H²) per
-bar. Sweep everything; take the argmax. Because the space is enumerated, the
-argmax is the *exact global* maximum-likelihood estimate: no optimiser, no
-initialisation, no local minima, no convergence criterion, and bit-for-bit
-deterministic — which the repository's byte-identical rebuild rule requires
-anyway.
+**Computation.** Compute, once per strip, three per-row aggregate scores — this
+row's pixels scored as alive fill, as dead fill, and as background:
+`S_alive[r]`, `S_dead[r]`, `S_bg[r]`. The objective for (a, d) is then the sum
+of `S_alive` over the first `a*c` rows, `S_dead` over the next `d*c`, and `S_bg`
+above — three contiguous ranges, so with prefix sums each candidate evaluates in
+O(1) after O(H) preparation, and the full sweep is O(H²) per bar. Sweep
+everything; take the argmax. Because the space is enumerated, the argmax is the
+_exact global_ maximum-likelihood estimate: no optimiser, no initialisation, no
+local minima, no convergence criterion, and bit-for-bit deterministic — which
+the repository's byte-identical rebuild rule requires anyway.
 
 **What is reported.** The argmax (a, d); `margin`, the log-likelihood ratio
-between the best pair and the runner-up — so "confident" has a stated
-meaning: the second-best hypothesis is implausible by a known factor — and
+between the best pair and the runner-up — so "confident" has a stated meaning:
+the second-best hypothesis is implausible by a known factor — and
 `resolution_cases = 1/c`, the physical limit of what this render can express
 (A4). A bar whose margin is small is flagged, never guessed (A3's principle,
 applied to the fit rather than to a percentile over columns).
 
-**The lattice is also a calibration alarm.** The fit is only as good as `c`
-and the date registration beneath it — miscalibrate either and every bar
-reads confidently wrong by the same factor, which is the one failure a
-per-bar score cannot see. But a wrong `c` leaves a fingerprint: fitted
-segment heights, measured in raw pixels, stop sitting near integer multiples
-of `c`. The residual-to-lattice distribution across the whole figure must be
-sharply peaked near zero; if it is not, the calibration is wrong and the
-vintage refuses before publishing a number. A wrong exchange rate cannot fail
-silently.
+**The lattice is also a calibration alarm.** The fit is only as good as `c` and
+the date registration beneath it — miscalibrate either and every bar reads
+confidently wrong by the same factor, which is the one failure a per-bar score
+cannot see. But a wrong `c` leaves a fingerprint: fitted segment heights,
+measured in raw pixels, stop sitting near integer multiples of `c`. The
+residual-to-lattice distribution across the whole figure must be sharply peaked
+near zero; if it is not, the calibration is wrong and the vintage refuses before
+publishing a number. A wrong exchange rate cannot fail silently.
 
 ## Reader two: the outline-edge reader (the independent check)
 
-The chart's renderer strokes every bar segment with a thin dark outline —
-in the 088 forensics the outline row reads around RGB (115, 64, 73) against
-fills near (200, 229, 237) and (202, 38, 45). That stroke means the two
-quantities reader one estimates exist in the image a second time, encoded
-differently: the bar's top and the alive/dead boundary are *dark horizontal
-lines*, and finding a dark line does not require classifying a single fill
-pixel.
+The chart's renderer strokes every bar segment with a thin dark outline — in the
+088 forensics the outline row reads around RGB (115, 64, 73) against fills near
+(200, 229, 237) and (202, 38, 45). That stroke means the two quantities reader
+one estimates exist in the image a second time, encoded differently: the bar's
+top and the alive/dead boundary are _dark horizontal lines_, and finding a dark
+line does not require classifying a single fill pixel.
 
 **Mechanics.** For each pixel column in the bar's strip, take the luminance
 profile from the panel top down to the baseline. Outline rows appear as sharp
 local minima — a one-to-two-pixel dip far darker than either fill or the
-background. Collect the minima that beat a contrast threshold relative to
-their neighbourhood; the topmost is the bar-top edge, and a second minimum
-between it and the baseline, if present, is the blue-red boundary (a bar with
-no red cap has no second edge, so d = 0 falls out naturally rather than
-being a special case). Convert the two edge heights to counts through the
-same `c` as reader one. Then aggregate across the bar's handful of columns:
-the estimate is the median, and — following A3 — the column-wise spread is
-reported alongside it. If the columns disagree beyond tolerance, the bar is
-refused by this reader rather than averaged into respectability: a large
-spread means the bar was not measured, and upstream's 75th-percentile-over-
-columns is exactly the move that converted five truncated columns and one
-good one into a confident wrong answer.
+background. Collect the minima that beat a contrast threshold relative to their
+neighbourhood; the topmost is the bar-top edge, and a second minimum between it
+and the baseline, if present, is the blue-red boundary (a bar with no red cap
+has no second edge, so d = 0 falls out naturally rather than being a special
+case). Convert the two edge heights to counts through the same `c` as reader
+one. Then aggregate across the bar's handful of columns: the estimate is the
+median, and — following A3 — the column-wise spread is reported alongside it. If
+the columns disagree beyond tolerance, the bar is refused by this reader rather
+than averaged into respectability: a large spread means the bar was not
+measured, and upstream's 75th-percentile-over- columns is exactly the move that
+converted five truncated columns and one good one into a confident wrong answer.
 
 **Why two readers, and why these two.** Independence of mechanism is the
-requirement, and upstream shows why: their Julia and Python implementations
-were ports of one algorithm, agreed byte-for-byte, and misread 088
-identically — redundancy without diversity checks nothing. Fit and edge fail
-in *different* renders: the fit is weakest when compression washes the two
-fills toward each other (the colours blur but the outlines survive); the
-edge reader is weakest when downsampling blurs the thin outlines away (the
-strokes fade but the fill regions survive). A render bad enough to defeat
-both at once is a render the gates should refuse anyway.
+requirement, and upstream shows why: their Julia and Python implementations were
+ports of one algorithm, agreed byte-for-byte, and misread 088 identically —
+redundancy without diversity checks nothing. Fit and edge fail in _different_
+renders: the fit is weakest when compression washes the two fills toward each
+other (the colours blur but the outlines survive); the edge reader is weakest
+when downsampling blurs the thin outlines away (the strokes fade but the fill
+regions survive). A render bad enough to defeat both at once is a render the
+gates should refuse anyway.
 
-**Adjudication.** Agreement within `max(1 case, resolution)` on both
-components → accept reader one's value, `reader_agreement = true`.
-Disagreement → the bar is flagged, and neither value is promoted — a
-disagreement is information about the image, not a vote to be settled by
-averaging. More than a declared fraction of flagged bars → the whole vintage
-refuses (gate G-R below), because per-image error is the failure mode this
-entire design exists to catch.
+**Adjudication.** Agreement within `max(1 case, resolution)` on both components
+→ accept reader one's value, `reader_agreement = true`. Disagreement → the bar
+is flagged, and neither value is promoted — a disagreement is information about
+the image, not a vote to be settled by averaging. More than a declared fraction
+of flagged bars → the whole vintage refuses (gate G-R below), because per-image
+error is the failure mode this entire design exists to catch.
 
 ## Calibration: everything from the figure, one register for dates
 

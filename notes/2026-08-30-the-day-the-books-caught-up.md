@@ -1,8 +1,7 @@
 # The day the books caught up: 22 July, and where those cases belong in time
 
-Date: 2026-08-30
-Project: ebola-bdbv-data
-Tags: reconciliation, notification, onset-curve, banner, provenance
+Date: 2026-08-30 Project: ebola-bdbv-data Tags: reconciliation, notification,
+onset-curve, banner, provenance
 
 ## Context / question
 
@@ -11,9 +10,9 @@ confirmed cumulative moved 369 against neighbours of 63 and 68: does the source
 say what period the reconciliation covered, were cases and deaths reconciled
 over the same period, and is 22 July the only such day. They had opened a
 ten-day window backwards over the flagged region and let one row carry the
-total, choosing the width on the ground that ten days is where the implied
-daily rate stops carrying an excess. They could not make the deaths absorb
-under any width.
+total, choosing the width on the ground that ten days is where the implied daily
+rate stops carrying an excess. They could not make the deaths absorb under any
+width.
 
 They were solving the wrong problem, and so were we by not having read the page
 closely enough.
@@ -25,8 +24,8 @@ the day's own notification count beside the cumulative, with a province
 breakdown:
 
 ```
-  +97 nouveaux cas (Ituri 73 · N-Kivu 18 · Haut-Uele 6)
-  +62 décès (Ituri 45 · Nord-Kivu 14 · Haut-Uele 3)
++97 nouveaux cas (Ituri 73 · N-Kivu 18 · Haut-Uele 6)
++62 décès (Ituri 45 · Nord-Kivu 14 · Haut-Uele 3)
 ```
 
 and, on sitrep 069, an asterisked footnote saying why the cumulative moved four
@@ -43,15 +42,15 @@ these reports knew what the reader's problem was.
 
 Over the 22 single-day report days where both readings exist, 16 agree exactly.
 
-| date | cases moved | notified | deaths moved | notified |
-|---|---|---|---|---|
-| 2026-07-12 | 37 | 31 | 16 | 10 |
-| 2026-07-13 | 48 | 54 | 36 | 28 |
-| 2026-07-16 | 57 | 56 | — | — |
-| 2026-07-18 | 77 | 83 | 37 | 40 |
-| 2026-07-22 | 369 | 97 | 236 | 62 |
-| 2026-08-02 | 54 | 58 | 50 | 40 |
-| 2026-08-04 | — | — | 50 | 52 |
+| date       | cases moved | notified | deaths moved | notified |
+| ---------- | ----------- | -------- | ------------ | -------- |
+| 2026-07-12 | 37          | 31       | 16           | 10       |
+| 2026-07-13 | 48          | 54       | 36           | 28       |
+| 2026-07-16 | 57          | 56       | —            | —        |
+| 2026-07-18 | 77          | 83       | 37           | 40       |
+| 2026-07-22 | 369         | 97       | 236          | 62       |
+| 2026-08-02 | 54          | 58       | 50           | 40       |
+| 2026-08-04 | —           | —        | 50           | 52       |
 
 Everything but 22 July is ±10 and sits on a day the source footnotes a
 reclassification. On 2026-08-02 the source prints both halves — "+40 décès du
@@ -71,12 +70,12 @@ national aggregate and were merged in. So there is nothing in the national
 series to invert.
 
 **The epidemic curve did not receive them.** Figure 4 (by symptom onset, from
-the DHIS2 line list) is the only object in the report that places cases in
-time. Across the 21 → 22 July vintages it gained 22 cases, against 192 and 248
-on the transitions either side, at an ordinary mean onset-to-report delay of 10
-days. The line list holds ~53% of the national cumulative throughout; on 22
-July that share drops to 48% and recovers over the following fortnight as the
-harmonised cases trickle in at the ordinary rate.
+the DHIS2 line list) is the only object in the report that places cases in time.
+Across the 21 → 22 July vintages it gained 22 cases, against 192 and 248 on the
+transitions either side, at an ordinary mean onset-to-report delay of 10 days.
+The line list holds ~53% of the national cumulative throughout; on 22 July that
+share drops to 48% and recovers over the following fortnight as the harmonised
+cases trickle in at the ordinary rate.
 
 So the aggregate count and the line list are two pipelines with different
 latencies, and the harmonisation moved only the first. **The published record
@@ -98,12 +97,12 @@ not a flow: it is one lump whose composition differs from the flow. The backlog
 runs 174 deaths on 272 cases, 64.0%; the window's other printed notifications
 run 817 on 1,595, 51.2%. No width was going to reconcile those, because the
 retrospectively integrated records are enriched for deaths — which is what you
-would expect if the provincial books held community deaths confirmed post
-mortem that the national aggregate had not taken up.
+would expect if the provincial books held community deaths confirmed post mortem
+that the national aggregate had not taken up.
 
-The general lesson: when a correction is a batch rather than a rate, checking
-it against a rate will always leave a residual, and the residual is the
-composition difference rather than a mis-specified window.
+The general lesson: when a correction is a batch rather than a rate, checking it
+against a rate will always leave a residual, and the residual is the composition
+difference rather than a mis-specified window.
 
 ## Reading the banner
 
