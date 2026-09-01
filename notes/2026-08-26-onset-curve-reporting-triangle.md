@@ -19,7 +19,7 @@ Two questions:
 1. What exactly is this data stream, and do we hold what is needed to build it?
 2. Does it yield a distribution of onset → detection, or onset → death?
 
-Short answers: it is a _reporting triangle_, not a time series; we hold every
+Short answers: it is a *reporting triangle*, not a time series; we hold every
 input, in more vintages than anyone has used; and yes to both distributions,
 with specific censoring caveats that determine how it must be extracted.
 
@@ -28,21 +28,21 @@ with specific censoring caveats that determine how it must be extracted.
 The onset curve is never final. A person who first felt ill on 25 July might not
 be swabbed until 30 July, confirmed on 2 August, and entered into DHIS2 with an
 onset date on 4 August. The 25 July bar therefore keeps growing every time the
-figure is republished. Each published figure is a **snapshot** — a _vintage_ —
+figure is republished. Each published figure is a **snapshot** — a *vintage* —
 of the same underlying curve, taken on a different day.
 
-Indexing by onset date _u_ (the column) and report date _s_ (the row), the cell
+Indexing by onset date *u* (the column) and report date *s* (the row), the cell
 value is the increment
 
     y(s, u) = N_s(u) − N_{s−1}(u)
 
-where `N_s(u)` is the bar height for onset date _u_ in the figure published at
-report date _s_. That increment counts cases with onset _u_ that became visible
-between one publication and the next, at delay _d = s − u_. The stack of these
+where `N_s(u)` is the bar height for onset date *u* in the figure published at
+report date *s*. That increment counts cases with onset *u* that became visible
+between one publication and the next, at delay *d = s − u*. The stack of these
 cells over all (s, u) is the triangle, and it is a direct measurement of the
 **reporting-delay distribution**.
 
-Why anyone wants it: it is what makes _nowcasting_ possible. The last several
+Why anyone wants it: it is what makes *nowcasting* possible. The last several
 bars of any onset curve are always artificially low, because the cases that will
 fill them have not been confirmed yet. Without a delay distribution you cannot
 tell an epidemic that is genuinely turning over from one whose recent bars are
@@ -67,8 +67,8 @@ no onset figure, leaving **39 candidate vintages** before deduplication.
 The document format changes at report 084, and this is the single most dangerous
 feature of the source.
 
-**Reports 059–083** use a long "analytique" layout (15 pages). Section _2.4
-Analyse temporelle — courbes épidémiques_ carries two numbered figures:
+**Reports 059–083** use a long "analytique" layout (15 pages). Section *2.4
+Analyse temporelle — courbes épidémiques* carries two numbered figures:
 
 - `FIGURE 3 — COURBE EPIDEMIQUE PAR SEMAINE DE NOTIFICATION` — weekly, by
   notification week.
@@ -77,8 +77,8 @@ Analyse temporelle — courbes épidémiques_ carries two numbered figures:
   — this is the onset curve, daily, stacked by vital status.
 
 **Reports 084 onward** use a 6–7 page brief. The text above the chart reads
-_"Évolution de cas par date de début des symptômes au cours de 21 derniers
-jours"_, and that caption is **wrong, in three different ways, at three
+*"Évolution de cas par date de début des symptômes au cours de 21 derniers
+jours"*, and that caption is **wrong, in three different ways, at three
 different points in the series**:
 
 | reports  | what the caption says | what the embedded figure actually is                                                                                                                                 |
@@ -133,7 +133,7 @@ in the title is **not** in the PDF text layer either; it is part of the raster
 and must be read out of the image.
 
 Bar colours are clean and well separated: Vivant ≈ RGB (192, 227, 238), Décédé ≈
-RGB (202, 38, 45), with the _données potentiellement incomplètes_ shading ≈
+RGB (202, 38, 45), with the *données potentiellement incomplètes* shading ≈
 (250, 214, 216). The images are JPEG-compressed, so those colours spread and
 exact matching will fail; nearest-centre classification with a distance
 threshold is required.
@@ -141,8 +141,8 @@ threshold is required.
 ## The finding that changes how the stream should be read
 
 Every version of the figure prints its own denominator in the title, and the
-footnote defines it: _"cas confirmés avec statut vital et date de début de
-symptômes renseignés"_ — confirmed cases with **both** a recorded vital status
+footnote defines it: *"cas confirmés avec statut vital et date de début de
+symptômes renseignés"* — confirmed cases with **both** a recorded vital status
 **and** a recorded onset date. That is not all confirmed cases.
 
 Against our own extraction, which reproduces the sitrep's printed national
@@ -161,7 +161,7 @@ vintage, and the coverage fraction is not constant.
 The consequence is specific. The increment `N_s(u) − N_{s−1}(u)` sums two
 mechanisms that the figure cannot distinguish:
 
-1. a genuinely new confirmation with onset _u_ — late reporting, the signal;
+1. a genuinely new confirmation with onset *u* — late reporting, the signal;
 2. a case confirmed days earlier whose **onset-date field was only just filled
    in** — backfill of a missing field, not an epidemiological event.
 
@@ -190,12 +190,12 @@ Yes to both, with different censoring problems.
 ### Onset → appearance in the published figure
 
 This is what the triangle measures directly. It is worth being precise that it
-is _not_ the clinical ascertainment delay. It is the convolution of onset →
+is *not* the clinical ascertainment delay. It is the convolution of onset →
 sample collection, sample → laboratory confirmation, confirmation → DHIS2 entry
-_with an onset date recorded_, and DHIS2 → figure regeneration. It is an
+*with an onset date recorded*, and DHIS2 → figure regeneration. It is an
 administrative pipeline delay and is necessarily longer than onset → sample.
 
-That gives a validation rather than a conflict. Akilimali et al., _NEJM_
+That gives a validation rather than a conflict. Akilimali et al., *NEJM*
 395(6):610 (6 Aug 2026), fit onset → diagnostic sample collection on the
 laboratory line list with `epidist`, correcting for double interval censoring
 and right truncation: median **4.8 d** (95% CrI 3.46–7.84) and mean **7.4 d**
@@ -205,8 +205,8 @@ difference is the laboratory-plus-data-entry limb. If it comes out shorter, the
 digitisation or the date registration is wrong.
 
 **The censoring problem is at the short end, which is where the mass is.** Each
-figure stops its x-axis short of its own report date, so for onset date _u_ the
-first vintage _s₀_ that plots it already contains an accumulated stock
+figure stops its x-axis short of its own report date, so for onset date *u* the
+first vintage *s₀* that plots it already contains an accumulated stock
 `N_{s₀}(u)`, built up over all delays `d ≤ s₀ − u`, which was never observed as
 an increment. Delay zero is never seen.
 
@@ -217,7 +217,7 @@ has stopped moving, the eventual total `N_∞(u)` is known. Then
     N_{s₀}(u) / N_∞(u)
 
 is one point on the delay cumulative distribution, evaluated at `d₀ = s₀ − u`.
-Because the axis end sits a _varying_ number of days short of the report date
+Because the axis end sits a *varying* number of days short of the report date
 across vintages, `d₀` differs between onset dates, so this yields the CDF at a
 range of short delays rather than at a single point. That is a real short-delay
 constraint, and it is stronger than extrapolating from a pooled baseline.
@@ -230,12 +230,12 @@ identifies the short end of the delay distribution.
 ### Onset → death
 
 This is the more valuable one, and it is available because the bars are
-**stacked by vital status**, with vital status recorded _as of the snapshot_
+**stacked by vital status**, with vital status recorded *as of the snapshot*
 rather than as of confirmation.
 
 Write `B_s(u)` for the Vivant (alive) count and `R_s(u)` for the Décédé (dead)
-count, so `N = B + R`. A case counted alive at vintage _s−1_ who dies before
-vintage _s_ moves from `B` to `R`. Therefore
+count, so `N = B + R`. A case counted alive at vintage *s−1* who dies before
+vintage *s* moves from `B` to `R`. Therefore
 
     ΔR = R_s(u) − R_{s−1}(u)
        = (newly ascertained cases with onset u already dead)
@@ -252,7 +252,7 @@ newly ascertained cases, which is itself estimable from onset dates where
 Caveats that must travel with any such estimate:
 
 - It is onset → **recorded** death, not onset → death. The death-reporting delay
-  still needs deconvolving, and the triangle constrains the _ascertainment_
+  still needs deconvolving, and the triangle constrains the *ascertainment*
   delay, not necessarily the death-reporting delay.
 - "Vivant" means alive as of the snapshot, **not recovered**. A case-fatality
   ratio read off a recent vintage is biased downward by right censoring. That
@@ -266,18 +266,18 @@ Caveats that must travel with any such estimate:
   attempted this measurement and did not get a result I trust, so it is stated
   here as an open question, not a finding.
 - Digitising the internal blue/red boundary is required, not just the bar top.
-  This is likely _more_ accurate than the total, not less: the internal boundary
+  This is likely *more* accurate than the total, not less: the internal boundary
   is a hard transition between two saturated colours, whereas the bar top meets
   white background through an antialiased dark outline.
 
 ### Why this is worth the effort for this project
 
 `notes/2026-08-22-rho-reporting-and-priors.md` records two open gaps that this
-stream speaks to directly. First, that no _fitted_ onset-to-death distribution
+stream speaks to directly. First, that no *fitted* onset-to-death distribution
 with a published shape parameter for an ebolavirus was located — medians and
 ranges are abundant, a fitted gamma or Weibull is not. Second, that our `gamma`
 prior is anchored to the wrong pathway: it governs the never-confirmed-alive
-route, but is taken from a convolution running _through admission_ (implied mean
+route, but is taken from a convolution running *through admission* (implied mean
 ≈ 13 d) rather than the separate community pathway (mean 8.17 d).
 
 The onset curve is the only source in hand that could give an outbreak-specific,
@@ -330,18 +330,18 @@ where a future re-run will break.
    without this step contains rows of structural zeros.
 3. **Self-calibrate axes from the figure's own ticks.** Do not assume the last
    bar aligns with the last tick — in report 088 the bars overrun it. Derive
-   pixels-per-day from the _gridline spacing_ and anchor on a labelled tick,
+   pixels-per-day from the *gridline spacing* and anchor on a labelled tick,
    then check that the implied first and last bar dates are consistent with the
    axis extent.
 4. **Handle the rendering drift explicitly**: English and French month
    abbreviations, y-gridline steps of both 20 and 25, and shifting tick phase.
-   Each should be _detected_, not configured per vintage where that can be
+   Each should be *detected*, not configured per vintage where that can be
    avoided; where a per-vintage override is unavoidable, it belongs in a
    register file, not in the code.
 5. **Digitise three quantities per bar**, not one: the alive count, the dead
    count, and the total. Classify pixels by nearest colour centre with a
    distance threshold — the images are JPEG-compressed and exact matching fails.
-6. **Treat the faded bars inside the _données potentiellement incomplètes_ band
+6. **Treat the faded bars inside the *données potentiellement incomplètes* band
    as observed-and-flagged, not missing.** They are the same two colours
    alpha-blended over the pink shading; a mask tuned only to the saturated
    colours drops them, which silently deletes the most recent and most
@@ -356,8 +356,8 @@ where a future re-run will break.
   validated national cumulative confirmed. Publish this as a series in its own
   right — it is the diagnostic for the backfill confounder described above, and
   it is useful independently of the triangle.
-- **Against monotonicity**: `N_s(u)` should be non-decreasing in _s_ for fixed
-  _u_, because late reporting can only add cases. It will not be, in the scans.
+- **Against monotonicity**: `N_s(u)` should be non-decreasing in *s* for fixed
+  *u*, because late reporting can only add cases. It will not be, in the scans.
   Count and report every violation with its magnitude rather than clipping it —
   the violations are the measurement error budget, and they are what tells us
   whether a heavy-tailed likelihood is warranted or whether the digitiser is

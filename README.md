@@ -35,7 +35,7 @@ provenance with it. Every tag published is recorded in
 is deleted or moved.
 
 Because everything under `data/build/` rebuilds byte-identically from the
-committed inputs, a tag pins the _data_ even though the data files are not
+committed inputs, a tag pins the *data* even though the data files are not
 themselves committed: check out the tag, run `make build streams`, and you hold
 the release, verifiable file by file against the consumer's recorded hashes. The
 modelling repository vendors the streams exactly this way — pinned to a tag,
@@ -75,7 +75,7 @@ reports does (the full lineage-by-lineage table is below):
 - **The ascertainment split** — each day's confirmed deaths divided into
   community versus treatment-centre, the series the ascertainment models fit.
   Absent from every other lineage.
-- **Province-level series that are _derived_, not transcribed** — built from the
+- **Province-level series that are *derived*, not transcribed** — built from the
   zone rows and checked against every printed province row, so a missed row is a
   loud failure instead of a quiet undercount.
 - **The source's own caveats as data** — the harmonisation footnotes declaring
@@ -87,8 +87,8 @@ reports does (the full lineage-by-lineage table is below):
 ## Why this much care
 
 The quantity the models most need from these reports is not the case count, it
-is the _fraction of confirmed deaths found in the community rather than in a
-treatment centre_, the closest thing the source prints to a measurement of how
+is the *fraction of confirmed deaths found in the community rather than in a
+treatment centre*, the closest thing the source prints to a measurement of how
 much transmission the surveillance system is missing.
 
 In mid-August, a plausible-looking extraction of that fraction read **1.00** for
@@ -98,12 +98,12 @@ mechanism of this disagreement was small, subtle, entirely silent: on four
 consecutive reports the zone table breaks across a page, the first page carries
 too few rows for a column-detection heuristic, and one column's values slid into
 their neighbour. Every surviving row then had community deaths equal to total
-deaths _by construction_. Nothing looked wrong from outside — the values were
+deaths *by construction*. Nothing looked wrong from outside — the values were
 plausible integers, every cumulative total still balanced, and the emitted
-series didn't jump but _climbed_, over six weeks, exactly the way a real signal
+series didn't jump but *climbed*, over six weeks, exactly the way a real signal
 of collapsing isolation would. The error was caught one way only: by summing
 each page's daily columns against the totals the same page prints. An
-epidemiological conclusion of the first order — _isolation has collapsed_ —
+epidemiological conclusion of the first order — *isolation has collapsed* —
 would have been a parsing artifact, at maximum leverage on the most recent data.
 
 That is the failure class this repository is built against. The stream files are
@@ -135,9 +135,9 @@ Two rendered pages, both self-contained single files:
 first and tells you if something else holds it). After a re-render the pages
 update in place — refresh the browser, no restart needed.
 
-**Run `make check` first.** It is the only step that looks _outward_ — every
+**Run `make check` first.** It is the only step that looks *outward* — every
 other check asks whether the reports we hold are internally consistent, and none
-of them can ask whether we hold the reports that _exist_. The reference project
+of them can ask whether we hold the reports that *exist*. The reference project
 once sat eleven days behind the source with every internal check green, because
 the site renamed the series and the query silently stopped matching.
 
@@ -161,8 +161,8 @@ state in words, and `meta.json` (whose `population` and `day0` fields are read
 too) — are vendored by the modelling repository, pinned to a commit of this one
 and verified by per-file sha256 against a byte-identical rebuild. The national
 streams are built from the printed national rows, never by summing the province
-streams; the per-bin identity _national = emitted provinces + dropped
-provinces + orphan pool + unattributed_ is recorded in `meta.json`, and a
+streams; the per-bin identity *national = emitted provinces + dropped
+provinces + orphan pool + unattributed* is recorded in `meta.json`, and a
 nonzero unattributed term is a finding. That makes their shape a **contract, not
 an implementation detail**: file renames, column changes, and the
 `uganda_exports` convention (cumulative counts at bulletin dates, deliberately
@@ -173,11 +173,11 @@ announced across both repositories — never refactors.
 families (`cases_*`, `deaths_*`) are the movement of the source's printed
 cumulative, so a row spans the interval since the previous row. The notified
 families (`cases_notified_*`, `deaths_notified_*`) are the count the front-page
-banner states _for the report day itself_, which the source printed only for
+banner states *for the report day itself*, which the source printed only for
 sitreps 059–083 — the stretch it was reconciling, when its cumulative stopped
 being safe to difference. The excluding-backlog families
 (`cases_excluding_backlog_*`, `deaths_excluding_backlog_*`) are the differenced
-series with the days the source _says_ hold records from earlier days replaced
+series with the days the source *says* hold records from earlier days replaced
 by its own same-day count; which days those are is
 `registers/retrospective_batches.tsv`, quoting the source. They measure the same
 events three ways: fit one.
@@ -273,7 +273,7 @@ dropped.
 
 **Which file is which:
 [`data/build/streams/README.md`](data/build/streams/README.md).** The contract
-above says what the files guarantee; that one says what each of them _is_ — one
+above says what the files guarantee; that one says what each of them *is* — one
 row per published file, giving what it measures in a sentence, its resolution,
 its place, how many observations it holds and the first and last `time` it
 covers, with the two files that are not observation streams (`revisions.tsv` and
@@ -305,7 +305,7 @@ One design decision carries the rest: **a heading identifies a table; it cannot
 index the table's columns.** Word centres heading text over merged spans, so
 `Cas (n)` routinely sits above the wrong data column — trusting it once read
 every zone's death count as its case count. So headings (declared per layout in
-`scripts/lib/tablespec.py`) decide _which table this is_, and columns are
+`scripts/lib/tablespec.py`) decide *which table this is*, and columns are
 indexed from the **data**: the numeric columns, left to right, zipped against a
 declared order. Order is stable within a layout even when the column count is
 not.
@@ -380,7 +380,7 @@ that produced them: `tests/test_extraction.py` names sitreps 005, 015, 020, 048,
 
 **3. The assembled series against every printed total.** The weekly streams
 carry two gates: the emitted total must equal what the cumulative moved,
-_exactly_, and the forward-filled grid is compared against every printed
+*exactly*, and the forward-filled grid is compared against every printed
 province row — the check that caught duplicate zone spellings inflating both
 sides of gate one at once. Every stream ends at a final gap of **zero**;
 `cases_ituri` now agrees with the printed row on 65 of 67 dates, and the two
@@ -413,8 +413,8 @@ the denominator is the inner join, and 584 of our zone-day rows (the newest
 reports — INRB's series currently ends four days before ours) have no
 counterpart and sit outside every agreement figure; and zones the lineages spell
 differently are mapped onto one key precisely so a spelling divergence can
-_disagree_ instead of vanishing. Agreement here is evidence about
-_transcription_, never corroboration of the counts (all three lineages read the
+*disagree* instead of vanishing. Agreement here is evidence about
+*transcription*, never corroboration of the counts (all three lineages read the
 same pages); a disagreement is always a finding. The largest one is upstream's:
 sitrep 032 prints Rwampara at 159 in both its table and its narrative, and the
 INRB file carries 192.
@@ -438,13 +438,13 @@ these on a slide; a test fails if a committed figure has no section there.
 
 **6. The archive itself.** The PDFs are not committed (~145 MB); what pins them
 is a committed SHA-256 manifest, and `make verify` proves the copy on disk is
-the copy the manifest describes — distinguishing _missing_ from _stray_ from
-_corrupt_, because a hash mismatch can mean a damaged file or a report the
+the copy the manifest describes — distinguishing *missing* from *stray* from
+*corrupt*, because a hash mismatch can mean a damaged file or a report the
 source revised in place, and the second is worth knowing about. **Three of the
 ninety-four are committed**, because INSP serves neither them nor any URL they
 could be fetched from: SitReps 001, 002 and 004, the outbreak's first three
 reports, held from a secondary archive and declared in
-`registers/external_sitreps.tsv`. A report is _accounted for_ if an index row
+`registers/external_sitreps.tsv`. A report is *accounted for* if an index row
 picks it **or** that register names it; a PDF declared by neither still stops
 the build, because a stray file in that directory is globbed straight into the
 trunk. Revision is watched for in both directions the source can produce it: the

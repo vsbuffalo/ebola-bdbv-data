@@ -29,8 +29,8 @@ by each response "pillar" — surveillance, laboratory, burial, and so on.
 **Laboratory paragraph.** A prose section inside each SitRep, in which the
 laboratory pillar reports the day's testing. A typical sentence (sitrep 089):
 
-> _"L'Ituri a enregistré 119 résultats positifs, dont 98 nouveaux cas (59
-> vivants et 39 décès) et 21 reprélèvements"_
+> *"L'Ituri a enregistré 119 résultats positifs, dont 98 nouveaux cas (59
+> vivants et 39 décès) et 21 reprélèvements"*
 
 which is: "Ituri recorded 119 positive results, of which 98 were new cases (59
 alive and 39 deceased) and 21 were **re-swabs**."
@@ -39,7 +39,7 @@ alive and 39 deceased) and 21 were **re-swabs**."
 from a patient who is **already a confirmed case**. Ebola patients are re-tested
 before discharge, because they may not leave a treatment centre until they test
 negative. A patient still carrying virus tests **positive again**. That positive
-is a real laboratory result and gets counted as one — but it is _not_ a new
+is a real laboratory result and gets counted as one — but it is *not* a new
 case. It is the same person, tested a second time.
 
 So a day's laboratory positives contain two different kinds of event:
@@ -50,8 +50,8 @@ laboratory positives (day) = new confirmed cases + re-swab positives
 ```
 
 This is not my inference. The reports state it and print the sum, using the same
-construction each time — _"portant à N le nombre de résultats positifs du
-jour"_, "bringing the day's positive results to N".
+construction each time — *"portant à N le nombre de résultats positifs du
+jour"*, "bringing the day's positive results to N".
 
 ---
 
@@ -66,7 +66,7 @@ lab_confirmations_national ~ neg_binomial(mean = rho_lab * projected, r = k_lab)
 ```
 
 - **ρ** — P(a laboratory-confirmed case reaches the published report). It is a
-  _step in a pipeline_: the case exists in the laboratory register, and ρ is the
+  *step in a pipeline*: the case exists in the laboratory register, and ρ is the
   chance it survives into the bulletin's case count. It is **not** overall
   ascertainment.
 - **ρ_lab** — as the model documents it, P(a confirmation appears in the
@@ -125,7 +125,7 @@ but not published", and no arithmetic room for one.**
 | 4 Aug | Ituri    | 91        | 85        | 6   | **6**            |
 
 **Where the accounting slips, it slips the wrong way for under-reporting.** On
-31 July the published new-case count for Ituri is 64 — the day's _positives_,
+31 July the published new-case count for Ituri is 64 — the day's *positives*,
 re-swabs included — rather than 53. The bulletin over-counts by including repeat
 specimens; it does not discard confirmations. Nowhere in this record does the
 published series fall short of the laboratory's output.
@@ -181,7 +181,7 @@ the `consolidating` flag. On those days the case series, built by differencing a
 published cumulative, absorbs a catch-up of earlier confirmations that the
 laboratory paragraph never claimed to be reporting. This is precisely the effect
 the model's own docstring names as its reason for a separate ρ_lab — and it is
-real. It is simply not a _reporting probability_: it is a timing and allocation
+real. It is simply not a *reporting probability*: it is a timing and allocation
 artefact, and a constant multiplicative factor is the wrong shape for it.
 
 Removing both coverage and backlog:
@@ -193,7 +193,7 @@ Removing both coverage and backlog:
 | **combined** | **55** | **0.979**         |       |
 
 **0.979.** Nothing is left for a reporting probability of 0.77 to explain. And
-Nord-Kivu's 1.048 — positives slightly _exceeding_ new cases — is the re-swab
+Nord-Kivu's 1.048 — positives slightly *exceeding* new cases — is the re-swab
 effect of §1 showing through, in the direction only re-swabs can produce.
 
 This is why the pair plot shows the pathology it does. Both streams scale the
@@ -214,7 +214,7 @@ In descending order of value.
 
 **5.1 Stop treating the laboratory stream as a second national observation.** On
 full-coverage days it is not a second look at the confirmation flow — it is the
-_same number_. Fitting both with independent reporting probabilities
+*same number*. Fitting both with independent reporting probabilities
 double-counts one observation and manufactures a collinear direction. Three
 options, best first:
 
@@ -276,15 +276,15 @@ named in §8.
 
 | source                                        | setting                                            | estimate         |
 | --------------------------------------------- | -------------------------------------------------- | ---------------- |
-| Roddy et al., _PLOS ONE_ 2012                 | Bundibugyo, Uganda 2007–08, hospitalised confirmed | **11/26 = 0.42** |
-| Kratz et al., _PLOS ONE_ 10(6):e0129333, 2015 | Isiro, DRC 2012, treatment centre                  | **9/18 = 0.50**  |
+| Roddy et al., *PLOS ONE* 2012                 | Bundibugyo, Uganda 2007–08, hospitalised confirmed | **11/26 = 0.42** |
+| Kratz et al., *PLOS ONE* 10(6):e0129333, 2015 | Isiro, DRC 2012, treatment centre                  | **9/18 = 0.50**  |
 | our care ledger (`make care-ledger`)          | DRC 2026, 664 exits from care                      | **≤ 0.456**      |
 
-Roddy states it outright: _"Eleven of the 26 patients died (CFR = 42%)"_, and
-the denominator is _"26 of the 30 hospitalised laboratory-confirmed EHF
-patients"_ — so it is genuinely an in-care fatality. Kratz: _"CFR of ETC cases
-(all confirmed) was 50.0%"_, and _"The 18 patients who reached the ETC were all
-confirmed cases."_ The model's existing `beta(4, 5)` prior (mean 0.44) covers
+Roddy states it outright: *"Eleven of the 26 patients died (CFR = 42%)"*, and
+the denominator is *"26 of the 30 hospitalised laboratory-confirmed EHF
+patients"* — so it is genuinely an in-care fatality. Kratz: *"CFR of ETC cases
+(all confirmed) was 50.0%"*, and *"The 18 patients who reached the ETC were all
+confirmed cases."* The model's existing `beta(4, 5)` prior (mean 0.44) covers
 both, so the fitted 0.310 is driven by structure or data, not by the prior.
 
 **Updated 2026-08-24 — a current-outbreak death proportion now exists. It is not
@@ -303,9 +303,9 @@ prior.
 **The more consequential point is what the same paper implies about Kratz and
 Roddy.** Hemorrhagic signs appear in only **10.4%** of confirmed patients here,
 against "more than half" in an earlier BDBV description (MacNeil 2010). The
-authors attribute the gap partly to _"case ascertainment bias in small outbreaks
+authors attribute the gap partly to *"case ascertainment bias in small outbreaks
 where patients with more characteristic or severe clinical presentations are
-more easily identified."_ If that holds, then the 26-patient and 18-patient
+more easily identified."* If that holds, then the 26-patient and 18-patient
 in-care cohorts our f_cfr rests on were selected toward severe presentation —
 and **42% and 50% are biased upward as estimates of in-care fatality in a large,
 better-ascertained outbreak.** The `beta(4, 5)` prior (mean 0.44) is centred on
@@ -321,12 +321,12 @@ row above originally claimed.**
   Kratz**. What exists is two outbreaks, one clinical group, and **44 published
   in-care patients** — 26 in Uganda 2007–08 and 18 in Isiro 2012.
 - **A fourth "source" was cited here and in a dozen model docstrings that is not
-  a publication.** _"Funk & Abbott 2026, 0.59 [0.46, 0.72] (22/37)"_ is
+  a publication.** *"Funk & Abbott 2026, 0.59 [0.46, 0.72] (22/37)"* is
   `sbfnk/bdbv-linelist-analysis` — a GitHub repository carried as an
   uninitialised git submodule of `epiforecasts/BVDOutbreakSize`. No paper, no
   preprint, no DOI. **And the number is wrong**: the figure the upstream project
-  itself quotes from that reanalysis is _"a baseline of 0.47 (95% CrI 0.31–0.65)
-  for non-healthcare-worker (non-HCW) confirmed cases"_
+  itself quotes from that reanalysis is *"a baseline of 0.47 (95% CrI 0.31–0.65)
+  for non-healthcare-worker (non-HCW) confirmed cases"*
   (`docs/examples/analysis.jl:731`), not 0.59 [0.46, 0.72]. Cite it as software
   with a commit SHA or not at all, and re-derive the number from the source
   before using it — the submodule is uninitialised, so nobody here has read it.
@@ -334,31 +334,31 @@ row above originally claimed.**
   listed beside these. It is a fatality over everyone acutely confirmed, treated
   or not — a confirmed-case CFR, not an in-care one.
 - **The anchors disagree with each other, in a direction that favours our fit.**
-  Van Kerkhove Table 5 puts the BDBV _population_ CFR at 0.34–0.42 (§6.2), while
+  Van Kerkhove Table 5 puts the BDBV *population* CFR at 0.34–0.42 (§6.2), while
   these two in-care series sit at 0.42 and 0.50 — in-care fatality at or above
   population fatality, which cannot hold if care does anything. The upstream
-  project states the expected ordering explicitly: in-care fatality is _"a
+  project states the expected ordering explicitly: in-care fatality is *"a
   fatality conditional on admission rather than a causal treatment effect,
   **sitting below the infection case-fatality ratio** where care lowers
-  mortality"_, and their own population prior is `Beta(6.6, 13.4)`, mean 0.33.
+  mortality"*, and their own population prior is `Beta(6.6, 13.4)`, mean 0.33.
   Read that way the model's 0.310 is not an outlier.
 - Our own ledger is the only estimate here with power behind it (664 exits
   against 44), and it is biased **upward** by the recovery under-recording
   documented elsewhere in this note — which moves it toward the fitted value,
   not away.
 
-The recommendation is therefore weakened from _"Beta centred 0.46, sd ≈ 0.05,
-strong"_ to **Beta centred 0.42, sd ≈ 0.10, moderate**. A tight prior here would
+The recommendation is therefore weakened from *"Beta centred 0.46, sd ≈ 0.05,
+strong"* to **Beta centred 0.42, sd ≈ 0.10, moderate**. A tight prior here would
 be asserting more than 44 patients can support.
 
 ### 6.2 BDBV lethality — the first factor in q_comm
 
-Van Kerkhove et al., _Scientific Data_ 2, 2015, compiling across outbreaks,
+Van Kerkhove et al., *Scientific Data* 2, 2015, compiling across outbreaks,
 gives species-level CFR: **Zaire 0.69–0.88, Sudan 0.53–0.69, Bundibugyo
 0.34–0.42**. Bundibugyo is the least lethal human-pathogenic ebolavirus.
 
-MacNeil et al., _EID_ 16(12), 2010, give **17/43 = 40 %** among cases confirmed
-from _acute-phase_ specimens. The widely cited ~25 % uses a 56-case denominator
+MacNeil et al., *EID* 16(12), 2010, give **17/43 = 40 %** among cases confirmed
+from *acute-phase* specimens. The widely cited ~25 % uses a 56-case denominator
 including 13 convalescent-serology-only cases — survivors by construction. The
 40 % figure is the right one for a model of confirmed cases.
 
@@ -369,8 +369,8 @@ swab ascertainment above 1 even at 0.9 unisolated fatality.
 
 ### 6.3 Overall ascertainment — one external anchor, not two
 
-**Updated 2026-08-24 — still one external _fraction_, but now a within-outbreak
-_trajectory_, on the right virus and the right response.**
+**Updated 2026-08-24 — still one external *fraction*, but now a within-outbreak
+*trajectory*, on the right virus and the right response.**
 
 Akilimali et al. report that since the outbreak was declared on 15 May 2026,
 confirmed cases rose **while test positivity fell from roughly 70–80% in early
@@ -384,7 +384,7 @@ than transmission — i.e. **ascertainment improving over the period we fit**.
 This is not an ascertainment fraction and cannot be used as one: positivity is a
 function of who gets tested, and the early 70–80% reflects a narrow, severe,
 highly selected testing pool as much as it reflects prevalence. But it does
-constrain the _shape_: a model holding ascertainment constant across May–June is
+constrain the *shape*: a model holding ascertainment constant across May–June is
 contradicted by the source's own laboratory record. **If ascertainment is
 time-varying in the model, this is the evidence that should discipline it, and
 it is far closer to our setting than Montserrado 2014.**
@@ -398,27 +398,27 @@ early growth rate high.
 being used as one.**
 
 Gignoux E, Idowu R, Bawo L, Hurum L, Sprecher A, Bastard M, Porten K. Use of
-capture–recapture to estimate underreporting of Ebola virus disease. _EID_
+capture–recapture to estimate underreporting of Ebola virus disease. *EID*
 2015;21(12):2265–2267, doi:10.3201/eid2112.150756 — Montserrado County, Liberia,
 1 June – 14 August 2014: 227 reported against an estimated **876 (95 % CI
-608–1,143)**, about **26 % ascertainment**, with the paper stating _"the number
+608–1,143)**, about **26 % ascertainment**, with the paper stating *"the number
 of cases in Montserrado Country was at least 3-fold higher than that reported
-during the study period."_ Applies to all suspected, probable or confirmed
+during the study period."* Applies to all suspected, probable or confirmed
 cases. Zaire ebolavirus. **This is a genuine ascertainment measurement and it is
 the only one we have.**
 
 Polonsky JA, Böhning D, Keita M, Ahuka-Mundeke S, Nsio-Mbeta J, Abedi AA, et al.
 Novel Use of Capture-Recapture Methods to Estimate Completeness of Contact
 Tracing during an Ebola Outbreak, Democratic Republic of the Congo, 2018–2020.
-_EID_ 2021;27(12):3063–3072, doi:10.3201/eid2712.204958 — Beni Health Zone, 31
+*EID* 2021;27(12):3063–3072, doi:10.3201/eid2712.204958 — Beni Health Zone, 31
 July 2018 – 26 April 2020, 913 confirmed and 10 probable cases. 99 % of
-case-patients with _any_ contacts were identified; **49 % (95 % CI 43–55 %)** of
-those with _infected_ contacts — 24 % (11–38 %) in the first wave, 48 % (40–56
+case-patients with *any* contacts were identified; **49 % (95 % CI 43–55 %)** of
+those with *infected* contacts — 24 % (11–38 %) in the first wave, 48 % (40–56
 %) in the second.
 
 **What that 49 % measures is contact-tracing completeness among already-
 identified case-patients** — the sensitivity of detecting onward infections from
-a case the response already had. It bounds how many transmission _links_ were
+a case the response already had. It bounds how many transmission *links* were
 seen, not how many cases existed, and it cannot be read as an ascertainment
 fraction. It belongs in a discussion of R_eff and of the unaccounted-for
 confirmed cases, not in this row.
@@ -433,7 +433,7 @@ independent studies bracketed the answer.
 **Corrected 2026-08-24 — there is now a delay estimate from THIS outbreak, and
 it is slower than the historical BDBV figure the τ argument below leans on.**
 
-Akilimali et al., _NEJM_ 395(6):610, 6 Aug 2026
+Akilimali et al., *NEJM* 395(6):610, 6 Aug 2026
 (`pdfs/akilimali_et_al_2026.pdf`) report the interval from **symptom onset to
 diagnostic sample collection**, fitted on the laboratory line list (data as of 5
 June 2026) with `epidist`, which corrects for **double interval censoring** —
@@ -455,7 +455,7 @@ onset→**sample** median is 4.8 d and its mean 7.4 d. The two are not the same
 interval — a sample can be taken at presentation, later in admission, or
 post-mortem in the community, so onset→sample is not a clean substitute for
 onset→hospitalisation — but if it is read as time-to-ascertainment, then τ in
-_this_ outbreak is **slower**, not faster, than the historical anchor. The
+*this* outbreak is **slower**, not faster, than the historical anchor. The
 authors' own reading is that 7.4 d "might reflect a lack of diagnostic capacity
 early during the outbreak" or genuine delay in presenting at a facility. Either
 way, a τ prior built on 3.5 d is not in contact with the only current-outbreak
@@ -467,7 +467,7 @@ Van Kerkhove 2015, **BDBV-specific**: incubation mean 6.3 d (5.2–7.3), median 
 d**; onset→recovery median **10 d (2–26)**. BDBV reaches care faster than EBOV
 did in West Africa (3.5 d against 5.0 d), which bears on τ.
 
-WHO Ebola Response Team, _NEJM_ 371:1481, 2014: incubation 11.4 d; serial
+WHO Ebola Response Team, *NEJM* 371:1481, 2014: incubation 11.4 d; serial
 interval **15.3 ± 9.3 d, gamma CV 0.66**; onset→hospitalisation 5.0 ± 4.7 d;
 admission→death 4.2 ± 6.4 d. CV 0.66 implies gamma shape ≈ 2.3; exponential
 would be CV = 1.
@@ -490,10 +490,10 @@ and no loss of days.
 
 **The care-flow table**, printed on 54–59 of 87 reports and not yet extracted:
 patients in isolation split confirmed/suspect, total 24-hour exits, transfers,
-occupancy rate, and _**Sorties — évadés**_ (absconders, counted). This would
+occupancy rate, and ***Sorties — évadés*** (absconders, counted). This would
 turn δ and f_cfr from bounds into point estimates. It also shows **Nord-Kivu
-running at 120–160 % of isolation-bed capacity throughout** (_"La saturation
-persiste au Nord-Kivu (120,6 %), déficit critique de lits d'isolement"_, sitrep
+running at 120–160 % of isolation-bed capacity throughout** (*"La saturation
+persiste au Nord-Kivu (120,6 %), déficit critique de lits d'isolement"*, sitrep
 060), so the isolation census there is supply-censored rather than proportional
 to the confirmed compartment.
 
@@ -502,8 +502,8 @@ to the confirmed compartment.
 ## 8. Not verified
 
 **Added 2026-08-24 — an individual-level database for THIS outbreak exists.**
-Akilimali et al. analyse _"2351 recorded cases in the individual-level database
-for BVD between May 3 and June 8, 2026"_, and separately a **laboratory line
+Akilimali et al. analyse *"2351 recorded cases in the individual-level database
+for BVD between May 3 and June 8, 2026"*, and separately a **laboratory line
 list** (data as of 5 June 2026) carrying symptom-onset dates, sample-collection
 dates, Ct values and outcomes. Ethics approval from the University of Kinshasa.
 We do **not** hold either, and neither appears to be public — but the earlier
@@ -526,9 +526,9 @@ streams carries viral load.
   GitHub repository (`sbfnk` = Sebastian Funk), registered as a git submodule of
   `epiforecasts/BVDOutbreakSize` at `external/bdbv-linelist-analysis`. The
   upstream repo's own bibliography records it as
-  `@misc{bdbv_linelist_analysis_2026}`, _"Bundibugyo Ebola virus — Bayesian
+  `@misc{bdbv_linelist_analysis_2026}`, *"Bundibugyo Ebola virus — Bayesian
   delay-distribution and stratified CFR estimation from the 2012 Isiro
-  outbreak"_, authored Funk & Abbott in `refs.bib` but credited to Funk alone in
+  outbreak"*, authored Funk & Abbott in `refs.bib` but credited to Funk alone in
   the README. **The number 0.59 [0.46, 0.72] does not appear anywhere**; the
   figure upstream quotes is 0.47 (95 % CrI 0.31–0.65) for non-HCW confirmed
   cases. Cite as software — URL plus commit SHA plus access date — never in an
@@ -537,18 +537,18 @@ streams carries viral load.
   fetched 2026-08-17; **the submodule itself is uninitialised, so the analysis
   is unread.** `git submodule update --init` settles it.
 - **A second epiforecasts citation in our models checks out.**
-  `bvd_national_labdelay.camdl` cites _"Abbott, Brand & Funk 2026,
-  epiforecasts/BVDOutbreakSize, `lab_delay_model` — mean 4.5 d, SD 4.0 d"_,
+  `bvd_national_labdelay.camdl` cites *"Abbott, Brand & Funk 2026,
+  epiforecasts/BVDOutbreakSize, `lab_delay_model` — mean 4.5 d, SD 4.0 d"*,
   which matches `analysis.jl` eq. (18): `μ_rec ~ Normal⁺(4.5, 1.0)`,
   `σ_rec ~ Normal⁺(4.0, 0.75)`. One caveat worth carrying: upstream says of that
-  delay _"No per-sample outbreak data grounds this, so the prior is our own
-  choice"_ — it is a declared belief, not an estimate.
+  delay *"No per-sample outbreak data grounds this, so the prior is our own
+  choice"* — it is a declared belief, not an estimate.
 - **The onset-to-death prior our `gamma` uses is taken from the wrong pathway.**
   Upstream fits onset-to-death as a convolution of onset-to-admission and
   admission-to-death (`α_oa ~ Normal⁺(1.18, 0.28)`,
   `θ_oa ~ Normal⁺(3.69,
   1.20)`; `α_ad ~ Normal⁺(2.15, 0.60)`,
-  `θ_ad ~ Normal⁺(3.91, 1.38)`), giving an _"implied mean about 13 d"_ — a route
+  `θ_ad ~ Normal⁺(3.91, 1.38)`), giving an *"implied mean about 13 d"* — a route
   **through admission**. It carries a **separate community-pathway**
   onset-to-death delay, `α ~ Normal(5.48, 2.0)`, `θ ~ Normal(1.49, 0.5)`, mean
   **8.17 d** (`docs/fits/registry.jl:263`). Our `gamma` governs the
@@ -556,11 +556,11 @@ streams carries viral load.
   anchored to. See the modelling repo's
   `notes/2026-08-22-where-the-estimates-are-in-tension.md` §5.
 - **The 95 % CI on the incubation period is misattributed in our models.**
-  MacNeil prints only _"an average incubation period of 6.3 days among
-  laboratory-confirmed EHF case-patients (n = 24)"_ — **no interval**. The
-  _"(5.2, 7.3)"_ is Van Kerkhove Table 5, which cites MacNeil for the point
+  MacNeil prints only *"an average incubation period of 6.3 days among
+  laboratory-confirmed EHF case-patients (n = 24)"* — **no interval**. The
+  *"(5.2, 7.3)"* is Van Kerkhove Table 5, which cites MacNeil for the point
   estimate. Split the citation.
-- **Any _fitted_ onset-to-death distribution with a published shape parameter
+- **Any *fitted* onset-to-death distribution with a published shape parameter
   for an ebolavirus.** Medians, means and ranges are abundant; a fitted gamma or
   Weibull for onset-to-outcome was not located. The Erlang 2–3 recommendation
   therefore rests on the serial interval's CV, which is an inference about the
@@ -579,7 +579,7 @@ streams carries viral load.
 ## Sources
 
 **Added 2026-08-24.** Akilimali et al., "Clinical Characteristics of Patients
-Infected with Bundibugyo Virus, DRC 2026", _New England Journal of Medicine_
+Infected with Bundibugyo Virus, DRC 2026", *New England Journal of Medicine*
 395(6):610, 6 August 2026 (Correspondence) — `pdfs/akilimali_et_al_2026.pdf` and
 `pdfs/akilimali_et_al_2026_supp.pdf`. The only current-outbreak clinical and
 delay data we hold. See §6.1, §6.3, §6.4 and §8, and
@@ -588,10 +588,10 @@ WHO comparison of all three BDBV outbreaks.
 
 ### Earlier sources
 
-- [MacNeil et al., _EID_ 16(12), 2010 — BDBV proportion of deaths](https://wwwnc.cdc.gov/eid/article/16/12/10-0627_article)
-- [Roddy et al., _PLOS ONE_ 2012 — BDBV clinical management, Uganda 2007–08](https://journals.plos.org/plosone/article?id=10.1371%2Fjournal.pone.0052986)
-- [Kratz et al., _PLOS ONE_ 10(6):e0129333, 2015 — BDBV, Isiro DRC 2012](https://journals.plos.org/plosone/article?id=10.1371%2Fjournal.pone.0129333)
-- [WHO Ebola Response Team, _NEJM_ 371:1481, 2014](https://www.nejm.org/doi/full/10.1056/NEJMoa1411100)
-- [Van Kerkhove et al., _Scientific Data_ 2, 2015 — parameter review](https://pmc.ncbi.nlm.nih.gov/articles/PMC4443880/)
-- [Gignoux et al., _EID_ 21(12), 2015 — capture–recapture, Montserrado](https://pmc.ncbi.nlm.nih.gov/articles/PMC4672419/)
-- [Contact-tracing completeness, Beni DRC, _EID_ 27(12), 2021](https://wwwnc.cdc.gov/eid/article/27/12/20-4958_article)
+- [MacNeil et al., *EID* 16(12), 2010 — BDBV proportion of deaths](https://wwwnc.cdc.gov/eid/article/16/12/10-0627_article)
+- [Roddy et al., *PLOS ONE* 2012 — BDBV clinical management, Uganda 2007–08](https://journals.plos.org/plosone/article?id=10.1371%2Fjournal.pone.0052986)
+- [Kratz et al., *PLOS ONE* 10(6):e0129333, 2015 — BDBV, Isiro DRC 2012](https://journals.plos.org/plosone/article?id=10.1371%2Fjournal.pone.0129333)
+- [WHO Ebola Response Team, *NEJM* 371:1481, 2014](https://www.nejm.org/doi/full/10.1056/NEJMoa1411100)
+- [Van Kerkhove et al., *Scientific Data* 2, 2015 — parameter review](https://pmc.ncbi.nlm.nih.gov/articles/PMC4443880/)
+- [Gignoux et al., *EID* 21(12), 2015 — capture–recapture, Montserrado](https://pmc.ncbi.nlm.nih.gov/articles/PMC4672419/)
+- [Contact-tracing completeness, Beni DRC, *EID* 27(12), 2021](https://wwwnc.cdc.gov/eid/article/27/12/20-4958_article)

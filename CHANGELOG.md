@@ -11,7 +11,7 @@ in a glance is a silent failure for a `columns { }` declaration, so every schema
 change is dated, named, and given a migration line here.
 
 Scope: stream files and `meta.json`. Extraction improvements that change
-_values_ are noted only where they move a published series; the commit log
+*values* are noted only where they move a published series; the commit log
 carries the rest.
 
 ## Release tags
@@ -65,7 +65,7 @@ printed breakdown and so no province rows at all.
 
 **Eight excluding-backlog streams.** `cases_excluding_backlog_*` and
 `deaths_excluding_backlog_*`, for all four places: the differenced daily series
-with the days the source _says_ hold records from earlier days replaced by the
+with the days the source *says* hold records from earlier days replaced by the
 report's own same-day count. This is the family to fit if you want one series
 and do not want to maintain a patch.
 
@@ -220,7 +220,7 @@ of the archive's cases and 6.1% of its deaths. Nothing else in the archive needs
 changing on this account.
 
 **Do not try to widen a window by blanking rows to `NA`.** In camdl an `NA` row
-is a hole that still _closes_ the incidence bin (the accumulator resets on the
+is a hole that still *closes* the incidence bin (the accumulator resets on the
 observation schedule, not on value presence — pomp's `accumvars` convention,
 `docs/camdl-data-spec.md`, "Missing observations"). A row preceded by nine `NA`
 rows is scored against one day of flow, not ten. Deleting a row is what widens
@@ -333,7 +333,7 @@ The series extends to 2026-08-28. `n_days` 98 to 102.
 
 **BREAKING for a consumer that reads row structure or joins on `meta.json`.**
 Three coordinated changes, requested by the modelling repository on the data
-channel. Nothing about what any number _means_ changes, and no value moves.
+channel. Nothing about what any number *means* changes, and no value moves.
 
 ### 1. Single-day-figure streams are gridded onto calendar days
 
@@ -346,7 +346,7 @@ so the value covers one day however wide the silence behind it. An engine that
 accumulates a modelled flow between consecutive rows — camdl does, and reads no
 column to decide the window — integrated over the whole gap and compared the
 result against a single day's count. It fails **silently**: no error, just a
-biased fit. This repository already gridded onto _report days_, which closed the
+biased fit. This repository already gridded onto *report days*, which closed the
 gap only where the source published; the days nobody published on stayed absent
 and kept widening the window.
 
@@ -545,9 +545,9 @@ and **not** sitrep 099's cause, which is why the guard written for 099 did not
 cover it.
 
 Tables are recovered from the rules the document draws, and pieces of one rule
-are rejoined in two ways at once: grouped _across_ the page at 6 pt, because
+are rejoined in two ways at once: grouped *across* the page at 6 pt, because
 Word draws a shared border as its rule plus the two cell faces beside it, and
-joined _along_ the page across gaps up to 36 pt, because a rule is routinely
+joined *along* the page across gaps up to 36 pt, because a rule is routinely
 drawn in pieces. Applying both at once lets a rule run 36 pt past its own end
 and adopt anything that passes within 6 pt.
 
@@ -638,7 +638,7 @@ from the front-page dashboard tiles. Nothing is fitted, no rate enters, and no
 assumption about how long a patient stays in care enters. On **2 August**, the
 last report day all four exist, that is **1,033 people — 27% of the 3,802 ever
 confirmed** — in none of the four ledgers, and the count grows over the same
-fourteen report days on which the _share_ sits flat between 27% and 29% (676 on
+fourteen report days on which the *share* sits flat between 27% and 29% (676 on
 18 July to 1,033 on 2 August).
 
 **The one thing worth a consumer's attention** is not the figure but what it
@@ -704,8 +704,8 @@ at both resolutions.
 **What a consumer must do**, in one line: **read these files with `NA` declared
 as the null token** — in polars,
 `pl.read_csv(..., separator="\t",
-null_values="NA")`. `NA` is not a null token
-by default there, so one hole turns an integer column into a string column; a
+null_values="NA")`. `NA` is not a null token by
+default there, so one hole turns an integer column into a string column; a
 reader asserting `Int64` fails, and a plotting library draws the strings at the
 axis baseline, which renders a hole as an observed zero in a figure that looks
 entirely plausible. Beyond that, a model reading only the columns it names keeps
@@ -841,7 +841,7 @@ A division can be evaluated on a row that is never scored, so an empty or zero
 `binomial(n = NA)` cannot be constructed at all, so an engine turns such a row
 into a hole — which is what an unscored row should be — and a placeholder there
 would be a fabricated trial count for no gain. **A pre-existing hazard worth
-naming while you are here:** `deaths_split_haut_uele` is `0` on five _scored_
+naming while you are here:** `deaths_split_haut_uele` is `0` on five *scored*
 rows of `community_deaths_daily_haut_uele.tsv`. Those are real observations (0
 classified deaths of 0), unchanged by this release, and a model dividing by that
 column rather than passing it as a size will divide by zero on them.
@@ -861,10 +861,10 @@ name needs nothing.
 `meta.json` gains `n_rows` beside `n_obs` on every gridded stream's
 reconciliation entry — `n_obs` is the scored count and `n_rows` the file's
 height, and the two differing by exactly the number of holes is the property
-this release exists to protect. `data/build/streams/README.md` gains an
-`NA
-rows` column beside `Obs` for the same reason, and its stated spans are now
-measured over scored times.
+this release exists to protect. `data/build/streams/README.md` gains an `NA
+rows`
+column beside `Obs` for the same reason, and its stated spans are now measured
+over scored times.
 
 ### Stocks are untouched, and that is a decision
 
@@ -1026,8 +1026,8 @@ source stopped printing both the tile and the whole-response summary sentence.
 
 `docs/figures/release_grid.png` gains a `care census (confirmed)` group of four
 rows, so the figure that says what the release contains shows the stream this
-release is about, and its subtitle now says _streams drawn_ rather than
-_published streams_ — the release ships more files than the grid has rows. The
+release is about, and its subtitle now says *streams drawn* rather than
+*published streams* — the release ships more files than the grid has rows. The
 rest of the care ledger is documented but not drawn; thirty more rows would cost
 the grid its legibility.
 
@@ -1083,7 +1083,7 @@ each pinned by a test:
   the split says which half: on 2026-07-07 the sentence states 694 against its
   own 232 + 518 = 750, and on 2026-07-14 it states 753 against 270 + 466 = 736 —
   the tile agrees with the split on both.
-- **A, corrected framing.** The tile does _not_ stop after SitRep 080. Its
+- **A, corrected framing.** The tile does *not* stop after SitRep 080. Its
   **total** census is printed to the end of the archive; only the **confirmed**
   half stops there — and the whole-response sentence stops on the same report.
   After that the confirmed census exists only in the per-province bullets, and
@@ -1239,8 +1239,8 @@ stops being true the day the source resumes.
 
 ### The streams now ship a data dictionary
 
-Until now a consumer holding `data/build/streams/` could not answer _what is
-`community_deaths_daily_ituri`, and what dates does it cover?_ without reading
+Until now a consumer holding `data/build/streams/` could not answer *what is
+`community_deaths_daily_ituri`, and what dates does it cover?* without reading
 `build_streams.py`. `meta.json` carries only global fields, and its
 `reconciliation` block — which does hold `first_date` / `last_date` for the
 streams built by differencing a cumulative — carries no dates at all for the
@@ -1316,7 +1316,7 @@ the stream and add `raw - emitted` back.
 `97.pdf` is served by INSP, returns 200, and is a complete SitRep N°097 for 19
 August — but **no `wp/v2/media` entry lists it**, so the index jumped from 096
 to 098 and the archive held no report for that day. Nothing downstream would
-have said so: every check the pipeline has asks whether the reports we _hold_
+have said so: every check the pipeline has asks whether the reports we *hold*
 reconcile, and a day never fetched reconciles by being absent. The ascertainment
 figure would have drawn 19 August as a day INSP published nothing.
 
@@ -1360,7 +1360,7 @@ national series runs contiguously to 22 August. Ituri's 098–100 values are
 corrected — its cumulative had been read as spiking to 6,200 and falling back,
 and the carry-forward that absorbs a downward revision published the spike.
 Nord-Kivu and Haut-Uélé totals are unchanged, because their 098 values were
-_missing_ rather than wrong, and a gap does not move a total that is final −
+*missing* rather than wrong, and a gap does not move a total that is final −
 initial.
 
 **A note on report 100, uncorrected.** It states 55 new confirmed cases twice,
@@ -1380,7 +1380,7 @@ series gain substantial history at the left edge, and one published value moves.
 weeks of deaths, refit.**
 
 **The front-page dashboard was only readable in one of its two layouts.** The
-reader took a tile's value by scanning _downward_ from its label. Sitreps
+reader took a tile's value by scanning *downward* from its label. Sitreps
 005–058 print the tiles the other way up — a row of bare numbers with the label
 block beneath — so every one of them refused. It now searches both directions
 and takes the nearer aligned number, with no branch on report number or date;
@@ -1389,7 +1389,7 @@ recorded.
 
 Two further defects sat in the same path and cost as much as the direction did.
 A regex welded a **one-character field to everything after it on its line**,
-which lost _every single-digit tile value in the archive_ — sitrep 008's
+which lost *every single-digit tile value in the archive* — sitrep 008's
 recovered count read as `'0                  16'`. And column matching used the
 label's start column only, which fails where a value is centred over a wider
 label.
@@ -1402,7 +1402,7 @@ label.
 | `deaths_national`       | 12 obs, opens 2026-06-02        | **13 obs, opens 2026-05-26**      |
 
 **One previously published value changes**: `deaths_national`'s opening bin. Its
-window used to start where the _tables_ first print a cumulative death column
+window used to start where the *tables* first print a cumulative death column
 (29 May, already standing at 42), leaving those deaths outside every emitted
 row; the front page prints them from 19 May. **38 deaths enter the series**, all
 in the growth phase. Every other stream file is byte-identical.
@@ -1419,7 +1419,7 @@ dates, 75 agree.
 
 **Two refusals kept deliberately.** Sitreps 016 and 017 print
 `Cas suspects
-en isolement` — suspects _inside_ the ward, beside a separate
+en isolement` — suspects *inside* the ward, beside a separate
 confirmed-active tile — and no ward total, so publishing that number would put a
 sub-count where a total belongs at the point the series begins. Sitrep 007's
 recovery tile prints `ND`. The bare `Guéris` label of the early vintage is
@@ -1437,13 +1437,13 @@ split is withdrawn. **If you have fitted δ, f_cfr, or the community share,
 refit** — those move, and by more than the audit predicted.
 
 **Sitrep 080 (2 August) is structurally corrupt, and we were publishing from
-it.** Its daily block is displaced by one printed row: the values on row _i_'s
-line belong to row _i−1_. `Adja` carries 11 cumulative cases against 49 new
+it.** Its daily block is displaced by one printed row: the values on row *i*'s
+line belong to row *i−1*. `Adja` carries 11 cumulative cases against 49 new
 cases and 23 deaths in 24 hours; the zone rows sum to 148 new cases against a
 printed national 58. Three independent lines of evidence agree — word geometry,
 the zone sums, and the report's own provincial summary, which on the same page
 closes on all six letality figures and prints a national 44,9 % where the zone
-table prints 44,2 %, that being _sitrep 079's_ pair.
+table prints 44,2 %, that being *sitrep 079's* pair.
 
 The daily block only is rejected, via `registers/rejected_routes.tsv`. The
 report's cumulative columns are sound and its national identity closes, so the
@@ -1470,7 +1470,7 @@ observation, because the displacement moved its values onto Adja's line.
 | f_cfr, fatality in care | 0.4563                   | **0.4288**              |
 | γq/τ, span-matched      | 0.405                    | **0.382**               |
 
-`notes/2026-08-22-pipeline-audit.md` predicted δ and f_cfr would be _unchanged_,
+`notes/2026-08-22-pipeline-audit.md` predicted δ and f_cfr would be *unchanged*,
 on the grounds that the affected window lay outside the care ledger. It does
 not: the ledger window ends on 2 August, the very report withdrawn. The audit
 was wrong on that row and the figures above supersede it.
@@ -1550,7 +1550,7 @@ was therefore measuring how much of the country the paragraph described.
 Matching province against province removes it without conditioning on coverage
 at all. Excluding backlog-consolidation days, positives/cases is 0.972 in Ituri
 and 1.048 in Nord-Kivu — **0.979 combined**. (Nord-Kivu above 1 is repeat
-specimens from already-confirmed patients, _reprélèvements_, which the reports
+specimens from already-confirmed patients, *reprélèvements*, which the reports
 count as positives and which no reporting probability below 1 can produce.)
 
 ---
@@ -1562,14 +1562,14 @@ series move, and a consumer that has fitted to them should refit.
 
 **A death split was read as a test positivity.** Sitrep 080's Ituri passage
 prints both a real laboratory line and a death split, and the death split alone
-satisfies the licence: _"23 décès dont 14 communautaires (60,9 %)"_ offers the
+satisfies the licence: *"23 décès dont 14 communautaires (60,9 %)"* offers the
 pair (14, 23), which reproduces 60,9 % exactly. It was accepted, so 2 August
 recorded **14 positives out of 23 samples** in place of the printed **53 out of
-210** (_"210 échantillons … dont 53 positifs … soit une positivité apparente de
-25,2 %"_).
+210** (*"210 échantillons … dont 53 positifs … soit une positivité apparente de
+25,2 %"*).
 
 The licence-or-refuse rule asks whether a pair reproduces a printed percentage.
-It cannot ask what the percentage _means_, and a death split has the same
+It cannot ask what the percentage *means*, and a death split has the same
 arithmetic shape as a positivity — a subset, a total, and their ratio. So the
 rule was necessary and not sufficient, and no tolerance change would have caught
 it. Death-split clauses now leave the pool before the pair is chosen; deaths and
@@ -1589,10 +1589,10 @@ reconciliation record also updates (`positives_vs_new_cases` now 53 of 62
 province-days equal, from 52).
 
 **A note for anyone modelling ρ (registry → report).** The same sentence states
-why laboratory positives run slightly _above_ new confirmed cases: _"(14)
-reprélèvements positifs ont également été rendus, portant à 53 du jour"_,
+why laboratory positives run slightly *above* new confirmed cases: *"(14)
+reprélèvements positifs ont également été rendus, portant à 53 du jour"*,
 against 39 new confirmed cases — 39 + 14 = 53. (The same report's laboratory
-sentence says _18_ reprélèvements, which does not close; sitrep 080 contradicts
+sentence says *18* reprélèvements, which does not close; sitrep 080 contradicts
 itself, and its whole daily block is displaced by one row — see
 `notes/2026-08-22-pipeline-audit.md`.) Re-swabs of already-confirmed patients
 test positive again. Positives and new cases are different events, and the gap
@@ -1651,7 +1651,7 @@ compartment of confirmed cases.** Sitrep 070 prints the banner headline as 766
 and its own occupancy table splits that into 278 confirmed and 488 suspects,
 with the narrative saying so in words. Across the archive the confirmed share
 runs 0.23–0.53 (median 0.39), and it moves with testing and triage rather than
-with transmission — so fitting the headline census to an isolated-_case_
+with transmission — so fitting the headline census to an isolated-*case*
 compartment would score a mostly-suspect population against a confirmed-case
 state.
 
@@ -1720,7 +1720,7 @@ not a count accumulated over a window — so a span column would assert an
 interval that does not exist. The absence is the signal that this file is a
 different kind of thing.
 
-_Migration:_ drop the `_daily_` infix from column names when reading the daily
+*Migration:* drop the `_daily_` infix from column names when reading the daily
 files; read `days_covered` instead of `days_since_prev_report`. Values, row
 counts and row order are unchanged from `-r6`.
 
@@ -1754,7 +1754,7 @@ licensing sentence quoted).
 National streams — `cases_national`, `deaths_national`,
 `community_deaths_national` — built from the printed national rows, never by
 summing provinces. `meta.json` gains `vs_province_sum`, the per-bin identity
-_national = emitted provinces + dropped provinces + orphan pool + unattributed_.
+*national = emitted provinces + dropped provinces + orphan pool + unattributed*.
 
 ## `data/2026-08-15-r2` — 2026-08-17 — data
 

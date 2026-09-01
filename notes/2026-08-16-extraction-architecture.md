@@ -19,8 +19,8 @@ Indexing by heading read every zone's death count as its case count.
 Indexing by fixed position fails too: sitrep 090's table carries a leading
 spacer column and the early layout carries two label columns.
 
-So vocabulary answers _which table this is_, and geometry read from the **data
-rows** answers _which column is which_.
+So vocabulary answers *which table this is*, and geometry read from the **data
+rows** answers *which column is which*.
 
 ## Layers
 
@@ -94,7 +94,7 @@ em-dashes is still a value column, and calling it a label would shift every
 later column one place.
 
 Value columns are then zipped, left to right, against the spec's declared
-`values` order. Order within a layout is stable even though _count_ is not: the
+`values` order. Order within a layout is stable even though *count* is not: the
 daily block appears from 13 July and extends the sequence rather than reordering
 it, so shorter tables stop early. That absorbs the spacer column and the
 two-label case without a special case for either.
@@ -111,7 +111,7 @@ spec declares an order rather than indices.
 Candidates are **ranked, not taken in order**. Heading vocabulary does not
 single this table out and no tightening of it did: the provincial summary sits
 above this table on the same page and states the same things about itself,
-because it _is_ a summary of it. Every phrase that excluded the summary also
+because it *is* a summary of it. Every phrase that excluded the summary also
 excluded some vintage of the real table, since the title text bleeds across the
 heading row into arbitrary cells. The difference that holds is structural — the
 summary has one row per province, this table one per health zone — so candidates
@@ -146,8 +146,8 @@ Tests: 73 passing, 1 strict xfail. Every case names the report it came from.
 ## The exception register
 
 `data/raw/reconciliation_exceptions.tsv` holds judgements about specific
-documents. An entry asserts: _I opened this page, added the printed rows, and
-the source does not agree with itself._ Seven entries so far, each read against
+documents. An entry asserts: *I opened this page, added the printed rows, and
+the source does not agree with itself.* Seven entries so far, each read against
 the rendered page before being written.
 
 Three design properties make it a record rather than a mute button.
@@ -165,10 +165,10 @@ checked, so the register is rejected outright rather than applied on trust: an
 exception not tied to a document is a suppression.
 
 The strongest entry is sitrep 059, where the page explains its own gap. The note
-beneath its zone table reads _"Ituri : la répartition cumulée par zone de santé
+beneath its zone table reads *"Ituri : la répartition cumulée par zone de santé
 correspond à la dernière distribution consolidée (10/07) ; le total provincial
 (1 772 cas / 608 décès) est le cumul du 12/07, l'écart avec la somme des ZS
-reflétant les cas et décès accumulés depuis cette distribution"_ — the zone rows
+reflétant les cas et décès accumulés depuis cette distribution"* — the zone rows
 are the 10 July distribution and the province row the 12 July cumulative. Where
 an entry infers rather than quotes, it says so: the same report's Nord-Kivu and
 Tshopo gaps have the same shape, but the note names only Ituri.
@@ -182,8 +182,8 @@ requirement let the cumulative spec match the early table, so sitrep 005's
 Mongbwalu was recorded with **309 confirmed cases where the page prints 309
 suspected and 13 confirmed**. Figures plausible, columns internally consistent,
 page arithmetic closing — the whole table had been read one concept to the left.
-The rule that follows is now in the code: _each relaxation of the heading
-vocabulary has to be paid for with a discriminator._
+The rule that follows is now in the code: *each relaxation of the heading
+vocabulary has to be paid for with a discriminator.*
 
 **The thousands separator had been flattened** from ASCII + no-break + narrow
 no-break to three ordinary spaces, invisible in any diff, rejecting every count

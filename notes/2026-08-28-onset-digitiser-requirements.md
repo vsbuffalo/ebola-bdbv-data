@@ -11,7 +11,7 @@ drawn from — read that for the evidence, this for the requirements)
 Upstream (`epiforecasts/BVDOutbreakSize`) reads the INSP symptom-onset bar chart
 out of the PDF's pixels and fits the result as a model stream. On 2026-08-10
 that reader returned 3049 cases from a chart that its own predecessor had read
-as 3233 — from _the same chart_, re-published a day later at heavier JPEG
+as 3233 — from *the same chart*, re-published a day later at heavier JPEG
 compression. The 184-case difference entered the likelihood as evidence that
 recent onsets had stopped accumulating, and the published reproduction number at
 the cut-off sat at 1.02 instead of ~1.15.
@@ -120,7 +120,7 @@ before 12 July":
 | 092-093     | 14-15 Aug | 3525       | 3767      | -6.4%   | 2228             | -4          |
 | **094-096** | 16-18 Aug | 3559       | 3838      | -7.3%   | **2180**         | **-52**     |
 | 097         | 19 Aug    | 3886       | 4084      | -4.8%   | 2250             | +18         |
-| _098_       | _20 Aug_  | _excluded_ | _4140_    | _+3.4%_ | _(~ +280)_       | _excluded_  |
+| *098*       | *20 Aug*  | *excluded* | *4140*    | *+3.4%* | *(~ +280)*       | *excluded*  |
 | 099         | 21 Aug    | 3959       | 4140      | -4.4%   | 2238             | +6          |
 | 100         | 22 Aug    | 4066       | 4238      | -4.1%   | 2235             | +3          |
 | 101         | 23 Aug    | 4084       | 4287      | -4.7%   | 2221             | -11         |
@@ -133,7 +133,7 @@ that moved the model.
 
 The renders are also shrinking: 571 px tall at 087/088, 534 at 101, **455 at
 102**, 501 at 103. Fewer pixels per case means a washed row costs a larger
-fraction of a case, so sensitivity is _increasing_ over time. SitRep 101 and 102
+fraction of a case, so sensitivity is *increasing* over time. SitRep 101 and 102
 are the same encoder at the same quality (JPEG ratio 5.7% and 5.8%); 102 is
 simply 79 px shorter, and reads 96 cases low.
 
@@ -143,8 +143,8 @@ simply 79 px shorter, and reads 96 cases low.
   figure at a larger render (SitRep 098 excluded)". The general principle —
   render changes the reading — is known and logged.
 - Issue **#617 (open)**: a date-alignment anomaly at 102->103.
-- Issue **#488 (closed)**: the two-sided per-scan error. Closed by _re-
-  including_ a scan that had been excluded for failing monotonicity, on the
+- Issue **#488 (closed)**: the two-sided per-scan error. Closed by *re-
+  including* a scan that had been excluded for failing monotonicity, on the
   grounds that the committed data fails that property worse. That is why a
   184-case fall did not stop anything.
 - The algorithm is **unchanged**. Their workaround is data-level: exclude the
@@ -153,7 +153,7 @@ simply 79 px shorter, and reads 96 cases low.
   088 was ingested, and has never been run retrospectively. Applied to 088 it
   fires immediately: 134 below 087 and 143 below 092, against a 36-case scatter
   among the other three vintages.
-- #594's framing is directional — over-counting at a _larger, lossless_ render.
+- #594's framing is directional — over-counting at a *larger, lossless* render.
   088 is the mirror case (under-counting at a smaller, more compressed render)
   and is not covered by the issue.
 
@@ -163,7 +163,7 @@ simply 79 px shorter, and reads 96 cases low.
 
 **G1. Render fingerprint, recorded and compared.** For every vintage record the
 embedded image object's width, height, encoding (jpeg / lossless), compression
-ratio, and the SHA-256 of the _decoded_ pixels. Refuse the vintage if width,
+ratio, and the SHA-256 of the *decoded* pixels. Refuse the vintage if width,
 height or encoding departs from the trailing median of the last five by more
 than a declared tolerance. SitRep 098 (1267x789 lossless against ~830x510 jpeg)
 and SitRep 102 (455 px tall against 534) are both caught by this alone, before a
@@ -184,7 +184,7 @@ observed data: good vintages scatter by 15-36 cases; 088 sits 134-143 low; 098
 sits ~280 high; 102 sits ~85-96 low. A 3-sigma rule catches all three and admits
 every good vintage.
 
-**G4. Falls are investigated, never averaged.** A per-bar fall is _not_ on its
+**G4. Falls are investigated, never averaged.** A per-bar fall is *not* on its
 own evidence of scan error — a re-dated case moves one bar down and another up
 (upstream's #488 correction, and they are right). The test is a fall with
 nothing nearby absorbing it: pair each falling day against rises within +/-2
@@ -193,7 +193,7 @@ days, and escalate the unabsorbed residual. Across 087->088 the whole figure has
 
 **G5. Date-alignment shift test.** L1 distance between consecutive vintages at
 shifts -1/0/+1 days must minimise cleanly at 0. Read `last_tick` off the
-rendered figure, never infer it: the printed tick is sometimes the _publication_
+rendered figure, never infer it: the printed tick is sometimes the *publication*
 date rather than the report date, and it can freeze for seven vintages while
 report dates advance.
 
@@ -213,8 +213,8 @@ set, per vintage.
 
 **A1. Do not flood-fill upward with a fixed miss tolerance.** This one rule
 produced the 25 July amputation. Better: the bars carry a dark outline — find
-the bar top as an _edge_, and find the blue/red boundary as an edge, so a gap in
-the fill cannot terminate the measurement. Failing that, scan _downward_ from
+the bar top as an *edge*, and find the blue/red boundary as an edge, so a gap in
+the fill cannot terminate the measurement. Failing that, scan *downward* from
 the top of the plot for the first mask pixel, which cannot truncate early.
 
 **A2. Do not use hard RGB thresholds.** Two of the seven fatal rows missed their
@@ -253,7 +253,7 @@ many onset dates the figure actually printed, and which dates the axis did not
 reach. Dates past the axis are unobserved, not zero. When differencing two
 vintages, clip to the intersection of their printed extents.
 
-**P4. Deduplicate on the decoded image hash _and_ on the digitised block.**
+**P4. Deduplicate on the decoded image hash *and* on the digitised block.**
 Neither is sufficient alone. Value-dedup collapses 088-091 correctly but misses
 that 087 and 088 are the same chart; image-hash dedup catches byte-identical
 reprints but not a re-encode of one chart. Only G2/G3 catch the re-encode.

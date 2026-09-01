@@ -2,7 +2,7 @@
 # by design: `build` and `doc` never touch the network, so a rebuild can never
 # silently change what the source says.
 
-.PHONY: verdict figures-release figures-compare watch-data-channel release-check escape-fraction care-ledger oneoff-testing oneoff-death-split oneoff-death-flow cron-install cron-uninstall check fetch refresh manifest verify build streams compare figures onset external \
+.PHONY: fmt verdict figures-release figures-compare watch-data-channel release-check escape-fraction care-ledger oneoff-testing oneoff-death-split oneoff-death-flow cron-install cron-uninstall check fetch refresh manifest verify build streams compare figures onset external \
 	external-update scan-refresh doc serve test
 
 # WHERE A FIGURE LANDS SAYS WHICH DATA MADE IT. Every figure this repository
@@ -174,6 +174,8 @@ streams:
 		--population data/raw/zone_population.csv \
 		--uganda-stream data/build/streams/uganda_exports.tsv \
 		--out-dir data/build/streams
+	# tidy the dictionary this just wrote, and every other markdown with it
+	$(MAKE) --no-print-directory fmt
 	# writes, one file per stream (this list is load-bearing: the document
 	# guard derives the declared-artefact set from these paths):
 	#   data/build/streams/cases_ituri.tsv      data/build/streams/deaths_ituri.tsv
@@ -476,6 +478,33 @@ figures-compare:
 		elif cmp -s "$$a/$$f" "$$b/$$f"; then echo "  unchanged  $$f"; \
 		else echo "  CHANGED    $$f"; fi; \
 	 done
+
+## fmt     -- Tidy every markdown file, including the generated ones.
+##            Uses the REPO-LOCAL dprint.json, not whatever config the machine
+##            happens to have: the settings and the plugin version are pinned
+##            here so two people formatting the same file get the same bytes.
+##            `--no-gitignore` is what reaches the generated dictionary: dprint
+##            honours .gitignore by default and data/build/ is ignored, which is
+##            the whole reason `mdfmt data/build/streams/README.md` appears to
+##            do nothing. (`--excludes-override` does NOT do it -- that clears
+##            the config's own excludes and leaves .gitignore standing.)
+##
+##            The config pins `emphasisKind: asterisks`. The default rewrites
+##            `*not*` to `_not_`, and the dictionary is checked against the
+##            register it is generated from by exact text, so a formatter that
+##            silently swapped emphasis markers turned a tidy-up into a test
+##            failure. Pinning it also keeps the repository on one convention
+##            whatever config a contributor's machine carries.
+##
+##            BEST-EFFORT, NEVER A BUILD DEPENDENCY. `build` and `streams` are
+##            documented offline, and dprint fetches its plugin over the network
+##            on a cold cache, so this skips with a note if dprint is absent and
+##            never fails a build. Formatting is idempotent, so running it twice
+##            changes nothing.
+fmt:
+	@command -v dprint >/dev/null 2>&1 \
+	  && dprint fmt --config dprint.json --no-gitignore 2>/dev/null \
+	  || echo "  dprint not installed or offline; markdown left as written"
 
 ## verdict -- OFFLINE. One screen: is this build safe to release? Reads the
 ##            status files the build already wrote and sorts what it found into

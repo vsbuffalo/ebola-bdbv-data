@@ -23,8 +23,8 @@ copy this subset here. `make release-check` rebuilds them in a fresh clone and
 requires them to be byte-identical to the ones in git, so a committed figure
 cannot fall behind the data it claims to show.
 
-**They are not put inside `data/build/`.** That directory means _derived and
-disposable_ — it must stay safe to delete at any moment, and this pipeline does
+**They are not put inside `data/build/`.** That directory means *derived and
+disposable* — it must stay safe to delete at any moment, and this pipeline does
 delete it. A tracked file living inside it would make `rm -rf data/build` a
 destructive act on the repository, which is precisely the property that makes
 the layer boundary worth having.
@@ -46,7 +46,7 @@ figure shows in a sentence or two, and then the caveats that must travel with it
 wherever it is used — in a deck, in a paper, in a message to the modelling side.
 Several of these figures are drawn at slide proportions and deliberately carry
 very little text: what a reader can consult at leisure lives here, and only what
-would make the figure _mislead_ if removed stays on the figure itself.
+would make the figure *mislead* if removed stays on the figure itself.
 
 This is fail-closed. `tests/test_extraction.py` fails if a `.png` in this
 directory has no section here, or if a section names a file that does not exist,
@@ -84,7 +84,7 @@ is the opening slide.
   breakdown out of date. A coloured bar is not a bad number. It is the source
   saying the number may move.
 - Both series are built by differencing a published cumulative, which is what
-  makes dividing by the reporting window the right thing to do here. It is _not_
+  makes dividing by the reporting window the right thing to do here. It is *not*
   right for the streams built by summing flows, where the same `days_covered`
   column means the gap since the previous observation instead.
 
@@ -133,13 +133,13 @@ Three things the figure draws that the legend can only name:
   the report of 2 August 2026; both routes this repository reads it by — the
   front-page tile and the care pillar's whole-response sentence — stop on that
   same report, and the per-province bullets that continue do not sum to a
-  country (see `care_ledger.png`). After that day the boundary _between_ the
+  country (see `care_ledger.png`). After that day the boundary *between* the
   ward band and the top band is not drawn, because nothing published locates it,
   and the two are shown as one hatched region. Continuing the ward band at zero
   would draw every patient in a bed as unaccounted for; ending the figure there
   would imply the top band stopped growing. Neither is true. The same handover
   is why the lower panel switches from a solid measured share to a dashed upper
-  bound at that date: after it, only _in a ward **or** with no record_ can be
+  bound at that date: after it, only *in a ward **or** with no record* can be
   asserted.
 - **DO NOT READ THE JUNE FALL AS AN IMPROVEMENT.** The share drops from about
   two thirds to under a third across June and early July, for two reasons that
@@ -167,7 +167,7 @@ modelling side most needs.
   the finding.** A smoother would manufacture the flatness; and an extraction
   defect that made the share climb toward 1.0 would read as collapsing isolation
   rather than as the parsing artefact it would be.
-- **It is a share of _classified_ deaths.** Deaths counted as confirmed but
+- **It is a share of *classified* deaths.** Deaths counted as confirmed but
   classified neither way are drawn separately in the upper panel and are not in
   the denominator.
 - **The unclassified count is clamped at zero.** On three report days the
@@ -194,8 +194,8 @@ Ituri 59%, Nord-Kivu 68%, Haut-Uélé 51%, against a national 61%.
 - **Why that matters for a model.** A single national ascertainment probability
   is fitting that average. When the outbreak's centre of mass moves between
   provinces, the national share moves with it, and a model with no province
-  structure will read that as a change in how deaths are _found_ rather than in
-  _where they happen_.
+  structure will read that as a change in how deaths are *found* rather than in
+  *where they happen*.
 - **Counts and share are two columns, not one panel with two scales.** They are
   different measures, and drawing the share on a second y-axis over the bars is
   the standard way to make a chart nobody can read.
@@ -217,7 +217,7 @@ reported their first confirmed case during it. 60 of the 151 health zones in the
 six affected provinces have now reported one.
 
 - **Two encodings answering two questions.** The fill is the zone's cumulative
-  confirmed cases; the orange outline marks zones reporting their _first_ case
+  confirmed cases; the orange outline marks zones reporting their *first* case
   in that fortnight. The outline exists because the fill cannot show arrival — a
   zone going from 0 to 3 cases barely changes colour, and that arrival is the
   most consequential thing on the panel.
@@ -279,7 +279,7 @@ to.
   not evidence of free beds where the patients are.
 - **Absconder counts are drawn as isolated marks, never joined into a line**,
   because joining them would assert values on days no report printed one. A
-  printed zero ("_aucun évadé_") is an observation and is drawn as one, with an
+  printed zero ("*aucun évadé*") is an observation and is drawn as one, with an
   open ring.
 - **No row is dropped for failing a check.** Where a report's own numbers
   disagree — where the stated census contradicts the confirmed-plus-suspected
@@ -309,7 +309,7 @@ rather than below, which the banner reader could not follow.
   the same quantities re-binned, and most of the care ledger is published and
   documented in `data/build/streams/README.md` but not drawn here, because
   thirty further rows would cost the grid its legibility. The subtitle therefore
-  says _streams drawn_, never _published streams_.
+  says *streams drawn*, never *published streams*.
 - **A cell is an observation, not a row.** Streams with no observed report day
   are left out rather than painted, because painting them would claim a datum
   the release does not contain.
@@ -388,7 +388,7 @@ INRB-UMIE's transcription — and, below, how much ground each one actually
 covers.
 
 **This is the caveat, not a footnote to it: agreement between two readings of
-one document is evidence about _transcription_, never about whether the document
+one document is evidence about *transcription*, never about whether the document
 is right.** All three lineages read the same pages and inherit whatever the
 source got wrong. The figure says so in its own subtitle, because "validated" is
 otherwise read as "correct".
@@ -415,7 +415,7 @@ disagreements, signed, over time on the right. Disagreements larger than a few
 cases are labelled with the zone and the report they come from.
 
 **Two extractions of one source are not independent evidence.** Agreement is
-about transcription. A _disagreement_, though, is always a finding: one of the
+about transcription. A *disagreement*, though, is always a finding: one of the
 readings is wrong, or the two read different versions of a report the source
 revised in place, and either is worth knowing. That asymmetry is the point of
 the comparison.
@@ -444,10 +444,10 @@ zone rows; the rings are INSP's own printed provincial row in the two province
 panels and the epiforecasts scan in the national one; the dashed line is
 INRB-UMIE's transcription.
 
-- **The two difference rows do not mean the same thing.** _Ours − INRB_ mixes
+- **The two difference rows do not mean the same thing.** *Ours − INRB* mixes
   value disagreements with row-coverage differences: a zone-day absent from
   their file lowers their sum without anyone having read a number differently.
-  _Ours − printed_ is pure arithmetic against the same page, and is zero
+  *Ours − printed* is pure arithmetic against the same page, and is zero
   everywhere except the source self-disagreements recorded in `registers/`.
 - **INRB rows are placed into provinces via the health-zone geojson**, because
   their file carries no province column. Rows whose zone is literally `NA`
@@ -496,7 +496,7 @@ into confirmed and suspected patients.
 - **Early growth is inflated by surveillance expanding.** Health zones under
   reporting go from 16 to 58 across the series, most steeply in the first weeks,
   so part of the early rise is the system finding cases rather than the epidemic
-  making them. This biases the apparent slowdown _upward_ and is the main reason
+  making them. This biases the apparent slowdown *upward* and is the main reason
   not to read the top panel as an effect size.
 - **The 7-day line is a median, because the series carries backlog releases.**
   22 July prints 369 confirmed cases against a neighbourhood of 50 to 100, and
@@ -539,7 +539,7 @@ made at or around a death.
   confirmations on 70 of the 78 province-days where both appear, which is what
   licenses treating one as the other.
 - **The at-death count begins in mid-July**, so the positives before it are
-  drawn as a single band. A day is treated as split only if _every_ province
+  drawn as a single band. A day is treated as split only if *every* province
   reporting laboratory volume that day also carries the at-death count; the
   handful of partial days are shown unsplit, because a national composition
   built from some provinces is not one.
@@ -564,7 +564,7 @@ made at or around a death.
   own.** Sampling is targeted at symptomatic suspects and at deaths, not drawn
   from the population, so this rate cannot be compared with the
   population-screening benchmarks used for other diseases. What it does carry is
-  its _stability_: the level has stayed near 20% since mid-June while daily
+  its *stability*: the level has stayed near 20% since mid-June while daily
   confirmations roughly doubled, meaning testing volume grew with the epidemic
   rather than falling behind it.
 
@@ -623,7 +623,7 @@ stacked by province.
   line through a handful of points would read as a trend. Tshopo prints
   laboratory volume twice in the whole series, ten samples in total. Those
   provinces appear as points only.
-- **The lower panel is samples _printed_, not samples taken.** A province
+- **The lower panel is samples *printed*, not samples taken.** A province
   contributes zero on days its report carries no laboratory paragraph, which is
   a silence rather than a measured absence of testing. The number of provinces
   reporting on a day ranges from one to five.

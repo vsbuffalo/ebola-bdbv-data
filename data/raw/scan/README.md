@@ -1,9 +1,9 @@
 # The epiforecasts scan, pinned
 
 `insp_sitrep_scanned.csv` is a committed copy of
-`epiforecast-repro/raw/insp_sitrep_scanned.csv` — national headline values
-read from the INSP situation-report PDFs by an LLM agent and re-scanned by a
-second, with a notes column recording revisions and misprints.
+`epiforecast-repro/raw/insp_sitrep_scanned.csv` — national headline values read
+from the INSP situation-report PDFs by an LLM agent and re-scanned by a second,
+with a notes column recording revisions and misprints.
 
 It is a **check, never a trunk**: the comparison in `make compare` sets our
 extraction against it, and this copy exists so that comparison is reproducible

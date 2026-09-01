@@ -16,7 +16,7 @@ snapshot) with a red rectangle on top (cases dead). Bar heights are whole
 numbers of cases — a bar holds 28 cases or 29, never 28.4. And the y-axis prints
 the exchange rate between pixels and cases: if the gridlines sit 25 cases apart
 and 108 pixels apart, one case is 4.32 pixels. So the entire content of one bar
-is a pair of small integers — call them _a_ (alive) and _d_ (dead) — and the
+is a pair of small integers — call them *a* (alive) and *d* (dead) — and the
 resolution at which the image can express them is known exactly.
 
 How upstream read a bar: start at the baseline and climb one pixel at a time,
@@ -37,7 +37,7 @@ problem: instead of interrogating pixels, enumerate every admissible answer and
 ask how well each explains the picture. For a candidate pair (a, d) we know
 exactly what the bar should look like — blue fill for the first `a x 4.32`
 pixels of height, red for the next `d x 4.32`, background above — so render that
-hypothesis, score it against the observed pixels, and do this for _every_ pair
+hypothesis, score it against the observed pixels, and do this for *every* pair
 of whole numbers the panel could hold. Keep the best-scoring pair. This is
 maximum-likelihood estimation by exhaustive enumeration: the integer lattice
 makes the hypothesis space finite and small, so the global optimum is found by
@@ -161,7 +161,7 @@ Published artifacts, each a `make` target:
 - `registers/onset_reader_overrides.tsv` — hand exclusions with reasons, in the
   style of the existing override registers. Empty until something earns a row.
 - `data/build/onset/images/<date>-<sitrep>-<sha12>.png` — the extracted chart
-  itself, one per distinct decoded image, named by the _earliest_ report date
+  itself, one per distinct decoded image, named by the *earliest* report date
   and sitrep that carried it plus the first 12 hex of the decoded-pixel SHA-256
   (so `2026-08-10-088-0f69d3208a41.png` also stands for the 089–091 reprints;
   `vintages.csv` holds the full mapping and the full hash). `pdfimages` pulls
@@ -199,7 +199,7 @@ The seams, and what each buys:
   `vintages.csv`.
 - **calibrate / read.** The reader consumes a `Calibration` and cannot run
   without one. A vintage whose gridline step or bar pitch cannot be established
-  refuses _before_ a single bar is read — a wrong divisor rescaling every bar
+  refuses *before* a single bar is read — a wrong divisor rescaling every bar
   (G7) is unrepresentable because the divisor is asserted against `{20, 25}` at
   construction.
 - **read / gate.** The gates take only the published CSVs, not images. This is
@@ -216,8 +216,8 @@ The seams, and what each buys:
 **Setup.** Calibration hands the reader, for one bar: the strip of pixel columns
 the bar occupies, the baseline row it grows from, the exchange rate
 `c = px_per_case`, and the palette (the fill colours sampled from this image's
-own legend). The unknowns are two non-negative integers, the alive count _a_ and
-the dead count _d_.
+own legend). The unknowns are two non-negative integers, the alive count *a* and
+the dead count *d*.
 
 **The hypothesis space.** Every pair (a, d) with `(a + d) * c` no taller than
 the panel is a candidate — at 4.32 px per case and a ~420 px panel, a few
@@ -254,7 +254,7 @@ of `S_alive` over the first `a*c` rows, `S_dead` over the next `d*c`, and `S_bg`
 above — three contiguous ranges, so with prefix sums each candidate evaluates in
 O(1) after O(H) preparation, and the full sweep is O(H²) per bar. Sweep
 everything; take the argmax. Because the space is enumerated, the argmax is the
-_exact global_ maximum-likelihood estimate: no optimiser, no initialisation, no
+*exact global* maximum-likelihood estimate: no optimiser, no initialisation, no
 local minima, no convergence criterion, and bit-for-bit deterministic — which
 the repository's byte-identical rebuild rule requires anyway.
 
@@ -280,7 +280,7 @@ The chart's renderer strokes every bar segment with a thin dark outline — in t
 088 forensics the outline row reads around RGB (115, 64, 73) against fills near
 (200, 229, 237) and (202, 38, 45). That stroke means the two quantities reader
 one estimates exist in the image a second time, encoded differently: the bar's
-top and the alive/dead boundary are _dark horizontal lines_, and finding a dark
+top and the alive/dead boundary are *dark horizontal lines*, and finding a dark
 line does not require classifying a single fill pixel.
 
 **Mechanics.** For each pixel column in the bar's strip, take the luminance
@@ -301,7 +301,7 @@ converted five truncated columns and one good one into a confident wrong answer.
 **Why two readers, and why these two.** Independence of mechanism is the
 requirement, and upstream shows why: their Julia and Python implementations were
 ports of one algorithm, agreed byte-for-byte, and misread 088 identically —
-redundancy without diversity checks nothing. Fit and edge fail in _different_
+redundancy without diversity checks nothing. Fit and edge fail in *different*
 renders: the fit is weakest when compression washes the two fills toward each
 other (the colours blur but the outlines survive); the edge reader is weakest
 when downsampling blurs the thin outlines away (the strokes fade but the fill
@@ -338,7 +338,7 @@ error is the failure mode this entire design exists to catch.
   locales at five render scales are the one genuinely fragile OCR target.
   `registers/onset_axis_anchors.tsv` records, per decoded image hash: the
   leftmost labelled tick as printed (verbatim), its date, and the rightmost
-  likewise. One row per _distinct image_ (reprints share theirs), human-entered
+  likewise. One row per *distinct image* (reprints share theirs), human-entered
   against a saved crop, machine-validated three ways: the two anchors must be an
   integer number of weeks apart matching the gridline count; bar count must fit
   the implied extent; and the G5 shift test against neighbouring vintages must
@@ -354,8 +354,8 @@ Two-level, per P4, with one improvement a correct reader makes available:
    dates (collapses 088–091 and 092–093).
 2. **Value level**: identical digitised blocks within stated resolution → one
    vintage. For a render-robust reader this also collapses the 087/088 pair —
-   the same chart re-encoded — which upstream's reader could not see _because
-   its own values differed across the re-encode_. Two readings of one chart are
+   the same chart re-encoded — which upstream's reader could not see *because
+   its own values differed across the re-encode*. Two readings of one chart are
    one observation of the epidemic; treating them as two is the
    transcription-vs-measurement confusion this repository already refuses
    elsewhere.
@@ -371,7 +371,7 @@ non-accepted endpoint (S4 becomes structural, not advisory).
 | --------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | G1 render fingerprint       | `vintages.csv`  | width/height/encoding departing from trailing five-vintage median beyond declared tolerance — catches 098 (1267×789 lossless) and 102 (455 px) before reading                                                                   |
 | G2 printed-n reconciliation | `vintages.csv`  | digitised total outside a render-conditional band around printed n; two-sided, asymmetric floor for the axis-truncation deficit                                                                                                 |
-| G3 stable region            | `snapshots.csv` | total over onset ≤ report − 28 d deviating from _both_ neighbours, same direction, > 3× local scatter (good vintages scatter 15–36; 088 sat 134–143 low; 098 ~280 high; 102 ~85–96 low — all caught, none of the good vintages) |
+| G3 stable region            | `snapshots.csv` | total over onset ≤ report − 28 d deviating from *both* neighbours, same direction, > 3× local scatter (good vintages scatter 15–36; 088 sat 134–143 low; 098 ~280 high; 102 ~85–96 low — all caught, none of the good vintages) |
 | G4 unabsorbed falls         | `triangle.csv`  | falls not paired against rises within ±2 days; a re-dated case absorbs, a wash does not (087→088: 49 falls, 4 one-unit rises, nothing absorbed)                                                                                 |
 | G5 alignment                | `snapshots.csv` | L1 between consecutive vintages at shifts −1/0/+1 not minimised at 0                                                                                                                                                            |
 | G-R reader disagreement     | `snapshots.csv` | flagged-bar fraction above threshold                                                                                                                                                                                            |
@@ -415,7 +415,7 @@ All five regression fixtures from the requirements note are in
   refuse; silently halving the tick pitch would double `px_per_day` and cannot
   pass the anchor register's integer-weeks check.
 
-Plus one fixture upstream cannot have: two _synthetic_ renders of a known chart
+Plus one fixture upstream cannot have: two *synthetic* renders of a known chart
 (drawn by us, counts known exactly, re-encoded at JPEG qualities bracketing the
 observed 4.8–11%), asserting exact recovery. That turns "the reader is
 render-invariant" from an observed property into a tested one.

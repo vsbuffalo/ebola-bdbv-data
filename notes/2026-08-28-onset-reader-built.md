@@ -111,7 +111,7 @@ Three caveats travel with the shape, all from the 2026-08-26 note. An increment
 cannot distinguish a late-reported case from an old case whose empty onset-date
 field was back-filled; the two are conflated here. The figure plots only cases
 with vital status and onset date recorded — 76–78% of the confirmed cumulative
-where we measured it — so this is the delay of the _recorded-onset_ subset. And
+where we measured it — so this is the delay of the *recorded-onset* subset. And
 the overshoot above 1.0 on some lines is re-dating: a bar can settle below an
 earlier reading because cases move between bars, so the "cumulative"
 distribution is empirical, not enforced. The figure keeps the overshoot visible

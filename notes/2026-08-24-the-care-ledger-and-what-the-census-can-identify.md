@@ -19,7 +19,7 @@ own modelling note had already reached it.
 
 ## What the physics says, and why it is not enough
 
-Under the A-compartment structure proposed upstream, confirmation _splits_
+Under the A-compartment structure proposed upstream, confirmation *splits*
 rather than being thinned:
 
 ```
@@ -37,10 +37,10 @@ Then the two observations are **complementary halves of one transition**:
 | absconder flow (into A)       | `τ · (1 − p_retain) · I` |
 
 Their **sum is τ·I**; their **ratio is `p_retain/(1 − p_retain)`**. So together
-they identify τ _and_ `p_retain`, and **neither alone identifies either**. With
+they identify τ *and* `p_retain`, and **neither alone identifies either**. With
 ν anchored on the NEJM onset-to-sample delay, γ = ν − τ then follows.
 
-This is exactly why binding the census to the _current_ model fails, and it has
+This is exactly why binding the census to the *current* model fails, and it has
 been measured: divergences 4.9% → 62.3%, chains refused 1/8 → 4/8, and 55.7%
 even with `p_in_care` freed under `beta(8, 2)`. A model that routes every
 confirmation into C is asserting `p_retain = 1`. The census contradicts that, so
@@ -69,12 +69,12 @@ The only isolation census we publish comes from a front-page dashboard tile, and
 The same quantities appear in **prose**, per province, through sitrep 100 (22
 August):
 
-> _"En Ituri, 94 nouvelles admissions ont été enregistrées pour 87 sorties, dont
+> *"En Ituri, 94 nouvelles admissions ont été enregistrées pour 87 sorties, dont
 > 14 guéris et aucun évadé. Ainsi, 528 patients sont hospitalisés pour 965 lits,
-> soit un taux d'occupation de …"_
+> soit un taux d'occupation de …"*
 
-> _"l'occupation atteint 438 patients pour 973 lits (45 %), soit 179 confirmés
-> sur 496 lits (36,1 %) et 259 suspects sur 477 lits (54,3 %)"_
+> *"l'occupation atteint 438 patients pour 973 lits (45 %), soit 179 confirmés
+> sur 496 lits (36,1 %) et 259 suspects sur 477 lits (54,3 %)"*
 
 **Nobody had extracted it.** The sibling INRB repository's
 `insp_sitrep__hospitalised`, `__in_bed_previous_day`, `__new_hosp_admissions`
@@ -101,9 +101,9 @@ roughly eighty-five reports of care-ledger data unread by anyone.
 Sitreps 052–080 close the care section with a **national summary sentence** that
 overlaps the tile on 40 days:
 
-> _"Au total, 766 patients étaient en isolement, dont 278 cas confirmés et 488
+> *"Au total, 766 patients étaient en isolement, dont 278 cas confirmés et 488
 > cas suspects … pour 893 admissions et 127 sorties (21 guéris, 24 décès, 78
-> non-cas et 4 évadés)"_
+> non-cas et 4 évadés)"*
 
 - **confirmed census: agrees with the tile on all 24 days the tile prints one**
 - total census: agrees on 25 of 27
@@ -136,11 +136,11 @@ absconder deaths are not among them either; absconders are their own category
 and the decomposition closes where all four components print.
 
 **A naming trap, found in the same pass.** On sitrep 094 the prose reports a
-confirmed Tshopo patient admitted to the CTE HC Kisangani who _died there_, and
+confirmed Tshopo patient admitted to the CTE HC Kisangani who *died there*, and
 the table books it `deaths_community = 1`, `deaths_treatment_centre = 0`. So
 `deaths_community` means **"confirmed at or around death"**, not "died in the
 community" — the column name misleads about location. The conclusion above
-survives on firmer ground: an absconder is _already confirmed_, so is never a
+survives on firmer ground: an absconder is *already confirmed*, so is never a
 new confirmation, and cannot enter that column wherever they die. One case;
 worth a targeted look before it is leaned on.
 

@@ -20,7 +20,7 @@ doc` all run clean.
 geometry was verified sound — 2,743 cumulative cells against an independent
 pdftotext cross-check, zero disagreements).**
 
-- Sitrep 087 prints a _daily_ table and no cumulative one; the cumulative spec
+- Sitrep 087 prints a *daily* table and no cumulative one; the cumulative spec
   claimed it and stored the day's 57 new Ituri cases as `cum_cases` (true
   cumulative that day: 4,381). Fixed with a fourth declared layout
   (`zone_daily`, discriminated by "dont décès parmi les nouveaux confirmés") and
@@ -106,13 +106,13 @@ pdftotext cross-check, zero disagreements).**
 
 **Diagnostics (a retraction).** The Ituri residual right-skew (+0.62) I
 presented as a batching signature was an artefact: the smoother clipped the
-source's two negative revisions to zero _inside its window_, lifting every
+source's two negative revisions to zero *inside its window*, lifting every
 neighbouring residual. Excluded properly the skew is −0.12 — both provinces
 near-symmetric. The figure, the dashboard, and their prose now say so, and the
 dashboard imports the one smoother instead of carrying a copy.
 
 **Caveats (the largest single omission).** 25 early reports footnote their
-headline cumulative as under harmonisation — from sitrep 026 stating it _omits_
+headline cumulative as under harmonisation — from sitrep 026 stating it *omits*
 confirmed community cases and escapees (an undercount) — and sitrep 011
 footnotes the deaths as underestimated. All were recorded `kind=none`. Now:
 `harmonisation_pending` (18), `harmonisation_undercount` (7),
@@ -121,7 +121,7 @@ footnotes the deaths as underestimated. All were recorded `kind=none`. Now:
 **Comparisons.** The INRB comparison's denominator is disclosed machine-readably
 (`compare_meta.json`): 584 of our zone-day rows — the newest reports — have no
 INRB counterpart and sit outside every agreement figure. Cross-lineage spelling
-divergences are mapped onto one key so they can _disagree_ instead of vanishing
+divergences are mapped onto one key so they can *disagree* instead of vanishing
 — which surfaced a 14th disagreement no run had ever seen (064 Lubunga, deaths 0
 vs 1, clustering with the two known 064 Tshopo disagreements). The prose route
 now enters the national comparison: 70/70. `data.qmd`'s typed `2127` (which
@@ -139,7 +139,7 @@ only, and exits 4 (`STALE`) when the source goes quiet — visible to a `--quiet
 cron. `make refresh` exists (check's advice named a target that didn't). The
 version-marker vocabulary covers `corrected`, `v2`, `rev`, `MAJ`, `bis`,
 `update`; a later upload that loses on markers is announced. ISO filename dates
-parse. Undated archive names are a hard failure in the fetcher _and_ every
+parse. Undated archive names are a hard failure in the fetcher *and* every
 extractor. The French date parser accepts `1er` and month abbreviations.
 `PROVENANCE.tsv` is pruned of 469 rows about files from abandoned layouts, and
 its writer is append-only on (path, hash) — a revision now leaves a trace

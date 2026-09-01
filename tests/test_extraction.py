@@ -3616,9 +3616,16 @@ def test_every_family_in_the_dictionary_says_how_to_read_it():
     printed = [f for f in families if f"## {families[f]['title']}" in text]
     assert len(printed) >= 10, printed
     assert text.count("**How to read it.**") == len(printed)
+    # Compared on collapsed whitespace, because `make fmt` rewraps the
+    # dictionary's prose at 80 columns and the register holds each reading on
+    # one line. What this test is for is that the dictionary says what the
+    # register says; where the line breaks fall is the formatter's business,
+    # and asserting them would make tidying the document a test failure.
+    flat = " ".join(text.split())
     for family in printed:
-        assert families[family]["interpretation"].strip(), family
-        assert families[family]["interpretation"] in text, family
+        reading = families[family]["interpretation"]
+        assert reading.strip(), family
+        assert " ".join(reading.split()) in flat, family
 
 
 def test_the_register_carries_a_reading_for_every_family_it_names():
