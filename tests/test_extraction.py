@@ -2487,6 +2487,59 @@ def test_the_committed_pdfs_are_the_bytes_the_register_names():
 
 
 # --------------------------------------------------------------------------
+# The onset-to-report delay
+#
+# `cases_*` is indexed by report date; a model's projected quantity is a
+# confirmation event. The gap between the two instants is this distribution,
+# and the one way to get it badly wrong is to pool it: the May and June
+# cohorts are the epidemic's early history being reconstructed months later,
+# not a reporting delay, and pooling them doubles the routine figure.
+# --------------------------------------------------------------------------
+
+import build_reporting_delay as BRD                               # noqa: E402
+
+
+@needs_pdfs
+def test_the_delay_is_reported_per_cohort_and_never_pooled():
+    import json
+    d = json.loads((ROOT / "data/build/series/reporting_delay.json").read_text())
+    months = [c["onset_month"] for c in d["by_onset_month"]]
+    assert months == sorted(months) and len(months) >= 4
+    assert "mean_delay_days" not in d, "a pooled mean would describe no cohort"
+    # The early cohorts must not be mistaken for a reporting delay: they are
+    # far slower than the routine ones, which is the whole reason for the split.
+    by = {c["onset_month"]: c for c in d["by_onset_month"]}
+    assert by["2026-05"]["mean_delay_days"] > 3 * by["2026-07"]["mean_delay_days"]
+
+
+@needs_pdfs
+def test_the_usable_cohort_is_settled_and_recent():
+    """The early cohorts are settled precisely because they are old. Picking on
+    settledness alone would return retrospective reconstruction as the routine
+    delay, which is how a fixed follow-up threshold first got this wrong."""
+    import json
+    d = json.loads((ROOT / "data/build/series/reporting_delay.json").read_text())
+    by = {c["onset_month"]: c for c in d["by_onset_month"]}
+    u = d["usable_cohort"]
+    assert u and by[u]["settled"]
+    assert u >= "2026-07", f"{u} is retrospective reconstruction, not a delay"
+    newer = [m for m in by if m > u]
+    assert all(not by[m]["settled"] for m in newer), \
+        "a settled cohort newer than the usable one should have been chosen"
+
+
+@needs_pdfs
+def test_the_delay_distribution_is_a_distribution():
+    import polars as pl
+    d = pl.read_csv(ROOT / "data/build/series/reporting_delay.csv")
+    for m in set(d["onset_month"].to_list()):
+        s = d.filter(pl.col("onset_month") == m).sort("delay_days")
+        assert abs(s["share"].sum() - 1.0) < 1e-3, m
+        assert abs(s["cumulative_share"].to_list()[-1] - 1.0) < 1e-3, m
+        assert s["cumulative_share"].is_sorted(), m
+
+
+# --------------------------------------------------------------------------
 # The safe-burial pillar's alert ledger
 #
 # A death never swabbed can never be confirmed, so bodies-swabbed over

@@ -2860,6 +2860,10 @@ def main() -> None:
         # the dict, which is only correct as long as the dict's keys happen to
         # be the right frame -- exactly the coupling that made this number move
         # when a publication decision changed.
+        # How far apart the report instant and the confirmation instant are.
+        # Carried here so a consumer pins it by tag rather than deriving it.
+        "reporting_delay": json.loads(rd.read_text()) if (
+            rd := ROOT / "data/build/series/reporting_delay.json").exists() else {},
         "swab_coverage": swab_coverage(
             args.burial_alerts if args.burial_alerts
             else ROOT / "data/build/series/burial_alerts.csv"),

@@ -63,9 +63,19 @@ HEADING = re.compile(r"^\s*#{2,3}\s.*?(?P<dir>\w[\w -]*?\s*→\s*\w[\w -]*?)\s*:
 
 
 def headings(lines: list[str]) -> list[str]:
-    """The direction of every entry opened by these lines, in order."""
-    out = []
+    """The direction of every entry opened by these lines, in order.
+
+    Fenced blocks are skipped. The channel's own header documents the heading
+    convention by showing it, and an example inside a fence is not an entry --
+    without this, editing anywhere near that header wakes both sides.
+    """
+    out, fenced = [], False
     for ln in lines:
+        if ln.lstrip().startswith("```"):
+            fenced = not fenced
+            continue
+        if fenced:
+            continue
         m = HEADING.match(ln)
         if m:
             out.append(re.sub(r"\s+", " ", m.group("dir")))

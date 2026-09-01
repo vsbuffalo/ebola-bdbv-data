@@ -38,6 +38,70 @@ same as withdrawn: the older tag stays exactly where it is.
 
 ---
 
+## `data/2026-08-30-r4` — 2026-09-01 — the onset-to-report delay, because the streams and a model's confirmation event are not the same instant
+
+**Not breaking. One field added to `meta`, one new series file; no stream file
+changes and no value moves.**
+
+### The gap this measures
+
+`cases_*` is indexed by **report** date. A model's projected quantity is a
+**confirmation** event. Those are different instants and nothing published so
+far said how far apart. `data/build/series/reporting_delay.csv` now carries the
+distribution, per onset-month cohort, and `meta["reporting_delay"]` the summary.
+
+### Pooling it is the one way to get it badly wrong
+
+```
+onset month      n     mean    median   p90    status
+2026-04          3    115.0 d    115    117    still arriving
+2026-05         87     79.3 d     77    102    still arriving
+2026-06        161     39.1 d     37     67    still arriving
+2026-07      1,398     10.2 d      9     19    settled
+2026-08      1,002      7.1 d      7     13    still arriving
+```
+
+Pooled over everything the mean is 13.2 days. **That figure describes no case in
+particular and overstates the routine delay by roughly a factor of two.** The
+May and June cohorts were not slow to be reported: the epidemic's early history
+was reconstructed retrospectively, months after the fact. The routine delay is
+the July cohort's — mean 10.2 d, median 9, p90 19.
+
+So no pooled number is published. `usable_cohort` names the most recent settled
+cohort, which is July; a cohort is settled when its follow-up has outrun its own
+90th percentile. August's 7.1 d is right-truncated and biased downward — cases
+with recent onset and a long delay have not been reported yet.
+
+Picking on settledness alone would have returned June, because the early cohorts
+are settled precisely by being old. Recency is the second discriminator and both
+are needed.
+
+### The long tail is a bigger problem than the shift
+
+Of the cases appearing in each report month — and all of them land in that
+month's `cases_*` bins regardless of when the person fell ill:
+
+```
+              <=14 d    15-30 d    >30 d    >60 d
+July           77.7%      16.1%     6.2%     1.8%
+August         77.8%      11.9%    10.3%     4.9%
+```
+
+Roughly a tenth of each month's reported cases had onset more than a month
+earlier, **and that share is growing**. This is the same phenomenon as the 22
+July harmonisation, which `registers/retrospective_batches.tsv` records as two
+named days — but the triangle shows it is continuous rather than confined to the
+days the source announces. `cases_excluding_backlog` removes the declared spikes
+and does not touch this.
+
+### How to use it
+
+Convolve with `reporting_delay.csv`, do not shift by a mean. The distribution is
+heavily right-skewed — median 9 against a p90 of 19 in the settled cohort — so a
+single lag parameter fits the centre and misfits both tails.
+
+---
+
 ## `data/2026-08-30-r3` — 2026-09-01 — the safe-burial pillar's alert ledger, and the swab constants stop living in prose
 
 **Not breaking. One field is added to `meta`; no stream file changes and no
