@@ -1558,6 +1558,12 @@ def main() -> None:
     ap.add_argument("--caveat", type=Path, default=None,
                     help="provisional_caveat.csv, so daily rows carry the "
                          "source's own consolidation flags")
+    ap.add_argument("--excluded-places", type=Path,
+                    default=ROOT / "registers/excluded_places.tsv",
+                    help="places the source reports that this build "
+                         "deliberately does not publish, each with a reason; "
+                         "anything reported and neither published nor listed "
+                         "here stops the build")
     ap.add_argument("--batches", type=Path,
                     default=ROOT / "registers/retrospective_batches.tsv",
                     help="the register of days the source says a cumulative's "
@@ -1597,6 +1603,38 @@ def main() -> None:
                .group_by("province", "date")
                .agg(pl.col("cum_cases").sum().alias("cum_cases"))
                .group_by("province").agg(pl.col("cum_cases").max()))
+
+    # A place the source reports and this build does not publish stops the
+    # build. Tshopo, Sud-Kivu and Bas-Uélé were extracted in full and published
+    # nowhere for weeks: the series carried them, `STREAM_PROVINCES` did not,
+    # and the only trace was a `dropped_provinces` field in `meta.json` that
+    # nobody reads and that understated the drop by half. Their absence from
+    # the published streams was read, reasonably, as the source not reporting
+    # them.
+    #
+    # So it is a gate rather than a note. A province appearing for the first
+    # time is a real event -- Bas-Uélé arrived on 2026-08-13 -- and it deserves
+    # a decision, not a default. Publish it by adding it to STREAM_PROVINCES,
+    # or record why not in the exclusion register; either way somebody chose.
+    excluded = {}
+    if args.excluded_places and args.excluded_places.exists():
+        reg = pl.read_csv(args.excluded_places, separator="\t",
+                          comment_prefix="#", infer_schema_length=None)
+        excluded = {r["place"]: r["reason"] for r in reg.iter_rows(named=True)}
+    unpublished = sorted(set(dropped["province"].to_list()) - set(excluded))
+    if unpublished:
+        counts = dict(zip(dropped["province"].to_list(),
+                          dropped["cum_cases"].to_list()))
+        sys.exit(
+            "The source reports a place this build does not publish:\n  "
+            + "\n  ".join(f"{q} — {counts.get(q)} confirmed cases"
+                           for q in unpublished)
+            + "\nEvery place the reports carry confirmed cases for is published,"
+              " or is recorded with a reason in "
+              f"{args.excluded_places.name if args.excluded_places else 'the exclusion register'}."
+              " Add it to STREAM_PROVINCES in this file, or add a row saying"
+              " why it stays out. Do not leave it silently extracted and"
+              " unpublished: that is how three provinces went missing.")
 
     summary = (pl.read_csv(args.summary, infer_schema_length=None)
                if args.summary and args.summary.exists() else None)
@@ -2225,9 +2263,23 @@ def main() -> None:
         """
         base_path = args.out_dir / f"{stem}_daily_{slug}.tsv"
         note_path = args.out_dir / f"{stem}_notified_{slug}.tsv"
-        if not (base_path.exists() and note_path.exists()):
+        if not base_path.exists():
             return
-        base, note = read_stream(base_path), read_stream(note_path)
+        base = read_stream(base_path)
+        # A place with no notified stream still gets this family, identical to
+        # the differenced one. The banner printed its 24-hour breakdown only for
+        # sitreps 059-083 and only for the provinces affected then, so Bas-Uélé
+        # and Sud-Kivu have none -- and requiring one silently skipped writing
+        # their file, which broke a figure that reasonably expected the family
+        # to cover every place. A consumer binding `cases_excluding_backlog_*`
+        # across provinces should not find some of them absent; where no batch
+        # is registered the series is the differenced one, which is exactly
+        # what it means.
+        if note_path.exists():
+            note = read_stream(note_path)
+        else:
+            note = base.select("time").with_columns(
+                pl.lit(None, pl.Int64).alias(f"{stem}_notified_{slug}"))
         obs, name = f"{stem}_{slug}", f"{stem}_excluding_backlog_{slug}"
         j = base.join(
             note.select("time", pl.col(f"{stem}_notified_{slug}")

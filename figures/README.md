@@ -243,6 +243,33 @@ six affected provinces have now reported one.
   seen resolve to a geometry through the same alias registers the streams use;
   the one that does not, `Bambu-mine`, appears once and carries no cases.
 
+## `province_overview.png`
+
+Every province the reports have ever recorded a confirmed case in, one panel
+each. It exists because its absence caused a mistake: `streams_detail.png` drew
+two provinces, and the other four being invisible in it was read as the source
+not reporting them. It was reporting all six the whole time, and they were
+extracted the whole time — they simply were not published as streams.
+
+- **Each panel has its own vertical scale, deliberately.** Ituri runs to about
+  90 confirmed cases a day and Bas-Uélé to one. A shared scale answers "which
+  province is biggest", which nobody needed to ask; a free scale answers "is
+  this province active", which is the question that went wrong.
+- **The three numbers in each heading are the ones that separate a finished
+  province from a quiet one**: cumulative cases, deaths and case fatality, and
+  how many days since the province last reported a case. A province with no case
+  for more than three weeks is greyed.
+- **It draws the published streams, not the printed daily column.** That column
+  exists only in some vintages and left Ituri blank from June to mid-July. It
+  also makes this figure a check on publication: a province that stops being
+  published loses its panel, and the missing input stops the build.
+- **The excluding-backlog family is drawn**, so the 22 July harmonisation — 347
+  cases on one Ituri day — does not set the scale. See the CHANGELOG entry for
+  `data/2026-08-29-r2`.
+- **Days since a case is not days since transmission.** Sud-Kivu shows 93 days
+  and still holds two dozen suspected cases in isolation, contacts of a death
+  imported from Tshopo.
+
 ## `care_ledger.png`
 
 The treatment-centre ledger the reports state in **words**: whether it can be

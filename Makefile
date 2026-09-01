@@ -374,6 +374,11 @@ figures:
 	# because a zone going 0 -> 3 barely changes colour.
 	uv run python scripts/plot_figures.py --figure zone_spread \
 		--out $(FIGDIR)/zone_spread.png
+	# SLIDE FIGURE, 16:9. Every province the reports cover, one panel each on
+	# its own scale. Exists because the two-province detail figure was read as
+	# saying the other four were not being reported, when all six were.
+	uv run python scripts/plot_figures.py --figure province_overview \
+		--out $(FIGDIR)/province_overview.png
 	uv run python scripts/plot_figures.py --figure province_series \
 		--out $(FIGDIR)/province_series.png
 	# THE PROVINCE FLOWS AND THE NATIONAL-ONLY SERIES ARE TWO FIGURES, not
@@ -440,6 +445,7 @@ figures:
 	cp $(FIGDIR)/ascertainment.png figures/
 	cp $(FIGDIR)/ascertainment_provinces.png figures/
 	cp $(FIGDIR)/zone_spread.png figures/
+	cp $(FIGDIR)/province_overview.png figures/
 	cp $(FIGDIR)/outcomes.png figures/
 	cp $(FIGDIR)/epi_curve.png figures/
 	cp $(FIGDIR)/response_timeline.png figures/

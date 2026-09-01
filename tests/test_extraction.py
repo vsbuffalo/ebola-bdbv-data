@@ -4153,3 +4153,49 @@ def test_care_the_summary_cut_keeps_the_subjects_own_figure():
            "au CT de Bambu (316 %), tandis que le Nord-Kivu")
     m = C.ESSENTIEL.search(seg)
     assert m and C._int(m.group(1)) == 549
+
+
+@needs_pdfs
+def test_every_province_the_source_reports_is_published():
+    """The guard against the mistake that prompted it. Tshopo, Sud-Kivu and
+    Bas-Uélé were extracted in full and published nowhere for weeks; their
+    absence from the streams was read as the source not reporting them.
+
+    `build_streams.py` now stops if a place carries confirmed cases and is
+    neither published nor listed in `registers/excluded_places.tsv` with a
+    reason. This checks the outcome rather than the mechanism: every province
+    the series carry cases for has a published daily case stream.
+    """
+    ps = pl.read_csv(ROOT / "data/build/series/province_series.csv",
+                     try_parse_dates=True).drop_nulls("province")
+    reported = {p for p, n in ps.group_by("province")
+                .agg(pl.col("cum_cases").max()).iter_rows() if n and n > 0}
+    assert len(reported) >= 6, reported
+    excluded = set()
+    reg = ROOT / "registers/excluded_places.tsv"
+    if reg.exists():
+        d = pl.read_csv(reg, separator="\t", comment_prefix="#",
+                        infer_schema_length=None)
+        if d.height:
+            excluded = set(d["place"].to_list())
+    missing = []
+    for prov in sorted(reported - excluded):
+        slug = BS.STREAM_PROVINCES.get(prov)
+        if slug is None or not (STREAMS / f"cases_daily_{slug}.tsv").exists():
+            missing.append(prov)
+    assert not missing, (
+        f"the source reports confirmed cases for {missing} and no daily case "
+        "stream is published for them. Add to STREAM_PROVINCES, or record a "
+        "reason in registers/excluded_places.tsv.")
+
+
+@needs_pdfs
+def test_the_excluding_backlog_family_covers_every_published_place():
+    """It is the family we tell consumers to fit, so a consumer binding it
+    across provinces must not find some absent. Bas-Uélé and Sud-Kivu have no
+    notified stream — the banner printed its breakdown only for sitreps 059-083
+    — and requiring one silently skipped writing their file."""
+    for slug in BS.STREAM_PROVINCES.values():
+        for stem in ("cases", "deaths"):
+            f = STREAMS / f"{stem}_excluding_backlog_{slug}.tsv"
+            assert f.exists(), f"{f.name} is not published"

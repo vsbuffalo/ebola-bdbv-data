@@ -100,6 +100,18 @@ def collect() -> tuple[list[str], list[str], list[str], dict[str, str]]:
                 f"the streams end {newest_stream} but the series reach "
                 f"{newest_series} — run `make streams`")
 
+    # Places the source reports and this build does not publish. The build
+    # itself stops on this, so it should never fire here -- it is stated
+    # because a reader of the verdict should be able to see that the check ran
+    # and found nothing, rather than infer it from silence.
+    ps = _read("province_series.csv")
+    if ps is not None and "province" in ps.columns:
+        rep = {p for p, n in ps.drop_nulls("province").group_by("province")
+               .agg(pl.col("cum_cases").max()).iter_rows() if n and n > 0}
+        pub = {f.stem.replace("cases_daily_", "")
+               for f in STREAMS.glob("cases_daily_*.tsv")}
+        facts["provinces reported / published"] = f"{len(rep)} / {len(pub) - 1}"
+
     zt = _read("zone_table_status.csv")
     if zt is not None:
         facts["reports read"] = str(zt.height)

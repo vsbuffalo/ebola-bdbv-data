@@ -1,0 +1,18 @@
+# Places the source reports confirmed cases for that this build deliberately
+# does NOT publish as streams, each with a reason.
+#
+# Why it exists. Tshopo, Sud-Kivu and Bas-Uélé were extracted in full and
+# published nowhere for weeks. The series carried them, `STREAM_PROVINCES` did
+# not, and the only trace was a `meta.json` field nobody reads. Their absence
+# from the published streams was read as the source not reporting them, which
+# is exactly backwards.
+#
+# `build_streams.py` now stops if a place carries confirmed cases and is
+# neither published nor listed here. That makes leaving one out a decision
+# somebody made and signed, rather than a default nobody noticed.
+#
+# It is empty, and that is the intended steady state: every province the
+# reports carry cases for is published. A row here should be rare and should
+# say something a reader could disagree with.
+#
+place	reason

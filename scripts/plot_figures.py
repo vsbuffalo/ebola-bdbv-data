@@ -1840,7 +1840,11 @@ def draw_streams_detail(inputs: dict[str, Path], out: Path) -> None:
     lab = pl.read_csv(inputs["lab"], infer_schema_length=None)
     care = pl.read_csv(inputs["care"], infer_schema_length=20000)
 
-    provinces = ["Ituri", "Nord-Kivu"]
+    # Haut-Uélé is a third active province, not a tail: 222 cases, about six a
+    # day through late August, 44% case fatality, and the reports repeatedly
+    # name it as having no treatment centre meeting standards. It was absent
+    # from this figure while it was the third largest outbreak in the country.
+    provinces = ["Ituri", "Nord-Kivu", "Haut-Uélé"]
     rows = [
         ("cases_diff", "Confirmed cases / day\ndifferenced cumulative"),
         ("new_cases", "New confirmed cases / day\nthe source's own 24 h figure"),
@@ -1865,10 +1869,10 @@ def draw_streams_detail(inputs: dict[str, Path], out: Path) -> None:
          "grey band = beds available"),
     ]
 
-    fig = plt.figure(figsize=(11, 3.1 * len(rows) + HEADER_IN),
+    fig = plt.figure(figsize=(5.0 * len(provinces), 3.1 * len(rows) + HEADER_IN),
                      constrained_layout=True)
     all_axes: list = []
-    gs = fig.add_gridspec(len(rows), 2)
+    gs = fig.add_gridspec(len(rows), len(provinces))
 
     for ri, (kind, label) in enumerate(rows):
         axs = []
@@ -1991,7 +1995,7 @@ def draw_streams_detail(inputs: dict[str, Path], out: Path) -> None:
         # holds ~520 patients against 978 beds and Nord-Kivu ~280 against 220;
         # on one scale the province that is over capacity is a flat line at the
         # bottom, which is the opposite of what the row is for.
-        if len(axs) == 2 and kind != "census":
+        if len(axs) > 1 and kind != "census":
             lo = min(a.get_ylim()[0] for a in axs)
             hi = max(a.get_ylim()[1] for a in axs)
             for a in axs:
@@ -4474,6 +4478,114 @@ def draw_zone_spread(inputs: dict[str, Path], out: Path) -> None:
     plt.close(fig)
 
 
+#: One hue per province, fixed. Assigned in the order the outbreak reached
+#: them and never by rank, so a province does not change colour between
+#: releases as case counts overtake one another.
+PROV_SLUG = {"Ituri": "ituri", "Nord-Kivu": "nord_kivu",
+             "Haut-Uélé": "haut_uele", "Tshopo": "tshopo",
+             "Sud-Kivu": "sud_kivu", "Bas-Uélé": "bas_uele"}
+
+PROV_COLOUR = {"Ituri": "#0072B2", "Nord-Kivu": "#D55E00",
+               "Haut-Uélé": "#009E73", "Tshopo": "#CC79A7",
+               "Sud-Kivu": "#8C6D31", "Bas-Uélé": "#56B4E9"}
+
+
+def draw_province_overview(inputs: dict[str, Path], out: Path) -> None:
+    """Every province the source reports, on one page, so none goes unnoticed.
+
+    The figure that would have prevented a mistake. `streams_detail` draws the
+    two largest provinces, and for weeks the other four were invisible in it —
+    which was read, reasonably, as the source not reporting them. It was
+    reporting all six the whole time.
+
+    One panel per province, each on its OWN y-scale, because the whole point is
+    that a province is worth seeing whatever its size: Ituri runs to about 90
+    confirmed cases a day and Bas-Uélé to one. A shared scale answers "which is
+    biggest", which nobody needed to ask; a free scale answers "is this one
+    active", which is the question that went wrong.
+
+    Each panel states the cumulative, the case fatality, and how many days
+    since the province last reported a case — the three numbers that separate a
+    province that is finished from one that is quiet this week.
+    """
+    ps = pl.read_csv(inputs["province_series"], try_parse_dates=True)
+    ps = ps.drop_nulls("province")
+    last_day = ps["date"].max()
+    order = (ps.filter(pl.col("date") == last_day)
+             .sort("cum_cases", descending=True)["province"].to_list())
+
+    ncol = 3
+    nrow = (len(order) + ncol - 1) // ncol
+    fig, axes = plt.subplots(nrow, ncol, figsize=(13.333, 7.5),
+                             sharex=True, layout="constrained")
+    axes = axes.ravel()
+    for i, prov in enumerate(order):
+        ax = axes[i]
+        d = ps.filter(pl.col("province") == prov).sort("date")
+        cur = d.tail(1).to_dicts()[0]
+        # The excluding-backlog family, which is the one we tell consumers to
+        # fit: it is the differenced series with the 22 July harmonisation
+        # taken out, and that batch put 347 cases on one Ituri day. On a panel
+        # whose question is "is this province active" a misdated spike four
+        # times the daily rate is noise that sets the scale.
+        #
+        # The published stream, not the printed "new cases" column. The
+        # printed column exists only in some vintages, so drawing it left Ituri
+        # blank from June to mid-July -- a province with 5,000 cases looking
+        # dormant for six weeks, which is the exact failure this figure is for.
+        # The differenced stream covers the whole window.
+        #
+        # Reading the streams also makes this figure a check on what is
+        # published: a province that stops being published loses its panel, and
+        # the missing input stops the figure rather than quietly shrinking it.
+        slug = PROV_SLUG[prov]
+        st = pl.read_csv(inputs[f"cases_daily_{slug}"], separator="\t",
+                         null_values="NA").drop_nulls(f"cases_{slug}")
+        xs = [mdates.date2num(x) for x in
+              st["time"].str.to_date().to_list()]
+        ys = st[f"cases_{slug}"].to_list()
+        ax.bar(xs, ys, width=0.85, color=PROV_COLOUR.get(prov, "#0072B2"),
+               linewidth=0)
+        # Days since the province last reported a case, from the reports
+        # themselves rather than from a fitted trend.
+        seen = d.filter(pl.col("new_cases") > 0)["date"]
+        quiet = (last_day - seen.max()).days if seen.len() else None
+        cfr = (100 * cur["cum_deaths"] / cur["cum_cases"]
+               if cur["cum_cases"] else 0)
+        note = (f"{cur['cum_cases']:,} cases · {cur['cum_deaths']:,} deaths "
+                f"· {cfr:.0f}% CFR")
+        when = ("no case reported yet" if quiet is None
+                else "case today" if quiet == 0
+                else f"{quiet} days since a case")
+        ax.set_title(f"{prov}\n{note}\n{when}", loc="left", fontsize=8.5,
+                     linespacing=1.5,
+                     color="#666666" if quiet and quiet > 21 else "#111111")
+        ax.set_ylim(bottom=0)
+        ax.grid(axis="y", **GRID)
+        ax.set_axisbelow(True)
+        for sp in ("top", "right"):
+            ax.spines[sp].set_visible(False)
+        ax.tick_params(labelsize=8)
+        if i % ncol == 0:
+            ax.set_ylabel("confirmed cases / day", fontsize=8.5)
+    for ax in axes[len(order):]:
+        ax.set_axis_off()
+    for ax in axes[:len(order)]:
+        _report_ticks(ax, pl.read_csv(inputs["caveat"], infer_schema_length=None))
+
+    active = sum(1 for p in order
+                 if (d := ps.filter(pl.col("province") == p)
+                     .filter(pl.col("new_cases") > 0)["date"]).len()
+                 and (last_day - d.max()).days <= 7)
+    _header(fig, "Every province the reports cover",
+            f"{len(order)} provinces have reported a confirmed case; "
+            f"{active} reported one in the last seven days. Each panel has its "
+            "own vertical scale — the question here is whether a province is "
+            "active, not which is largest.")
+    fig.savefig(out, dpi=200)
+    plt.close(fig)
+
+
 FIGURES = {
     # The declared inputs ARE the dependency set, so the stream files are
     # listed one by one rather than hidden behind a directory glob.
@@ -4511,6 +4623,14 @@ FIGURES = {
                       "prose": "data/build/series/prose_provinces.csv"}),
     "residuals": (draw_residuals,
                   {"province_series": "data/build/series/province_series.csv"}),
+    "province_overview": (
+        draw_province_overview,
+        {"province_series": "data/build/series/province_series.csv",
+         "caveat": "data/build/series/provisional_caveat.csv",
+         **{f"cases_daily_{s}":
+            f"data/build/streams/cases_excluding_backlog_{s}.tsv"
+            for s in ("ituri", "nord_kivu", "haut_uele", "tshopo",
+                      "sud_kivu", "bas_uele")}}),
     "streams_detail": (draw_streams_detail,
                        {"zone_table": "data/build/series/zone_table.csv",
                         "caveat": "data/build/series/provisional_caveat.csv",
