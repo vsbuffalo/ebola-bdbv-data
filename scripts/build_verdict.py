@@ -149,7 +149,8 @@ def collect() -> tuple[list[str], list[str], list[str], dict[str, str]]:
 
     for name, what in (("lab_prose_status.csv", "laboratory sentence"),
                        ("care_prose_status.csv", "care passage"),
-                       ("daily_notified_status.csv", "banner tile")):
+                       ("daily_notified_status.csv", "banner tile"),
+                       ("burial_alerts_status.csv", "safe-burial sentence")):
         st = _read(name)
         if st is None:
             continue

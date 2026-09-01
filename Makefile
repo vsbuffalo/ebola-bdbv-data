@@ -109,6 +109,15 @@ build:
 	uv run python scripts/extract_care_prose.py \
 		--pdfs data/raw/sitrep_pdfs --quiet \
 		--out data/build/series/care_prose.csv
+	# The safe-burial pillar's death-alert ledger: alerts raised, bodies
+	# reached, bodies swabbed, per province per report day. A death never
+	# swabbed can never be confirmed, so this bounds what the confirmed-death
+	# series can see -- the quantity a model declares as an ascertainment
+	# constant, previously read out of prose by hand.
+	uv run python scripts/extract_burial_alerts.py \
+		--pdf-dir data/raw/sitrep_pdfs \
+		--out data/build/series/burial_alerts.csv \
+		--status data/build/series/burial_alerts_status.csv
 	uv run python scripts/extract_banner.py \
 		--pdfs data/raw/sitrep_pdfs --quiet \
 		--out data/build/series/banner.csv
@@ -172,6 +181,7 @@ streams:
 		--care data/build/series/care_prose.csv \
 		--geojson data/raw/health_zones.geojson \
 		--population data/raw/zone_population.csv \
+		--burial-alerts data/build/series/burial_alerts.csv \
 		--uganda-stream data/build/streams/uganda_exports.tsv \
 		--out-dir data/build/streams
 	# tidy the dictionary this just wrote, and every other markdown with it

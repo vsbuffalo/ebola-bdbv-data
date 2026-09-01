@@ -38,6 +38,111 @@ same as withdrawn: the older tag stays exactly where it is.
 
 ---
 
+## `data/2026-08-30-r3` — 2026-09-01 — the safe-burial pillar's alert ledger, and the swab constants stop living in prose
+
+**Not breaking. One field is added to `meta`; no stream file changes and no
+value moves.** Re-vendor to pin the swab-coverage figures by tag instead of
+copying them out of a message.
+
+### Why this exists
+
+Swab coverage — what fraction of death alerts end in a body actually swabbed —
+bounds how much of the true mortality the confirmed-death series can see, since
+a death never swabbed can never become a confirmed case. A model that declares
+an ascertainment constant is declaring this quantity.
+
+It has been travelling as digits in prose. Figures were derived by an
+uncommitted ad-hoc analysis, published, corrected once, and then sat in a
+consumer's configs at the pre-correction value for three days. **No target
+regenerated them, so nothing could have caught the drift.** That is what this
+release fixes: the numbers are now a build artefact with a rule behind them.
+
+### `scripts/extract_burial_alerts.py`, new
+
+One row per province per report day in `data/build/series/burial_alerts.csv` —
+**82 rows across 5 provinces** — carrying the pillar's own counts along the path
+a death takes:
+
+```
+alerts raised  ->  bodies the team reached  ->  bodies swabbed
+```
+
+plus burials carried out, failures, the report's own printed percentage, the
+verbatim sentence, and how the row was licensed. `bodies_reached` is almost
+always empty: the reports print that inner step **once in 102**.
+
+**29 of 82 rows are licensed by the document's own arithmetic** — 14 reproduce a
+printed percentage, 15 satisfy the identity that bodies swabbed plus failures
+equals alerts raised. The rest publish as `unchecked`, which is honest rather
+than silent. Five sentences were refused.
+
+### Two readings the extraction had to get right
+
+**The carried-over alert count appears in three constructions, and two of them
+mean the opposite of the third.** `reports` here is from *reporter*, to postpone
+— a body not reached that day:
+
+```
+"72 alertes de décès du jour et 23 reports"     -> 72 + 23 = 95
+"93 alertes de décès reçues, dont 13 reports"   -> 93 already
+"a reçu 37 alertes (15 reports)"                -> 37 already
+```
+
+The parenthetical reads as though it could be either, and the source settles it.
+25 August, Nord-Kivu: «le pilier EDS a reçu 37 alertes (15 reports) : 36 corps
+swabés, un échec de swab» — 36 swabbed plus 1 failure is 37, the stated total,
+not 37 + 15. Reading it as an addition inflated five Ituri and Nord-Kivu
+denominators by 10 to 17 alerts each.
+
+**The laboratory section uses the same word for a different thing.** «Bas-Uélé :
+1 swab reçu et testé» is a specimen arriving at a bench, not a body a burial
+team reached. Parsed unscoped it becomes a burial row asserting one body swabbed
+in Bas-Uélé. The extraction is scoped to the pillar's own section rather than to
+the word.
+
+### `meta["swab_coverage"]`, new
+
+Per province: the value, its numerator and denominator, the province-day count,
+the sitreps drawn from, and the window.
+
+```
+ituri       0.6585  = 1149/1745  over 21 province-days
+nord_kivu   0.9242  =  914/ 989  over 23
+haut_uele   0.9024  =   37/  41  over 10
+bas_uele    0.5000  =    3/    6  over  2
+```
+
+**Published per province and deliberately not pooled.** A case-weighted average
+uses a consumer's own case counts, which belong on the consumer's side; what
+only this repository can do is verify each province against the page.
+
+**The denominator is alerts raised**, so the figure spans the whole path and
+carries the alert-to-reached loss inside it. It is not the inner
+swabbed-over-reached step — the two differ, and on the one day the source
+decomposes it (sitrep 099: 93 alerts, 76 reached, 60 swabbed) they are 0.645
+against 0.789. The field name is the only thing that would tell them apart, so
+the definition ships beside the number.
+
+**Tshopo still has nothing.** One row, and it carries no alert count.
+
+### What the reproducible figures change
+
+Against the values last published in prose, Ituri and Nord-Kivu move by less
+than 0.03. **Haut-Uélé moves from 0.750 to 0.902** on 10 province-days and 41
+alerts — a small-sample number that has now moved twice, which is itself the
+finding: it should be given a prior, not a point.
+
+### One caution that travels with the numbers
+
+Coverage is not a constant. Sitrep 108 records 9 bodies left unswabbed for
+community resistance in Ituri, and the reports began quantifying refusals only
+on 30 August. Coverage moves with community acceptance, which is plausibly
+correlated with transmission itself, so a fixed value — and a *maximum*
+especially — is optimistic during a resistance episode. The caution is carried
+in `meta` beside the value rather than left in a release note.
+
+---
+
 ## `data/2026-08-30-r2` — 2026-09-01 — `population` is the source's frame, and says so in the file
 
 **Not breaking. One field changes type, one field is added, no stream file

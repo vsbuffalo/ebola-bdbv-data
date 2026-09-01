@@ -2487,6 +2487,87 @@ def test_the_committed_pdfs_are_the_bytes_the_register_names():
 
 
 # --------------------------------------------------------------------------
+# The safe-burial pillar's alert ledger
+#
+# A death never swabbed can never be confirmed, so bodies-swabbed over
+# alerts-raised bounds what the confirmed-death series can see. Two things
+# make this parse fragile and both are pinned here: the carried-over alert
+# count appears in three constructions, two of which put it inside the total
+# and one of which adds to it; and the laboratory section a page earlier uses
+# the word "swab" for a specimen arriving at a bench rather than a body
+# reached by a burial team.
+# --------------------------------------------------------------------------
+
+import extract_burial_alerts as BA                                # noqa: E402
+
+
+def test_the_three_carried_over_constructions_are_read_correctly():
+    add = BA.parse("Les équipes EDS ont enregistré 72 alertes de décès du jour "
+                   "et 23 reports, pour 76 EDS réalisés (80 %) et 69 corps "
+                   "prélevés par swab.")
+    assert add["alerts_total"] == 95 and add["alert_construction"].startswith("et")
+    assert add["bodies_swabbed"] == 69 and add["eds_done"] == 76
+    # and the report's own 80% licenses it: 76/95 = 80.0
+    assert BA.check(add)[0] == "ok"
+
+    inside = BA.parse("Sur 93 alertes de décès reçues, dont 13 reports de la "
+                      "veille, 60 corps ont été prélevés par swab sur 76 pris "
+                      "en charge (78,9 %) et 72 EDS réalisés (77,4 %).")
+    assert inside["alerts_total"] == 93, "dont must not be added"
+    assert inside["bodies_reached"] == 76 and inside["bodies_swabbed"] == 60
+
+    # The parenthetical reads as though it could be either. The source settles
+    # it: 36 swabbed plus 1 failure is 37, the stated total, not 37 + 15.
+    paren = BA.parse("le pilier EDS a reçu 37 alertes (15 reports) : 36 corps "
+                     "swabés, un échec de swab et 34 EDS réalisés.")
+    assert paren["alerts_total"] == 37, "the parenthetical is inside, not added"
+
+
+def test_all_of_them_swabbed_is_not_lost():
+    """A 100% day stated in words rather than digits. Dropping it would bias
+    the pooled ratio downward."""
+    r = BA.parse("Sur 6 alertes de décès reçues (3 à Isiro et 3 à Wamba), "
+                 "toutes ont été prélevés par swab et 6 EDS réalisés.")
+    assert r["alerts_total"] == 6 and r["bodies_swabbed"] == 6
+
+
+def test_a_percentage_our_reading_cannot_reproduce_is_refused():
+    r = BA.parse("Sur 80 alertes de décès, 12 corps ont été prélevés par swab "
+                 "et 70 EDS réalisés (99 %).")
+    status, why = BA.check(r)
+    assert status == "refused", why
+
+
+def test_the_laboratory_section_is_not_read_as_burial_rows():
+    """`Bas-Uélé : 1 swab reçu et testé` is a specimen arriving at a bench, not
+    a body a burial team reached. Scoped out by section, not by wording."""
+    lab = ("1.3. Laboratoire • Bas-Uélé : 1 swab reçu et testé, le résultat "
+           "est revenu positif. 1.4. Prévention et Contrôle de l'Infection "
+           "(PCI/EDS) • Au Bas-Uélé, 3 corps swabés. "
+           "1.5. Prise en charge holistique")
+    got = {prov: BA.parse(sent) for sent, prov in BA.sentences(lab)
+           if prov and BA.parse(sent)}
+    assert "bas_uele" in got
+    assert got["bas_uele"]["bodies_swabbed"] == 3, got["bas_uele"]["quote"]
+
+
+@needs_pdfs
+def test_swab_coverage_reaches_meta_per_province_and_is_never_pooled():
+    import json
+    meta = json.loads((ROOT / "data/build/streams/meta.json").read_text())
+    sc = meta.get("swab_coverage")
+    assert sc and sc["by_province"], "swab coverage is not published"
+    for prov, v in sc["by_province"].items():
+        assert 0 < v["value"] <= 1
+        assert v["bodies_swabbed"] <= v["alerts_raised"]
+        assert abs(v["value"] - v["bodies_swabbed"] / v["alerts_raised"]) < 1e-4
+        assert v["province_days"] == len(v["sitreps"])
+    # A single pooled number would invite exactly the case-weighting that
+    # belongs on the consumer's side.
+    assert "value" not in sc and "national" not in sc
+
+
+# --------------------------------------------------------------------------
 # The population table is geography, not a publication decision
 #
 # A consumer sums it to a national susceptible pool. It was derived by

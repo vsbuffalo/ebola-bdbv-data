@@ -1564,11 +1564,71 @@ def populations(geojson: Path, pop_csv: Path) -> dict[str, int]:
     return rounded
 
 
+def swab_coverage(burial_csv: Path) -> dict:
+    """Per-province swab coverage, pooled from the burial pillar's own rows.
+
+    A death that is never swabbed can never become a confirmed case, so this
+    bounds what the confirmed-death series can see. A model that declares an
+    ascertainment constant is declaring this quantity.
+
+    Published per province and never pooled across them. A case-weighted
+    average would use a consumer's own case counts, which belong on the
+    consumer's side; the per-province measurement is the part only this
+    repository can verify against the page, and a consumer weighting it can
+    then test its weighting against what is published here.
+
+    The denominator is *alerts raised*, not bodies the team reached. The
+    reports print the inner step once in 102 -- sitrep 099, "60 corps ont été
+    prélevés par swab sur 76 pris en charge (78,9 %)" against 93 alerts -- so
+    the alert-to-reached loss cannot be measured systematically and is inside
+    this figure rather than beside it. The field name says which, because the
+    two differ by that step and only the name would distinguish them.
+    """
+    if not burial_csv.exists():
+        return {}
+    d = pl.read_csv(burial_csv, infer_schema_length=20000)
+    d = d.drop_nulls(["alerts_total", "bodies_swabbed"]).filter(
+        pl.col("alerts_total") > 0)
+    out: dict[str, dict] = {}
+    for prov in sorted(set(d["province"].to_list())):
+        q = d.filter(pl.col("province") == prov)
+        sw, al = int(q["bodies_swabbed"].sum()), int(q["alerts_total"].sum())
+        out[prov] = {
+            "value": round(sw / al, 4),
+            "bodies_swabbed": sw,
+            "alerts_raised": al,
+            "province_days": q.height,
+            "sitreps": sorted(int(x) for x in q["sitrep"].to_list()),
+            "first": q["date"].min(), "last": q["date"].max(),
+        }
+    return {
+        "by_province": out,
+        "definition":
+            "bodies swabbed / death alerts raised, pooled over the province-"
+            "days on which the safe-burial pillar prints both. The denominator "
+            "is alerts raised, so this spans the whole path from alert to swab "
+            "and includes the alert-to-reached loss; it is not the inner "
+            "swabbed-over-reached step, which the reports print once in 102.",
+        "not_pooled_across_provinces":
+            "deliberate. A case-weighted average would use a consumer's case "
+            "counts, which are the consumer's to supply.",
+        "caution":
+            "not a constant. Sitrep 108 records 9 bodies left unswabbed for "
+            "community resistance in Ituri, and the reports began quantifying "
+            "refusals only on 30 August, so coverage moves with community "
+            "acceptance -- plausibly correlated with transmission itself.",
+    }
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--panel", required=True, type=Path)
     ap.add_argument("--geojson", required=True, type=Path)
     ap.add_argument("--population", required=True, type=Path)
+    ap.add_argument("--burial-alerts", type=Path, default=None,
+                    help="burial_alerts.csv; its per-province pooled coverage "
+                         "goes into meta so a consumer pins it by tag rather "
+                         "than copying a number out of prose")
     ap.add_argument("--out-dir", required=True, type=Path)
     ap.add_argument("--summary", type=Path, default=None,
                     help="province_summary.csv, so the national series covers "
@@ -2800,6 +2860,9 @@ def main() -> None:
         # the dict, which is only correct as long as the dict's keys happen to
         # be the right frame -- exactly the coupling that made this number move
         # when a publication decision changed.
+        "swab_coverage": swab_coverage(
+            args.burial_alerts if args.burial_alerts
+            else ROOT / "data/build/series/burial_alerts.csv"),
         "population_frame": {
             "provinces": len(pops),
             "health_zones": n_zones,
