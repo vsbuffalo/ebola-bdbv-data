@@ -38,6 +38,34 @@ same as withdrawn: the older tag stays exactly where it is.
 
 ---
 
+## `data/2026-08-30-r1` — 2026-09-01 — no data change; the fetch survives a transient network failure
+
+**Not breaking. No value changes and no file is added, removed or renamed.**
+Every stream is byte-identical to `data/2026-08-30-r0`: nothing that produces
+one differs between the two tags. Re-vendor only if `make data-update` aborted
+for you on `r0`.
+
+The held-file check makes one HEAD request per report and could fail in two ways
+that mean opposite things. A response carrying a different `Content-Length` says
+the document was revised. No response at all says only that we could not look,
+which is evidence about the network and none about the bytes. Both incremented
+the same counter and that counter exits 1, so **one transient error out of 99
+requests aborted the whole pipeline** — which is how a consumer stayed pinned to
+a superseded release for an hour while the URL in question was serving exactly
+the bytes we already held.
+
+Unreachability now retries once and is then recorded and named on stderr rather
+than being fatal, the same licence-or-refuse discipline the extraction uses. A
+successful HEAD that disagrees on size still stops the fetch, and a name that
+appears in the unchecked list on consecutive runs is a re-picked URL, which is a
+revision by another route and does need adjudicating.
+
+This is tagged rather than left on `main` because a consumer pinning by tag runs
+the fetch script *at that tag*, so a fix on `main` would not reach the run that
+needs it.
+
+---
+
 ## `data/2026-08-30-r0` — 2026-09-01 — sitreps 107–108, and three provinces that were extracted and never published
 
 **Not breaking. Values change and 45 files are added.** No file is removed or
