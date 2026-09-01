@@ -4726,6 +4726,11 @@ def main() -> None:
     args = ap.parse_args()
 
     draw, inputs = FIGURES[args.figure]
+    # The output's directory, made here rather than in each drawing function.
+    # Several made it and several did not, which is invisible until a target
+    # runs in a tree that has not already created the directory some other
+    # way -- the onset figures failed on exactly that in a fresh clone.
+    args.out.parent.mkdir(parents=True, exist_ok=True)
     #: Only build OUTPUTS move. A few figures also declare a committed
     #: register as an input -- `registers/lab_capacity_events.tsv` -- and
     #: those are repository files that a past release read in exactly the
