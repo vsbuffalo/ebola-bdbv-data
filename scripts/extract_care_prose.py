@@ -751,6 +751,8 @@ SUMMARY = re.compile(r"Au\s+total,\s*(?=\d)"
                      r"|L['’]\s*(Ituri|Tshopo|Nord[-\s]?Kivu|Sud[-\s]?Kivu"
                      r"|Haut[-\s]?U[ée]l[ée]|Bas[-\s]?U[ée]l[ée])\s+concentre", re.I)
 SUMMARY_CAP = 460
+ESSENTIEL = re.compile(rf"l['’]\s*essentiel\s+des\s+patients?"
+                       rf"\s*\(({NUM})\)", re.I)
 
 
 def summary_rows(flat: str) -> list[dict]:
@@ -763,9 +765,37 @@ def summary_rows(flat: str) -> list[dict]:
         stop = re.search(r"\.\s", seg)
         if stop:
             seg = seg[:stop.start()]
+        # Is this sentence about care at all? Asked of the WHOLE sentence,
+        # before it is cut at the next province: the cut can remove the very
+        # phrase that answers it, and a sentence does not stop being about
+        # care because its subject's clause is short.
         if not re.search(r"en\s+isolement|hospitalis", seg, re.I):
             continue
+        # The sentence often continues into OTHER provinces without a full
+        # stop, and the census pattern then reads their number as the
+        # subject's. Sitrep 062: "L'Ituri concentre l'essentiel des patients
+        # (549) ... tandis que le Nord-Kivu et la Tshopo comptaient
+        # respectivement 171 et 5 patients en isolement" -- the only phrase
+        # here shaped like a census is Tshopo's, and `census_ituri` published
+        # 5 against 541 the next day. Nothing caught it: with no bed count in
+        # the segment the row was `unchecked`.
+        subject = _norm_prov(m.group(1)) if m.group(1) else None
+        for om in PROV_RE.finditer(seg):
+            if subject is None or _norm_prov(om.group(1)) != subject:
+                seg = seg[:om.start()]
+                break
+
         r = harvest(seg)
+        if r["census"] is None:
+            # "L'Ituri concentre l'essentiel des patients (549)" is the summary
+            # sentence's way of stating the subject's own census, and it is
+            # read off the RAW segment: `pool` strips parentheticals to keep
+            # cumulative clauses out of the number pool, which removes this one
+            # too. Applied here rather than in `harvest` because this phrasing
+            # occurs only in the summary sentence.
+            mo = ESSENTIEL.search(seg)
+            if mo:
+                r["census"] = _int(mo.group(1))
         if r["census"] is None:
             continue
         for f in ("admissions", "admissions_confirmed", "admissions_suspect",
@@ -894,6 +924,16 @@ def extract(pdf: Path) -> tuple[list[dict], list[dict]]:
         end = SECTION_END.search(flat, sm.end())
         hi = end.start() if end else min(len(flat), sm.end() + 2500)
         block = flat[sm.end():hi]
+        # Only an opening ends a passage, and it is worth saying why, because
+        # the obvious tightening is wrong. Making any mention of another
+        # province a boundary looks like it would prevent misattribution, and
+        # it breaks sitrep 068: "Ituri : 24 nouveaux guéris dont 23 en Ituri et
+        # 1 au Nord Kivu, 70 admissions, 556 patients en isolement" -- the
+        # mid-sentence "Nord Kivu" is an aside inside Ituri's own figures, and
+        # cutting there loses Ituri's census entirely. A mention is a topic
+        # change or an aside and the grammar does not say which, so the
+        # conservative rule stands here. The summary sentence is a different
+        # construction and is handled in `summary_rows`.
         mentions = [m for m in PROV_RE.finditer(block)
                     if opens_passage(block, m.start())]
         for i, m in enumerate(mentions):

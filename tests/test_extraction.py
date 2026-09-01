@@ -4110,3 +4110,41 @@ def test_every_committed_figure_came_from_the_release_directory():
     assert not differ, (
         f"committed figures that differ from the current build: {differ}. "
         "Run `make figures && make compare`.")
+
+
+@needs_pdfs
+def test_care_sitrep_062_summary_does_not_credit_ituri_with_tshopos_census():
+    """Sitrep 062: "L'Ituri concentre l'essentiel des patients (549), avec une
+    saturation persistante au CT de Bambu (316 %) ... tandis que le Nord-Kivu
+    et la Tshopo comptaient respectivement 171 et 5 patients en isolement."
+
+    The summary sentence runs from its subject into other provinces with no
+    full stop between. The only phrase in it shaped like a census is Tshopo's
+    "5 patients en isolement", so `census_ituri` published 5 on a day the ward
+    held 541 the morning after. Nothing caught it: the segment carries no bed
+    count, so the row's `checks` were `unchecked`, and a wrong stock in a
+    stream of ~500s is invisible in a table.
+
+    It was found by drawing the census beside the flows in `streams_detail`,
+    where it is a vertical line to the axis.
+    """
+    by = _care(62)
+    assert by["Ituri"]["census"] == 549
+    # Nord-Kivu's 171 and Tshopo's 5 are *not* recovered from this sentence, and
+    # that is the right outcome rather than a gap to close: "respectivement 171
+    # et 5" ties two numbers to two provinces by order alone, and reading it
+    # would be guessing at a construction the licence has not established. They
+    # are absent, not wrong.
+    assert "Nord-Kivu" not in by or by["Nord-Kivu"]["census"] is None
+
+
+def test_care_the_summary_cut_keeps_the_subjects_own_figure():
+    """Cutting the summary sentence at the next province must not throw away
+    the subject's census with it. `pool` strips parentheticals to keep
+    cumulative clauses out of the number pool, which also removes "(549)", so
+    this phrasing is read off the raw segment."""
+    import extract_care_prose as C
+    seg = ("l'essentiel des patients (549), avec une saturation persistante "
+           "au CT de Bambu (316 %), tandis que le Nord-Kivu")
+    m = C.ESSENTIEL.search(seg)
+    assert m and C._int(m.group(1)) == 549
