@@ -140,8 +140,26 @@ DAY0 = dt.date(2026, 5, 19)
 BIN_DAYS = 7
 
 #: Streams are built for these; the rest are dropped and counted in the meta.
+#: Every province the source has ever reported a confirmed case in. All six,
+#: and it was three until 2026-09-01.
+#:
+#: The three added carry 26 cases between them against a national 6,100, and
+#: the case for publishing them anyway is that a province's importance to a
+#: consumer is not its share of the national total. Bas-Uélé is nineteen days
+#: old, has three of its eleven health zones affected, three deaths on four
+#: cases, and the reports say it has no treatment centre meeting standards and
+#: no partner supporting case management. Tshopo has 19 cases spread across
+#: seven of twenty-three zones, which is a wide footprint for a small count and
+#: reads as scattered introductions rather than one chain. Neither is visible
+#: to anyone reading only the published streams, and a reader who noticed their
+#: absence would reasonably conclude the source was not reporting them.
+#:
+#: Sud-Kivu is included on the same rule though it is quiet -- last confirmed
+#: case 2026-05-29 -- because a stream that exists and is flat says something a
+#: missing stream does not.
 STREAM_PROVINCES = {"Ituri": "ituri", "Nord-Kivu": "nord_kivu",
-                    "Haut-Uélé": "haut_uele"}
+                    "Haut-Uélé": "haut_uele", "Tshopo": "tshopo",
+                    "Sud-Kivu": "sud_kivu", "Bas-Uélé": "bas_uele"}
 
 
 def daily_cumulative(panel: pl.DataFrame, province: str, col: str) -> pl.DataFrame:
@@ -1569,9 +1587,15 @@ def main() -> None:
                                 Path("registers/zone_aliases_local.csv")))
     panel = carry_province(pl.read_csv(args.panel, infer_schema_length=None))
 
+    # The province total, not its largest single zone. `max` over zone rows
+    # reported Tshopo as 9 when the province had 19 -- it was the biggest zone,
+    # not the province -- so the one number telling a reader what publication
+    # leaves out understated it by half.
     dropped = (panel.filter(pl.col("level").is_in(["zone", "unassigned"])
                             & ~pl.col("province").is_in(list(STREAM_PROVINCES))
                             & pl.col("cum_cases").is_not_null())
+               .group_by("province", "date")
+               .agg(pl.col("cum_cases").sum().alias("cum_cases"))
                .group_by("province").agg(pl.col("cum_cases").max()))
 
     summary = (pl.read_csv(args.summary, infer_schema_length=None)
@@ -1887,7 +1911,14 @@ def main() -> None:
 
         # The per-bin identity against the province streams, on the raw bins
         # of both sides -- see the note where the province bins are stored.
-        prov_names = [f"{stem}_{s}" for s in STREAM_PROVINCES.values()]
+        # A configured province may not have reported yet, and the identity has
+        # to survive that. Bas-Uélé was in this list for nineteen days before
+        # its first case; a province with no rows writes no weekly stream, and
+        # summing over the configured list rather than the written one raised a
+        # KeyError that stopped the build. It contributes nothing to the
+        # identity either way, so it is skipped rather than special-cased.
+        prov_names = [f"{stem}_{s}" for s in STREAM_PROVINCES.values()
+                      if f"{stem}_{s}" in weekly_by_name]
         psum = None
         for pn in prov_names:
             w = weekly_by_name[pn].select("bin", pl.col("count").alias(pn))

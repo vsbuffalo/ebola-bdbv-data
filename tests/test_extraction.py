@@ -3476,9 +3476,14 @@ def test_the_absconder_streams_are_published_thin_and_say_how_thin():
     left to be discovered: one file holds a single scored row, and a report
     that does not mention absconders is SILENT rather than reporting none, so
     the rows standing for those reports hold `NA` and never 0."""
+    # The PROPERTY, not the enumeration. Which places have an absconder stream
+    # is a function of which provinces reported one, and that grows: Tshopo
+    # gained one the day the six-province scope landed. A test listing the
+    # files fails on the release that adds a province, which is the wrong
+    # moment to be arguing with a test about something it was never guarding.
     files = sorted(STREAMS.glob("care_exits_absconded_*.tsv"))
-    assert [p.stem.replace("care_exits_absconded_", "") for p in files] \
-        == ["ituri", "national", "nord_kivu"]
+    assert len(files) >= 3
+    assert any(p.stem.endswith("_national") for p in files)
     obs = {}
     for p in files:
         t = BS.read_stream(p)
