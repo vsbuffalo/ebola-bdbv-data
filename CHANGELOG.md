@@ -38,6 +38,95 @@ same as withdrawn: the older tag stays exactly where it is.
 
 ---
 
+## `data/2026-08-30-r0` — 2026-09-01 — sitreps 107–108, and three provinces that were extracted and never published
+
+**Not breaking. Values change and 45 files are added.** No file is removed or
+renamed; no column changes on any existing stream. Re-vendor.
+
+First release under the `-r0` convention: the first release of a day now carries
+an explicit revision number. See "Release tags" above.
+
+### Three provinces were missing from the published streams
+
+`STREAM_PROVINCES` stopped at Ituri, Nord-Kivu and Haut-Uélé. **Tshopo, Sud-Kivu
+and Bas-Uélé were extracted in full and published nowhere** — the series carried
+them on 46, 88 and 19 province-days, all current — so a consumer reading only
+the published streams could not see them, and would reasonably conclude the
+source was not reporting them.
+
+All six now publish. **83 stream files become 128.**
+
+They hold 26 confirmed cases against a national 6,100, and share of the national
+total is the wrong test for whether a place belongs in the release. Bas-Uélé is
+nineteen days old, has three of its eleven health zones affected, three deaths
+on four cases, and the reports say it has no treatment centre meeting standards
+and no partner supporting case management. Tshopo has 19 cases spread across
+seven of twenty-three zones — a wide footprint for a small count. Sud-Kivu is
+published though quiet since 2026-05-29, because a stream that exists and is
+flat says something a missing stream does not.
+
+**It is now a gate.** `build_streams.py` stops if a place carries confirmed
+cases and is neither published nor recorded with a reason in the new
+`registers/excluded_places.tsv`. That register ships empty and should stay that
+way. `make verdict` reports provinces reported against provinces published.
+
+### What that surfaced
+
+**The excluding-backlog family skipped any place with no notified stream.**
+Bas-Uélé and Sud-Kivu have none — the banner printed its 24-hour breakdown only
+for sitreps 059–083 — so their files were never written. A consumer binding the
+family across provinces would have found two missing. It now covers every
+published place, identical to the differenced series where no batch is
+registered, which is what it already was for Haut-Uélé.
+
+**The national identity check would have stopped the build on a newly-affected
+province.** It summed over the configured provinces rather than the written
+ones, so a province listed before its first case raised a `KeyError`. Bas-Uélé
+was in exactly that state for nineteen days.
+
+**`dropped_provinces` in `meta.json` understated the drop by half** — it
+recorded the largest single zone's cumulative rather than the province total,
+reporting Tshopo as 9 when the province held 19. Now the province total, and now
+empty.
+
+### One value corrected
+
+`census_ituri` on 2026-07-15 was **5** and is now **549**. The report reads
+"L'Ituri concentre l'essentiel des patients (549) … tandis que le Nord-Kivu et
+la Tshopo comptaient respectivement 171 et 5 patients en isolement"; the summary
+parser read to the first full stop and the only phrase in it shaped like a
+census was Tshopo's. No other day is affected. Nothing caught it because that
+passage carries no bed count, so the row's `checks` were `unchecked` — it was
+found by drawing the census beside the flows.
+
+### New data
+
+Sitreps 107 (29 Aug) and 108 (30 Aug). Data date moves 2026-08-28 →
+**2026-08-30**.
+
+**Nord-Kivu's treatment centres are in open oversaturation.** The source's own
+word: «le taux d'occupation global des lits en CTE/CT est en **sursaturation**
+(128,2 %)». The ward went 178 patients on 24 August to 282 on 30 August, with
+admissions of 75–89/day against 33–64 exits. Every flow stream for that province
+is flat or falling over the same days — cases 21.6 → 15.6/day, confirmed deaths
+15.1 → 10.3, treatment-centre deaths 4.0 → 1.5 — so a consumer fitting the flows
+alone will infer a province coming under control. Do not.
+
+**Saturation has reached Ituri, and its provincial figure hides it.** Ituri
+reads 53.6% occupancy province-wide while sitrep 108 names four of its
+facilities as saturated: the CTEs at Bambu and Nizi and the transit centres at
+Kigonze and Lolwa. Beds are not fungible across a province.
+
+### Also
+
+`figures/province_overview.png` is new: every province on its own scale, with
+days since each last reported a case. It exists because the two-province detail
+figure was what made the omission invisible. `streams_detail.png` gains
+Haut-Uélé as a third column and a ward-census row, and loses the consolidation
+rug.
+
+---
+
 ## `data/2026-08-29-r3` — 2026-08-31 — the notified count by province, and a family with the declared backlogs taken out
 
 **Not breaking. Fourteen files added**, no file removed or renamed, no column
