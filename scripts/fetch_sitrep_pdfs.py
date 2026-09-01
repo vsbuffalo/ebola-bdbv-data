@@ -24,10 +24,18 @@ import argparse
 import csv
 import hashlib
 import sys
+import time
+import urllib.request
 from pathlib import Path
 
-from lib.provenance import REPO_ROOT, fetch, record_held
+from lib.provenance import UA, REPO_ROOT, _encode, fetch, record_held
 from lib.report_date import load_external_sitreps, verify_external
+
+# One pause between the two HEAD attempts on a held report. Long enough to
+# outlast the transient 5xx and connection reset this has actually seen from
+# INSP, short enough that 99 of them could not add a meaningful delay -- and
+# they cannot in practice, because only an unreachable URL waits at all.
+RETRY_PAUSE_S = 2.0
 
 
 def main() -> None:
@@ -104,39 +112,53 @@ def main() -> None:
 
     got = skipped = renamed = failed = 0
     revised: list[str] = []
+    unchecked: list[str] = []
     for r in (() if args.no_fetch else rows):
         date = r["data_date"] or "undated"
         dest = out / f"sitrep_{int(r['sitrep']):03d}_{date}.pdf"
         if dest.exists():
-            # A HELD NAME IS NOT A HELD DOCUMENT. Skipping on the filename
+            # A held *name* is not a held *document*. Skipping on the filename
             # alone is blind to revision in both of its forms: a corrected
-            # upload re-picked under a NEW url usually shares the data date,
+            # upload re-picked under a new url usually shares the data date,
             # so it maps to this same canonical name -- the committed index
             # already has that exact shape for sitrep 012 -- and a report
-            # revised IN PLACE keeps its url entirely. The held file is
+            # revised in place keeps its url entirely. The held file is
             # therefore checked against what the pick URL currently serves,
             # by size first (a HEAD request; the server sends Content-Length)
             # and by bytes if the size matches nothing we can rule out. A
             # difference is never silently resolved in either direction: a
-            # revision changes what every register judgement was ABOUT, so it
-            # stops the fetch and asks for adjudication.
-            try:
-                import urllib.request
-                from lib.provenance import UA, _encode
-                # The UA and the percent-encoding matter here exactly as they
-                # do on the GET path: INSP 403s default user agents, and many
-                # filenames carry a literal degree sign urllib cannot put on
-                # the wire. The first run of this check forgot both and
-                # reported all 83 held reports unverifiable.
-                req = urllib.request.Request(_encode(r["url"]), method="HEAD",
-                                             headers={"User-Agent": UA})
-                with urllib.request.urlopen(req, timeout=30) as resp:
-                    clen = int(resp.headers.get("Content-Length") or -1)
-            except Exception as exc:  # noqa: BLE001
-                print(f"  SitRep {r['sitrep']}: held, but the pick URL could "
-                      f"not be checked ({type(exc).__name__}) -- treating as "
-                      "unverified, NOT as current", file=sys.stderr)
-                failed += 1
+            # revision changes what every register judgement was *about*, so
+            # it stops the fetch and asks for adjudication.
+            #
+            # Two failures live here and they mean opposite things. A HEAD that
+            # *returns* a different size says the document changed. A HEAD that
+            # does not return at all says only that we could not look, which is
+            # evidence about the network and none at all about the bytes. They
+            # were once counted the same, so one 5xx out of 99 requests aborted
+            # the whole pipeline and a consumer waited an hour for a release
+            # that a retry would have produced. Unreachability now retries once
+            # and is then *recorded* rather than fatal -- the same
+            # licence-or-refuse discipline the extraction uses, where a refusal
+            # is written down and never guessed past.
+            # The UA and the percent-encoding matter here exactly as they do on
+            # the GET path: INSP 403s default user agents, and many filenames
+            # carry a literal degree sign urllib cannot put on the wire.
+            req = urllib.request.Request(_encode(r["url"]), method="HEAD",
+                                         headers={"User-Agent": UA})
+            clen, why = None, ""
+            for attempt in range(2):
+                try:
+                    with urllib.request.urlopen(req, timeout=30) as resp:
+                        clen = int(resp.headers.get("Content-Length") or -1)
+                    break
+                except Exception as exc:  # noqa: BLE001
+                    why = f"{type(exc).__name__}: {exc}"
+                    if attempt == 0:
+                        time.sleep(RETRY_PAUSE_S)
+            if clen is None:
+                unchecked.append(f"  sitrep {r['sitrep']}: {dest.name} "
+                                 f"({why})")
+                skipped += 1
                 continue
             if clen == dest.stat().st_size:
                 skipped += 1
@@ -179,6 +201,17 @@ def main() -> None:
     print(f"downloaded {got}, already present {skipped}, "
           f"already held under another name {renamed}, failed {failed}")
     print(f"  {total} PDFs in {out.relative_to(REPO_ROOT)}")
+    if unchecked:
+        # Not fatal, and stated rather than counted, because the number that
+        # matters to a reader is which reports this run did not manage to check
+        # -- a name here twice in a row is a re-picked URL, which is a revision
+        # by another route and does need adjudicating.
+        print(f"  {len(unchecked)} held report(s) could not be checked against "
+              "the pick URL this run. The held bytes are unchanged; what is "
+              "missing is confirmation that the source still serves the same "
+              "document.", file=sys.stderr)
+        for line in unchecked:
+            print(line, file=sys.stderr)
     if revised:
         sys.exit("THE SOURCE HAS REVISED REPORTS WE HOLD:\n"
                  + "\n".join(revised)

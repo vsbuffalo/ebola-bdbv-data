@@ -2486,6 +2486,79 @@ def test_the_committed_pdfs_are_the_bytes_the_register_names():
         verify_external(f, r)      # raises SystemExit on a mismatch
 
 
+# --------------------------------------------------------------------------
+# Unreachable is not revised
+#
+# The held-file check makes one HEAD request per report and can fail in two
+# ways that mean opposite things: a response carrying a different size says
+# the document changed, and no response at all says only that we could not
+# look. They were once counted the same, so a single transient 5xx out of 99
+# requests aborted the pipeline and left a consumer pinned to a superseded
+# release. These pin the distinction in both directions.
+# --------------------------------------------------------------------------
+
+
+class _Resp:
+    def __init__(self, length): self.headers = {"Content-Length": str(length)}
+    def __enter__(self): return self
+    def __exit__(self, *a): return False
+
+
+def _one_row_index(tmp_path, name, url):
+    """An index naming exactly one already-held report, so `main` reaches the
+    HEAD check and nothing else. Nothing is downloaded and nothing written:
+    the file exists, and no `--manifest` is passed."""
+    sitrep, date = int(name.split("_")[1]), name.split("_")[2][:-4]
+    idx = tmp_path / "index.tsv"
+    with idx.open("w", newline="") as fh:
+        w = _csv.DictWriter(fh, fieldnames=["sitrep", "data_date", "url",
+                                            "pick"], delimiter="\t")
+        w.writeheader()
+        w.writerow({"sitrep": str(sitrep), "data_date": date, "url": url,
+                    "pick": "yes"})
+    return idx
+
+
+@needs_pdfs
+def test_an_unreachable_pick_url_is_recorded_and_retried_not_fatal(
+        tmp_path, monkeypatch, capsys):
+    held = "sitrep_052_2026-07-05.pdf"
+    calls = []
+
+    def boom(req, timeout=None):
+        calls.append(req.full_url)
+        raise OSError("connection reset by peer")
+
+    monkeypatch.setattr(F.urllib.request, "urlopen", boom, raising=False)
+    monkeypatch.setattr(F.time, "sleep", lambda s: None)
+    idx = _one_row_index(tmp_path, held, "https://insp.cd/x.pdf")
+    monkeypatch.setattr(sys, "argv", ["f", "--index", str(idx),
+                                      "--out", str(PDFS)])
+    F.main()                                  # must not raise SystemExit
+
+    assert len(calls) == 2, "an unreachable URL must be retried exactly once"
+    err = capsys.readouterr().err
+    assert "could not be checked against the pick URL" in err
+    assert held in err, "the report that went unchecked must be named"
+
+
+@needs_pdfs
+def test_a_pick_url_serving_different_bytes_still_stops_the_build(
+        tmp_path, monkeypatch):
+    """The half that must stay fatal. A revision changes what every hash-keyed
+    register judgement is about, so it is never resolved silently."""
+    held = "sitrep_052_2026-07-05.pdf"
+    size = (PDFS / held).stat().st_size
+    monkeypatch.setattr(F.urllib.request, "urlopen",
+                        lambda req, timeout=None: _Resp(size + 1),
+                        raising=False)
+    idx = _one_row_index(tmp_path, held, "https://insp.cd/x.pdf")
+    monkeypatch.setattr(sys, "argv", ["f", "--index", str(idx),
+                                      "--out", str(PDFS)])
+    with pytest.raises(SystemExit, match="REVISED REPORTS WE HOLD"):
+        F.main()
+
+
 @needs_pdfs
 def test_a_substituted_external_pdf_stops_the_build(tmp_path):
     text = EXTERNAL.read_text().replace(
