@@ -89,7 +89,7 @@ from matplotlib.lines import Line2D
 from matplotlib.path import Path as MplPath
 from matplotlib.patches import PathPatch
 from matplotlib.patches import Patch
-from matplotlib.ticker import MaxNLocator, MultipleLocator
+from matplotlib.ticker import FixedLocator, MaxNLocator, MultipleLocator
 
 #: Fixed identity -> colour, in outbreak-size order. Colour follows the
 #: province, never its rank in any particular chart.
@@ -151,6 +151,33 @@ def _report_calendar(caveat: pl.DataFrame) -> tuple[float, float]:
     lo, hi = min(xs), max(xs)
     pad = 0.02 * (hi - lo)
     return lo - pad, hi + pad
+
+
+def _report_ticks(ax, caveat: pl.DataFrame) -> None:
+    """Month starts up to the last report the archive holds, and that report.
+
+    Two failures this avoids, both seen on this figure. Left to matplotlib the
+    locator picks a round interval and stops where it lands -- 20 days here,
+    last tick 15 August against data running to the 30th -- so the final
+    fortnight carries points and no label and a reader cannot tell where the
+    series ends. And the axis is padded 2% past the data, which is enough for a
+    month locator to emit `Sep 1` on an archive ending 30 August: a labelled
+    date with nothing under it, which is worse than an unlabelled one.
+
+    So ticks stop at the last report, and the last report is always one of
+    them. It is the date a reader most wants named on this axis -- it says how
+    current the figure is -- and nothing beyond it is labelled, because nothing
+    beyond it is known.
+    """
+    lo, hi = ax.get_xlim()
+    last = max(_dates(caveat["date"]))
+    months = [t for t in mdates.MonthLocator().tick_values(
+        mdates.num2date(lo), mdates.num2date(hi)) if lo <= t <= last]
+    # A month start within a few days of the end would collide with it; the
+    # end wins, because it carries more information.
+    ticks = [t for t in months if abs(last - t) > 5] + [last]
+    ax.xaxis.set_major_locator(FixedLocator(sorted(ticks)))
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %-d"))
 
 
 def draw_availability(inputs: dict[str, Path], out: Path) -> None:
@@ -1905,6 +1932,7 @@ def draw_streams_detail(inputs: dict[str, Path], out: Path) -> None:
     xlim = _report_calendar(caveat)
     for a in all_axes:
         a.set_xlim(xlim)
+        _report_ticks(a, caveat)
 
     _header(fig, "Every extracted flow, by province",
             "Grey points: one observation per report, at its reporting date. "
@@ -2054,6 +2082,7 @@ def draw_national_detail(inputs: dict[str, Path], out: Path) -> None:
     # one figure stay readable against each other.
     for a in (axn, axs2, axi, axr):
         a.set_xlim(_report_calendar(caveat))
+        _report_ticks(a, caveat)
 
     _header(fig, "The national-only series: what the source prints for the "
                  "country and nowhere else",
