@@ -46,6 +46,7 @@ import argparse
 import datetime as dt
 import difflib
 import hashlib
+import re
 import subprocess
 import sys
 import time
@@ -55,6 +56,20 @@ from pathlib import Path
 def digest(p: Path) -> tuple[str, list[str]]:
     b = p.read_bytes()
     return hashlib.sha256(b).hexdigest(), b.decode("utf-8", "replace").splitlines()
+
+
+HEADING = re.compile(r"^\s*#{2,3}\s.*?(?P<dir>\w[\w -]*?\s*→\s*\w[\w -]*?)\s*:",
+                     re.UNICODE)
+
+
+def headings(lines: list[str]) -> list[str]:
+    """The direction of every entry opened by these lines, in order."""
+    out = []
+    for ln in lines:
+        m = HEADING.match(ln)
+        if m:
+            out.append(re.sub(r"\s+", " ", m.group("dir")))
+    return out
 
 
 def stamp() -> str:
@@ -74,6 +89,13 @@ def main() -> int:
                     help="also raise a macOS notification on a change")
     ap.add_argument("--loop", action="store_true",
                     help="re-arm after reporting instead of exiting")
+    ap.add_argument("--direction", default="modelling → data",
+                    help="only report an append that opens an entry headed in "
+                         "this direction. A second, independent guard against "
+                         "reading our own post back to us: the state file "
+                         "covers it only when the post went through "
+                         "post_data_channel.py, and an append made any other "
+                         "way slips past. Empty string reports every change.")
     ap.add_argument("--state", type=Path,
                     default=Path("logs/.data_channel_seen"),
                     help="file holding the last REPORTED line count, so an "
@@ -147,6 +169,22 @@ def main() -> int:
         removed = sum(1 for l in difflib.unified_diff(
             base_lines, lines, n=0, lineterm="")
             if l.startswith("-") and not l.startswith("---"))
+
+        if args.direction and args.direction not in headings(added):
+            # Not from them. Either our own post made outside
+            # post_data_channel.py, or an edit to an entry already reported.
+            # Take it as the new baseline and keep waiting rather than waking
+            # a reader for something this side wrote.
+            seen_dirs = headings(added)
+            note = (f"headed {seen_dirs}" if seen_dirs
+                    else "no new entry heading")
+            print(f"{stamp()}  changed, but {note} -- not from them; "
+                  f"still watching", flush=True)
+            base_hash, base_lines = h, lines
+            if args.state:
+                args.state.parent.mkdir(parents=True, exist_ok=True)
+                args.state.write_text(f"{len(lines)}\n")
+            continue
 
         print(f"\n{stamp()}  CHANGED: {len(base_lines)} -> {len(lines)} lines, "
               f"{len(added)} added, {removed} removed, sha {h[:12]}")
