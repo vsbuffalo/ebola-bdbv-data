@@ -74,6 +74,32 @@ def collect() -> tuple[list[str], list[str], list[str], dict[str, str]]:
     reader: list[str] = []
     facts: dict[str, str] = {}
 
+    # Is this build even current? Nothing in the Makefile makes `figures`
+    # depend on `streams`, or `streams` on `build` -- they are phony targets a
+    # person runs in order. That works until it doesn't, and the failure is
+    # silent: `make figures` over a stale data/build draws yesterday's numbers
+    # with today's date on the file. Checked on CONTENT, not timestamps, which
+    # lie after a checkout: the series must have read every report the manifest
+    # pins, and the streams must reach the same day the series do.
+    man = ROOT / "data/raw/sitrep_pdfs.manifest.tsv"
+    zs = _read("zone_table_status.csv")
+    if man.exists() and zs is not None:
+        listed = sum(1 for i, l in enumerate(man.open()) if i and l.strip())
+        if zs.height != listed:
+            blocking.append(
+                f"the series were built from {zs.height} report(s) but the "
+                f"manifest pins {listed} — run `make build`")
+    zt_all = _read("zone_table.csv")
+    nat = STREAMS / "cases_daily_national.tsv"
+    if zt_all is not None and nat.exists():
+        newest_series = zt_all["date"].max()
+        newest_stream = pl.read_csv(nat, separator="\t",
+                                    null_values="NA")["time"].max()
+        if newest_stream != newest_series:
+            blocking.append(
+                f"the streams end {newest_stream} but the series reach "
+                f"{newest_series} — run `make streams`")
+
     zt = _read("zone_table_status.csv")
     if zt is not None:
         facts["reports read"] = str(zt.height)
@@ -148,10 +174,23 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--no-color", action="store_true")
+    ap.add_argument("--gate", action="store_true",
+                    help="print nothing unless the build is stale or a gate "
+                         "failed, and exit 1 if so. For use as a guard in front "
+                         "of a target that reads the build, where the full "
+                         "screen would be noise on every run.")
     args = ap.parse_args()
     c = Paint(_colour() and not args.no_color)
 
     blocking, source, reader, facts = collect()
+    if args.gate:
+        if not blocking:
+            return 0
+        print()
+        for i in blocking:
+            print("  " + c.red("STALE OR BROKEN") + f"  {i}")
+        print()
+        return 1
     w = 74
     print()
     print(c.dim("─" * w))

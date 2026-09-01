@@ -267,6 +267,7 @@ scan-refresh:
 	cp ../epiforecast-repro/raw/insp_sitrep_scanned.csv data/raw/scan/insp_sitrep_scanned.csv
 
 compare:
+	@uv run python scripts/build_verdict.py --gate
 	@mkdir -p $(FIGDIR) && ln -sfn $(RELEASE) data/build/figures/latest
 	uv run python scripts/compare_extractions.py \
 		--zone-table data/build/series/zone_table.csv \
@@ -333,8 +334,13 @@ onset:
 	uv run python scripts/plot_figures.py --figure onset_delay_cohorts \
 		--out data/build/onset/figures/onset_delay_cohorts.png
 
+## figures -- guarded: refuses to draw from a data/build that is behind the
+##            manifest or whose streams are behind its series, because a figure
+##            drawn from a stale build carries today's date on yesterday's
+##            numbers and nothing in the image says so.
 ## figures -- OFFLINE. The EDA figures, from the built series.
 figures:
+	@uv run python scripts/build_verdict.py --gate
 	@mkdir -p $(FIGDIR) && ln -sfn $(RELEASE) data/build/figures/latest
 	uv run python scripts/plot_figures.py --figure availability \
 		--out $(FIGDIR)/availability.png
