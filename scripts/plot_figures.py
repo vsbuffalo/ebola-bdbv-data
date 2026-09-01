@@ -1812,9 +1812,20 @@ def _load_panel(inputs: dict[str, Path]):
 def draw_streams_detail(inputs: dict[str, Path], out: Path) -> None:
     """Every flow we extract, by province. Grey points are observations as
     published, one per report at its own reporting date; the line is a centred
-    seven-day rolling geometric mean. The pink strip marks reports whose source
-    cautions its own recent data are still consolidating; a gap in the strip is
-    a report that did not say it.
+    seven-day rolling geometric mean.
+
+    The last row is a stock, not a flow, and it is why the figure needed
+    changing. Every row above it is a flow, and in Nord-Kivu every one of them
+    is flat or falling through late August while the ward those flows drain
+    into goes from 169 patients to 282 and the source writes "sursaturation
+    (128,2 %)". A reader with only the flows concludes the province is coming
+    under control.
+
+    The consolidation rug that used to run under each panel is gone. It marked
+    reports whose source cautioned its recent data were still consolidating,
+    which was worth showing while that window was live; it ended on 5 August,
+    and a band of pink under every panel was costing more legibility than the
+    fact was worth. `consolidating` is still a column on every daily stream.
 
     The four series the source publishes for the country and nowhere else are
     in `national_detail`, on the same calendar. They were once concatenated
@@ -1827,6 +1838,7 @@ def draw_streams_detail(inputs: dict[str, Path], out: Path) -> None:
     panel = _load_panel(inputs)
     caveat = pl.read_csv(inputs["caveat"], infer_schema_length=None)
     lab = pl.read_csv(inputs["lab"], infer_schema_length=None)
+    care = pl.read_csv(inputs["care"], infer_schema_length=20000)
 
     provinces = ["Ituri", "Nord-Kivu"]
     rows = [
@@ -1842,6 +1854,15 @@ def draw_streams_detail(inputs: dict[str, Path], out: Path) -> None:
         # panels.
         ("lab_tests", "Samples analysed / day\nlaboratory prose, licensed\n"
          "by its own printed positivity"),
+        # A stock among flows, and the reason the figure needed it. Every row
+        # above is a flow, and in Nord-Kivu every one of them is flat or
+        # falling through late August while the ward it drains into goes from
+        # 169 patients to 282 and the source writes "sursaturation (128,2 %)".
+        # A reader with only the flows concludes the province is coming under
+        # control. Drawn on a linear axis with the bed count behind it, because
+        # what matters is the distance to capacity, not a ratio.
+        ("census", "Patients in care\nend of day, confirmed and suspected\n"
+         "grey band = beds available"),
     ]
 
     fig = plt.figure(figsize=(11, 3.1 * len(rows) + HEADER_IN),
@@ -1877,6 +1898,56 @@ def draw_streams_detail(inputs: dict[str, Path], out: Path) -> None:
                                    .alias("v")).drop_nulls("v"))
                 xs = [mdates.date2num(x) for x in d["date"].to_list()]
                 ys = d["v"].to_list()
+            elif kind == "census":
+                d = (care.filter((pl.col("province") == prov)
+                                 & pl.col("census").is_not_null())
+                     .select("date", "census", "beds").sort("date"))
+                if d.is_empty():
+                    continue
+                xs = _dates(d["date"])
+                ys = d["census"].to_list()
+                beds = d["beds"].to_list()
+                # The bed count is stated on fewer days than the census, and
+                # it steps rather than drifts, so it is carried forward and
+                # drawn as a band. Where the census leaves the band the ward
+                # is over capacity, which is the one thing to see here.
+                carried, last = [], None
+                for b in beds:
+                    last = b if b is not None else last
+                    carried.append(last)
+                if any(c is not None for c in carried):
+                    ax.fill_between(xs, 0, [c if c else 0 for c in carried],
+                                    step="post", color="#E8E8E8", zorder=0,
+                                    label="beds")
+                # Broken across gaps, as the flow rows are: the census is
+                # stated on 37 of 100 report days in Nord-Kivu, and a line
+                # drawn straight through a three-week silence asserts a
+                # trajectory nobody published.
+                seg_x, seg_y = [], []
+                for i, (x, y) in enumerate(zip(xs, ys)):
+                    if seg_x and x - seg_x[-1] > 4:
+                        ax.plot(seg_x, seg_y, color=color, linewidth=1.6, zorder=3)
+                        seg_x, seg_y = [], []
+                    seg_x.append(x); seg_y.append(y)
+                if seg_x:
+                    ax.plot(seg_x, seg_y, color=color, linewidth=1.6, zorder=3)
+                ax.scatter(xs, ys, s=9, color="#666666", zorder=4)
+                over = [(x, y) for x, y, c in zip(xs, ys, carried)
+                        if c and y > c]
+                if over:
+                    ax.scatter([x for x, _ in over], [y for _, y in over],
+                               s=34, facecolor="none", edgecolor="#D55E00",
+                               linewidth=1.4, zorder=5)
+                ax.set_ylim(bottom=0)
+                ax.grid(True, **GRID)
+                ax.set_axisbelow(True)
+                for sp in ("top", "right"):
+                    ax.spines[sp].set_visible(False)
+                ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %-d"))
+                if ci == 0:
+                    ax.text(-0.16, 0.5, label, transform=ax.transAxes,
+                            ha="right", va="center", fontsize=8.5)
+                continue
             elif kind == "lab_tests":
                 d = (lab.filter(pl.col("province") == prov)
                      .group_by("date").agg(pl.col("samples").sum().alias("v"))
@@ -1907,7 +1978,6 @@ def draw_streams_detail(inputs: dict[str, Path], out: Path) -> None:
                 ax.set_yscale("symlog", linthresh=1)
                 ax.set_ylim(bottom=-0.4)
             ax.grid(True, **GRID)
-            _caveat_rug(ax, caveat)
             for sp in ("top", "right"):
                 ax.spines[sp].set_visible(False)
             ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %-d"))
@@ -1917,7 +1987,11 @@ def draw_streams_detail(inputs: dict[str, Path], out: Path) -> None:
             if ci == 0:
                 ax.text(-0.16, 0.5, label, transform=ax.transAxes,
                         ha="right", va="center", fontsize=8.5)
-        if len(axs) == 2:
+        # Shared y across the two provinces, EXCEPT the census row. Ituri
+        # holds ~520 patients against 978 beds and Nord-Kivu ~280 against 220;
+        # on one scale the province that is over capacity is a flat line at the
+        # bottom, which is the opposite of what the row is for.
+        if len(axs) == 2 and kind != "census":
             lo = min(a.get_ylim()[0] for a in axs)
             hi = max(a.get_ylim()[1] for a in axs)
             for a in axs:
@@ -1937,10 +2011,10 @@ def draw_streams_detail(inputs: dict[str, Path], out: Path) -> None:
     _header(fig, "Every extracted flow, by province",
             "Grey points: one observation per report, at its reporting date. "
             "Line: centred 7-day rolling geometric mean, broken across "
-            "reporting gaps.\nPink strip: reports whose source cautions its "
-            "recent data are still consolidating — one bar per report, so a "
-            "gap is a report that did not say it.\nThe national-only series "
-            "are in national_detail.png, on this calendar.")
+            "reporting gaps.\nLast row is a *stock*, not a flow: patients in "
+            "care at end of day against the beds available, with days over "
+            "capacity ringed.\nThe national-only series are in "
+            "national_detail.png, on this calendar.")
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, dpi=150)
     plt.close(fig)
@@ -4440,7 +4514,8 @@ FIGURES = {
     "streams_detail": (draw_streams_detail,
                        {"zone_table": "data/build/series/zone_table.csv",
                         "caveat": "data/build/series/provisional_caveat.csv",
-                        "lab": "data/build/series/lab_prose.csv"}),
+                        "lab": "data/build/series/lab_prose.csv",
+                        "care": "data/build/series/care_prose.csv"}),
     "national_detail": (draw_national_detail,
                         {"zone_table": "data/build/series/zone_table.csv",
                          "caveat": "data/build/series/provisional_caveat.csv",
