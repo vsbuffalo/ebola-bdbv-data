@@ -1,6 +1,6 @@
-"""ONE-OFF: where a death goes, from the event to the model's likelihood.
+"""One-off: where a death goes, from the event to the model's likelihood.
 
-DISPOSABLE BY DESIGN. Delete this file and `make oneoff-death-flow`
+Disposable by design. Delete this file and `make oneoff-death-flow`
 together once the question is settled.
 
 Draws the death pathway as a flow: an Ebola death occurs, may or may not be
@@ -8,12 +8,12 @@ confirmed, may or may not be classified into the community/care split, and
 lands in one, both or neither of the two emitted streams. Every count is
 read from the built streams at draw time -- nothing here is typed.
 
-THREE STATES, THREE ENCODINGS, because two of them were once drawn alike
+Three states, three encodings, because two of them were once drawn alike
 and that was a claim about the data that is not true:
 
   extracted and emitted     solid border, coloured  -- in a stream the model
                                                        reads
-  extracted, not classified solid grey              -- IN the death stream,
+  extracted, not classified solid grey              -- *in* the death stream,
                                                        counted, fed to the
                                                        model; only its
                                                        community/care status
@@ -34,6 +34,7 @@ The national window is the one the split exists for (13 July onward); the
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 import matplotlib
@@ -82,18 +83,38 @@ def main() -> None:
     args = ap.parse_args()
 
     s = args.scope
-    c = pl.read_csv(args.streams / f"community_deaths_{s}.tsv",
+    # The *daily* files, not the weekly ones. Both families are published at
+    # both resolutions, and the weekly bins are not the same bins: the
+    # community family's first bin opens on 13 July, when the source first
+    # printed the split, while the deaths family's bin covering that date
+    # opened on 8 July. Joining the two weekly files on `time` therefore
+    # matched a 2-day community bin against a 7-day death bin and counted the
+    # five days in between as deaths the source declined to classify. That put
+    # 118 deaths into the unclassified box that were never in the window at
+    # all. The daily files share the report-day grid, so their spans agree by
+    # construction -- and the assertion below says so rather than assuming it.
+    c = pl.read_csv(args.streams / f"community_deaths_daily_{s}.tsv",
                     separator="\t", null_values="NA")
-    d = pl.read_csv(args.streams / f"deaths_{s}.tsv", separator="\t",
+    d = pl.read_csv(args.streams / f"deaths_daily_{s}.tsv", separator="\t",
                     null_values="NA")
-    j = c.join(d, on="time", how="left")
-    comm = int(c[f"community_deaths_{s}"].sum())
-    split = int(c[f"deaths_split_{s}"].sum())
+    lo, hi = c["time"].min(), c["time"].max()
+    j = (d.filter((pl.col("time") >= lo) & (pl.col("time") <= hi))
+           .select(["time", f"deaths_{s}", "days_covered"])
+           .join(c.select(["time", f"deaths_split_{s}", f"community_deaths_{s}",
+                           pl.col("days_covered").alias("_dc_c")]),
+                 on="time", how="left"))
+    bad = j.filter(pl.col("days_covered") != pl.col("_dc_c"))
+    if bad.height > 1:
+        sys.exit(f"{bad.height} report day(s) where the death and community "
+                 "spans disagree; the difference below would not be a count "
+                 f"of anything:\n{bad}")
+    comm = int(j[f"community_deaths_{s}"].sum())
+    split = int(j[f"deaths_split_{s}"].sum())
     inwin = int(j[f"deaths_{s}"].sum())
     unclassified = inwin - split
     care = split - comm
     total_stream = int(d[f"deaths_{s}"].sum())
-    w0, w1 = c["time"].min(), c["time"].max()
+    w0, w1 = lo, hi
 
     fig, ax = plt.subplots(figsize=(14.2, 9.4))
     ax.set_xlim(0, 14.2); ax.set_ylim(0, 9.4); ax.axis("off")
@@ -108,7 +129,7 @@ def main() -> None:
 
     box(ax, 11.2, 7.85, 4.6, 1.5,
         "Body never swabbed\nrefusal · burial before the team · failure\n\n"
-        "NEVER CONFIRMED — in no stream\ncount unknown, anywhere in the source",
+        "Never confirmed — in no stream\ncount unknown, anywhere in the source",
         fc="#ffffff", ec=UNOBS, tc=MUTED, ls=(0, (4, 3)), fs=9.5)
     arrow(ax, (7.35, 7.85), (8.8, 7.85), color=UNOBS, ls=(0, (4, 3)))
 
@@ -134,17 +155,17 @@ def main() -> None:
 
     box(ax, 11.2, 4.3, 4.6, 1.2,
         f"Not classified — {unclassified:,}\n"
-        "silent days · batch consolidations\n"
+        "report days printing no split · batch consolidations\n"
         "counted in the death stream; only the\ncommunity/care status is unknown",
         fc="#efefef", ec=UNCLASS, tc=INK, fs=9.5)
     arrow(ax, (7.0, 5.7), (9.5, 4.75), color=UNCLASS)
 
     # ---- the two classes --------------------------------------------------
     box(ax, 5.1, 2.5, 3.1, 0.95,
-        f"Never under care\n{comm:,}  ·  post-mortem Swab+",
+        f"First confirmed at death\n{comm:,}  ·  post-mortem swab+",
         fc="#fdece2", ec=COMM, tc=INK, fs=10, weight="bold")
     box(ax, 8.8, 2.5, 3.1, 0.95,
-        f"Died under care\n{care:,}  ·  CTE / CT / hospital",
+        f"Already a known case\n{care:,}  ·  died in CTE / CT",
         fc="#e6f0f7", ec=CARE, tc=INK, fs=10, weight="bold")
     arrow(ax, (6.5, 3.83), (5.4, 3.0), color=COMM)
     arrow(ax, (7.3, 3.83), (8.5, 3.0), color=CARE)
@@ -158,11 +179,13 @@ def main() -> None:
     arrow(ax, (5.1, 2.01), (5.9, 1.53), color=COMM)
     arrow(ax, (8.8, 2.01), (7.9, 1.53), color=CARE)
 
-    ax.text(12.2, 0.95, "model infers\n"
-            + r"$P(\mathrm{never\ isolated}\mid\mathrm{confirmed\ death})$"
-            + "\nbeta-binomial", ha="center", va="center", fontsize=10,
+    ax.text(12.45, 0.95,
+            "model infers\n"
+            "P(first confirmed at death\n"
+            "  |  confirmed death)\n"
+            "beta-binomial", ha="center", va="center", fontsize=10,
             color=INK, linespacing=1.7)
-    arrow(ax, (9.75, 0.95), (10.65, 0.95))
+    arrow(ax, (9.75, 0.95), (10.55, 0.95))
 
     # ---- legend: the three states, stated once -----------------------------
     lx, ly0, dy = 0.35, 7.9, 0.62
@@ -184,7 +207,7 @@ def main() -> None:
     ax.text(0.1, 0.02,
             f"Counts: {args.scope.replace('_', '-')}, {w0} to {w1} — the "
             f"window in which the source prints the split.   "
-            f"The grey state is a missing CLASSIFICATION, not a missing "
+            f"The grey state is a missing classification, not a missing "
             f"death: those {unclassified:,} are in the fitted death stream.",
             ha="left", va="bottom", fontsize=9, color=MUTED)
 
