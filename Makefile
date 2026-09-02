@@ -163,7 +163,12 @@ build:
 ##            further from its predecessor than the window it claims is scored
 ##            against more flow than it represents, and no other gate here can
 ##            see it: the counts are right and the totals reconcile.
-streams:
+# `streams` READS WHAT `onset` WRITES, so it depends on it. This was left
+# implicit and a consumer's `make build streams` -- the documented path --
+# stopped at a guard, while our own release gate passed because it happened to
+# run `onset` in between. A gate that exercises an order no consumer uses is
+# not a gate.
+streams: onset
 	# FIRST, because build_streams.py writes the data dictionary that
 	# documents every published file and reads this one's span off it.
 	uv run python scripts/build_uganda_stream.py \
@@ -607,7 +612,7 @@ release-check:
 	# offline gate must stay offline.
 	@test -d external || { echo "release-check needs external/ -- run 'make external'"; exit 2; }
 	ln -s $$(pwd)/external $(RC_DIR)/external
-	cd $(RC_DIR) && make build && make onset && make streams && make figures && make compare
+	cd $(RC_DIR) && make build && make streams && make figures && make compare
 	@echo "--- committed figures must match what the committed state produces ---"
 	@for f in $$(git ls-files 'figures/*.png'); do \
 		cmp -s "$$f" "$(RC_DIR)/$$f" \

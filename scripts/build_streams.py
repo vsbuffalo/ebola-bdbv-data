@@ -1564,6 +1564,60 @@ def populations(geojson: Path, pop_csv: Path) -> dict[str, int]:
     return rounded
 
 
+#: Row-level tables a consumer pins and hashes but never fits.
+#:
+#: They are not streams and must not go through the stream dictionary: a stream
+#: is time-indexed, sits on a declared observation grid and carries a coverage
+#: contract in `days_covered`/`n_report_days`. These have none of that -- one is
+#: a ledger keyed by province-day, the other a delay distribution keyed by onset
+#: cohort. Forcing them into that machinery would make the dictionary's promises
+#: false for two of its entries.
+#:
+#: They are published rather than left in `data/build/series/` because a
+#: consumer asked for the rows precisely so it could pool and weight them
+#: itself rather than take our pooled digit on trust, which is the right
+#: instinct and the same one this repository applies to its own sources.
+#: `series/` is the internal audit layer -- per-report parses with statuses,
+#: refusal reasons and verbatim quotes -- and its shape changes whenever an
+#: extractor changes. This directory is the interface.
+REFERENCE_TABLES = {
+    "burial_alerts.tsv": (
+        "data/build/series/burial_alerts.csv",
+        "The safe-burial pillar's death-alert ledger, one row per province per "
+        "report day: alerts raised, bodies reached, bodies swabbed, burials "
+        "done, failures, the report's own printed percentage, how the row was "
+        "licensed, and the verbatim sentence. Pool it yourself; "
+        "meta['swab_coverage'] is our pooling of these same rows."),
+    "reporting_delay.tsv": (
+        "data/build/series/reporting_delay.csv",
+        "Onset-to-report delay distribution per onset-month cohort, as share "
+        "and cumulative share by delay in days. Convolve with this rather than "
+        "shifting by a mean; meta['reporting_delay'] carries the summary and "
+        "names the cohort that is settled."),
+}
+
+
+def write_reference(streams_dir: Path) -> dict:
+    """Copy the reference tables into the published set, as TSV like everything
+    else a consumer reads from here."""
+    out = streams_dir / "reference"
+    out.mkdir(parents=True, exist_ok=True)
+    docs = {}
+    for name, (src, why) in REFERENCE_TABLES.items():
+        p = ROOT / src
+        if not p.exists():
+            sys.exit(f"{src} is missing, so reference/{name} cannot be "
+                     f"published. It is produced by `make onset` or `make "
+                     f"build`; running `make streams` without them leaves a "
+                     f"consumer holding a summary whose rows do not exist.")
+        d = pl.read_csv(p, infer_schema_length=20000)
+        d.write_csv(out / name, separator="\t")
+        docs[f"reference/{name}"] = {"rows": d.height,
+                                     "columns": d.columns,
+                                     "describes": why}
+    return docs
+
+
 def _reporting_delay() -> dict:
     """The onset-to-report delay summary, which `make onset` writes.
 
@@ -2878,6 +2932,7 @@ def main() -> None:
         # How far apart the report instant and the confirmation instant are.
         # Carried here so a consumer pins it by tag rather than deriving it.
         "reporting_delay": _reporting_delay(),
+        "reference": write_reference(args.out_dir),
         "swab_coverage": swab_coverage(
             args.burial_alerts if args.burial_alerts
             else ROOT / "data/build/series/burial_alerts.csv"),

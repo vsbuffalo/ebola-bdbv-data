@@ -2487,6 +2487,66 @@ def test_the_committed_pdfs_are_the_bytes_the_register_names():
 
 
 # --------------------------------------------------------------------------
+# Reference tables are published, and are not streams
+#
+# A consumer asked for the burial-alert rows so it could pool them itself
+# rather than take our pooled figure on trust. They were written to
+# data/build/series/, which is the internal audit layer and which no consumer
+# copies, so the rows were promised and never delivered. They are published
+# now -- inside the directory consumers already take, and outside the stream
+# dictionary, whose promises about time grids and coverage they cannot keep.
+# --------------------------------------------------------------------------
+
+
+@needs_pdfs
+def test_the_reference_tables_are_published_beside_the_streams():
+    import json
+    d = ROOT / "data/build/streams/reference"
+    meta = json.loads((ROOT / "data/build/streams/meta.json").read_text())
+    assert set(meta["reference"]) == {f"reference/{n}"
+                                      for n in BS.REFERENCE_TABLES}
+    for name in BS.REFERENCE_TABLES:
+        f = d / name
+        assert f.is_file(), f"{name} is described in meta but not written"
+        rows = len(f.read_text().splitlines()) - 1
+        assert rows == meta["reference"][f"reference/{name}"]["rows"] > 0
+
+
+@needs_pdfs
+def test_reference_tables_are_not_in_the_stream_dictionary():
+    """A stream is time-indexed and carries a coverage contract. These are a
+    province-day ledger and a delay distribution, and listing them as streams
+    would make the dictionary's promises false for two of its entries."""
+    import json
+    meta = json.loads((ROOT / "data/build/streams/meta.json").read_text())
+    for name in BS.REFERENCE_TABLES:
+        assert name not in meta["streams"]
+        assert f"reference/{name}" not in meta["streams"]
+    # and they must not be picked up as streams by a glob over the directory
+    assert not list((ROOT / "data/build/streams").glob(
+        "reference*.tsv")), "a reference table sits where a stream glob finds it"
+
+
+@needs_pdfs
+def test_the_published_rows_are_the_rows_we_pooled():
+    """meta['swab_coverage'] is our pooling of burial_alerts.tsv. If the two
+    ever disagree, the summary is a number with no rows behind it."""
+    import json
+    import polars as pl
+    meta = json.loads((ROOT / "data/build/streams/meta.json").read_text())
+    d = pl.read_csv(ROOT / "data/build/streams/reference/burial_alerts.tsv",
+                    separator="\t", infer_schema_length=20000)
+    u = d.drop_nulls(["alerts_total", "bodies_swabbed"]).filter(
+        pl.col("alerts_total") > 0)
+    for prov, v in meta["swab_coverage"]["by_province"].items():
+        q = u.filter(pl.col("province") == prov)
+        assert int(q["bodies_swabbed"].sum()) == v["bodies_swabbed"], prov
+        assert int(q["alerts_raised"].sum() if "alerts_raised" in q.columns
+                   else q["alerts_total"].sum()) == v["alerts_raised"], prov
+        assert q.height == v["province_days"], prov
+
+
+# --------------------------------------------------------------------------
 # The onset-to-report delay
 #
 # `cases_*` is indexed by report date; a model's projected quantity is a

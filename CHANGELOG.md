@@ -38,6 +38,71 @@ same as withdrawn: the older tag stays exactly where it is.
 
 ---
 
+## `data/2026-08-30-r5` — 2026-09-01 — r4 does not rebuild; and the rows we said we published were not reachable
+
+**Take this instead of `r4`.** Two defects, both ours, both found by a consumer
+rather than by our gate.
+
+### `r4` does not rebuild, and our release gate did not catch it
+
+`make streams` acquired a dependency on `make onset` — it reads the reporting
+delay that `onset` produces — and nothing in the documented build path supplied
+it. A consumer running `make build streams`, which is the documented path,
+stopped at the guard.
+
+**Our own gate passed because it ran `make onset` in between.** That is the
+whole defect: a gate that exercises an order no consumer uses is not a gate. It
+is fixed by declaring the dependency (`streams: onset`) rather than by teaching
+the gate a special order, and `release-check` now runs exactly
+`make build &&
+make streams` — the same two commands a consumer runs.
+
+The guard itself stays. An empty reporting-delay field reads as "no delay"
+rather than "not measured", and that distinction is worth a failed build.
+
+### The rows we said we published were in a directory nobody copies
+
+`burial_alerts.csv` and `reporting_delay.csv` were written to
+`data/build/series/`. A consumer takes `data/build/streams/`. So the
+burial-alert rows — asked for specifically so the modelling side could pool and
+weight them itself rather than trust our pooled figure — were announced as
+delivered and never arrived.
+
+**The layering, stated once so this does not recur:**
+
+- **`data/build/series/`** is internal. Per-report parses carrying statuses,
+  refusal reasons and verbatim quotes, shaped for auditing our extraction
+  against the page. Its shape changes whenever an extractor changes and nothing
+  downstream should pin it.
+- **`data/build/streams/`** is the interface. Stable names, hash-pinned,
+  documented in the generated dictionary.
+
+### `streams/reference/`, new
+
+Row-level tables a consumer pins and hashes but never fits:
+
+```
+reference/burial_alerts.tsv     82 rows   the death-alert ledger, per province-day
+reference/reporting_delay.tsv  165 rows   the delay distribution, per onset cohort
+```
+
+`meta["reference"]` describes each with its row count and columns.
+
+**They are deliberately not streams and not in the stream dictionary.** A stream
+is time-indexed, sits on a declared observation grid, and carries a coverage
+contract in `days_covered` and `n_report_days`. A province-day ledger and a
+delay distribution have none of that, and listing them as streams would make the
+dictionary's promises false for two of its entries.
+
+A test now asserts that `meta["swab_coverage"]` is exactly the pooling of the
+published `burial_alerts.tsv` rows, so the summary can never become a number
+with no rows behind it.
+
+**Consumers must add the two paths explicitly** — they sit in a subdirectory, so
+a top-level glob will not find them.
+
+---
+
 ## `data/2026-08-30-r4` — 2026-09-01 — the onset-to-report delay, because the streams and a model's confirmation event are not the same instant
 
 **Not breaking. One field added to `meta`, one new series file; no stream file
