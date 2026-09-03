@@ -1,0 +1,30 @@
+# Daily flow rows deleted rather than published as a clamped zero, because
+# the deficit each row's raw negative revision opens is fully discharged by
+# the very next row -- so deleting the row does exactly what the next row's
+# `days_covered` already states in the pipeline, and camdl reads that window
+# from row spacing alone (docs/camdl-data-spec.md:606-624 in the modelling
+# repo: "a hole still closes an incidence bin"; deleting instead leaves the
+# bin open across the gap). `emit_daily` in build_streams.py checks each
+# entry against the built series before honouring it: the named row must
+# exist, must not be the first or last row of its stream, and its carried
+# value must be exactly 0 -- if a later re-extraction changes any of that,
+# the build stops rather than silently deleting the wrong thing.
+#
+# AN ENTRY NAMES ONE ROW. This is not a rule the build applies on discovery.
+# `revisions.tsv` carries other raw-negative clamps of the same shape --
+# `cases_daily_nord_kivu` and `deaths_daily_nord_kivu`, 2026-06-11 -- that are
+# NOT listed here and are still published as a plain carried zero, because
+# nobody has decided yet whether to extend this treatment to them. See
+# `data-agent-channel.md`, 2026-09-03, for the reasoning behind the three
+# rows below and the open question about the pair left out.
+#
+# COLUMNS
+#   stream        the daily stream file stem
+#   column        the observation column inside it
+#   time          the date whose row is deleted
+#   verified_by   who decided, and when
+#   note          the arithmetic that licenses dropping this specific row
+stream	column	time	verified_by	note
+cases_daily_ituri	cases_ituri	2026-07-12	Vince Buffalo, 2026-09-03	raw -39, carried to 0, deficit fully discharged by 2026-07-13 (carry_after 0 there); 13 July already publishes 63 = -39 + 102, unchanged by deleting 12 July
+deaths_daily_ituri	deaths_ituri	2026-07-12	Vince Buffalo, 2026-09-03	raw -23, carried to 0, deficit fully discharged by 2026-07-13 (carry_after 0 there); 13 July already publishes 30 = -23 + 53, unchanged by deleting 12 July
+deaths_daily_nord_kivu	deaths_nord_kivu	2026-07-12	Vince Buffalo, 2026-09-03	raw -1, carried to 0, deficit fully discharged by 2026-07-13 (carry_after 0 there); 13 July already publishes 9 = -1 + 10, unchanged by deleting 12 July

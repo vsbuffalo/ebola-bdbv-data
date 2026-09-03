@@ -17,13 +17,19 @@ source published and what our own fetchers wrote.
 | `zone_province_overrides.tsv`   | *The page states which province this row belongs to, but the table's geometry does not carry it.*                                                                                                                                                                               |
 | `zone_aliases_local.csv`        | *This printed spelling and this shapefile name are the same health zone.*                                                                                                                                                                                                       |
 | `stream_families.tsv`           | *This is what the streams of this observation family measure, in one sentence.* Keyed on the family, never on the file, so four province variants of one quantity cannot drift apart.                                                                                           |
+| `window_merged_rows.tsv`        | *This row is a clamped zero whose deficit is fully discharged by the very next row, so it is deleted rather than published — the following row's window widens to span both.* Keyed on (stream, column, date); re-verified against the built series on every run, not trusted from the register alone. |
 
-The last one is the only register that is not a judgement about a page: it is a
-judgement about a **quantity**, and it exists because the generated data
-dictionary at `data/build/streams/README.md` can measure a stream's span, its
-row count and its columns off the file itself, but cannot say what the numbers
-mean. A stream this pipeline publishes whose family has no row there stops the
-build, so a new stream cannot ship undocumented.
+`stream_families.tsv` and `window_merged_rows.tsv` are not judgements about a
+page: the first is a judgement about a **quantity**, the second about a
+**row already built**. `stream_families.tsv` exists because the generated
+data dictionary at `data/build/streams/README.md` can measure a stream's
+span, its row count and its columns off the file itself, but cannot say what
+the numbers mean — a stream this pipeline publishes whose family has no row
+there stops the build, so a new stream cannot ship undocumented.
+`window_merged_rows.tsv` exists because deleting a row from an
+`incidence(...)` stream changes what the file's schedule asserts, which is a
+decision the arithmetic alone does not make — see `merge_windows` in
+`build_streams.py`.
 
 ## Rules that apply to every register here
 

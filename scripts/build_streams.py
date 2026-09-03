@@ -659,6 +659,58 @@ def carry_forward(counts: list[int]) -> tuple[list[int], list[int]]:
     return emitted, outstanding
 
 
+def merge_windows(d: pl.DataFrame, stream: str, column: str,
+                  merges: dict[tuple[str, str], set[str]]) -> pl.DataFrame:
+    """Delete the rows `registers/window_merged_rows.tsv` names for this
+    (stream, column), and recompute `days_covered` so the row after each
+    deletion inherits the full gap to its new predecessor.
+
+    Runs AFTER `carried()`, so the deficit arithmetic that produced this
+    row's neighbour is already correct regardless of whether this row is
+    published; deleting it only changes which row the schedule says the
+    merged report days belong to.
+
+    THREE CHECKS, ALL RE-VERIFIED AGAINST THE BUILT SERIES rather than
+    trusted from the register, because the register is a claim about a past
+    reading and the series can change under it: the named date must be a row
+    that exists, it must have an interior position (a predecessor to widen
+    into and a successor to inherit the widened window -- deleting the first
+    or last row of a stream drops data instead of merging it), and its
+    carried value must be exactly the clamped zero the register asserts. Any
+    of those failing means the register no longer describes this build, and
+    the build stops rather than deleting a row on a stale premise.
+    """
+    dates = d["date"].dt.to_string("%Y-%m-%d").to_list()
+    targets = merges.get((stream, column), set())
+    if not targets:
+        return d
+    present = set(dates) & targets
+    if missing := targets - present:
+        raise SystemExit(
+            f"{stream}: registers/window_merged_rows.tsv names "
+            f"{sorted(missing)} for column {column!r} but no such row was "
+            "built -- the register no longer matches this series")
+    counts = d["count"].to_list()
+    for t in present:
+        i = dates.index(t)
+        if i in (0, len(dates) - 1):
+            raise SystemExit(
+                f"{stream}: {t} is the first or last row of the series -- "
+                "deleting it would drop data rather than widen a "
+                "neighbouring window, which registers/window_merged_rows.tsv "
+                "does not license")
+        if counts[i] != 0:
+            raise SystemExit(
+                f"{stream}: {t} carries {column} = {counts[i]}, not the "
+                "clamped zero registers/window_merged_rows.tsv asserts -- "
+                "the register no longer matches this series")
+    first_span = d["days_covered"][0]
+    d = d.filter(~pl.col("date").dt.to_string("%Y-%m-%d").is_in(present))
+    return d.with_columns(
+        (pl.col("date") - pl.col("date").shift(1)).dt.total_days()
+        .fill_null(first_span).alias("days_covered"))
+
+
 def negative_values(paths: list[Path]) -> list[str]:
     """Every negative number in the files this build published, as findings.
 
@@ -818,6 +870,28 @@ def load_families(path: Path) -> dict[str, dict[str, str]]:
     d = pl.read_csv(path, separator="\t", comment_prefix="#",
                     infer_schema_length=0)
     return {r["family"]: r for r in d.iter_rows(named=True)}
+
+
+WINDOW_MERGE_REGISTER = "registers/window_merged_rows.tsv"
+
+
+def load_window_merges(path: Path) -> dict[tuple[str, str], set[str]]:
+    """Rows a human has decided to delete rather than publish as a clamped
+    zero, keyed on (stream, column) to the set of dates to drop.
+
+    Hand-authored, like every other register: which rows this licenses and
+    why is `registers/window_merged_rows.tsv` itself. `emit_daily` re-checks
+    every entry against the series it actually built before honouring it, so
+    a stale entry stops the build rather than deleting the wrong row.
+    """
+    if not path.exists():
+        return {}
+    t = pl.read_csv(path, separator="\t", comment_prefix="#",
+                    infer_schema_length=0)
+    out: dict[tuple[str, str], set[str]] = {}
+    for r in t.iter_rows(named=True):
+        out.setdefault((r["stream"], r["column"]), set()).add(r["time"])
+    return out
 
 
 def stream_facts(path: Path) -> dict:
@@ -1738,6 +1812,11 @@ def main() -> None:
                     default=ROOT / "registers/reconciliation_exceptions.tsv",
                     help="the exception register, for the stale-distribution "
                          "flag on daily rows")
+    ap.add_argument("--window-merges", type=Path,
+                    default=ROOT / WINDOW_MERGE_REGISTER,
+                    help="the register of daily rows deleted rather than "
+                         "published as a clamped zero, so the following "
+                         "row's window widens to span the merged report days")
     ap.add_argument("--families", type=Path, default=ROOT / FAMILY_REGISTER,
                     help="the register of what each observation family "
                          "measures; a stream this run writes whose family is "
@@ -1843,6 +1922,7 @@ def main() -> None:
     exceptions = (pl.read_csv(args.exceptions, separator="\t",
                               comment_prefix="#", infer_schema_length=None)
                   if args.exceptions and args.exceptions.exists() else None)
+    window_merges = load_window_merges(args.window_merges)
 
     recon: dict[str, dict] = {}
     #: Not a stream reconciliation but a SOURCE-AGREEMENT check, so it lives
@@ -2261,6 +2341,7 @@ def main() -> None:
             return
         d = d.with_columns(daily_flags(d["date"], caveat, exceptions, province))
         d = carried(d, name, obs, time_col="date", flags=d["flags"].to_list())
+        d = merge_windows(d, name, obs, window_merges)
         emitted = int(d["count"].sum())
         delta = int(cum.filter(pl.col("date").is_in(reps.to_list()))["cum"][-1]
                     - cum.filter(pl.col("date").is_in(reps.to_list()))["cum"][0])

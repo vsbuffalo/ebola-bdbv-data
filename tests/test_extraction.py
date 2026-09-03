@@ -1734,6 +1734,71 @@ def test_an_undischarged_deficit_is_reported_not_swallowed():
     assert sum(emitted) == sum([10, -5, 2]) + 3      # short by exactly the carry
 
 
+def _merge_frame(rows):
+    """`rows` is `(date, count, days_covered)`, the shape `merge_windows`
+    receives after `daily_increments` and `carried` have both already run."""
+    return pl.DataFrame({
+        "date": [dt.date.fromisoformat(r[0]) for r in rows],
+        "count": [r[1] for r in rows],
+        "days_covered": [r[2] for r in rows],
+    })
+
+
+def test_merge_windows_deletes_the_row_and_widens_the_next():
+    """The 12/13 July shape: a clamped zero in the middle of the series
+    disappears, and the row after it inherits the full gap to its new
+    predecessor rather than the one-day gap it had before."""
+    d = _merge_frame([
+        ("2026-07-11", 40, 1), ("2026-07-12", 0, 1),
+        ("2026-07-13", 63, 1), ("2026-07-14", 55, 1)])
+    out = BS.merge_windows(d, "cases_daily_ituri", "cases_ituri",
+                           {("cases_daily_ituri", "cases_ituri"): {"2026-07-12"}})
+    assert out["date"].dt.to_string("%Y-%m-%d").to_list() == [
+        "2026-07-11", "2026-07-13", "2026-07-14"]
+    assert out["count"].to_list() == [40, 63, 55]
+    assert out["days_covered"].to_list() == [1, 2, 1]
+
+
+def test_merge_windows_is_a_noop_for_an_unnamed_stream():
+    d = _merge_frame([("2026-07-11", 40, 1), ("2026-07-12", 0, 1)])
+    out = BS.merge_windows(d, "cases_daily_ituri", "cases_ituri", {})
+    assert out["date"].to_list() == d["date"].to_list()
+
+
+def test_merge_windows_stops_the_build_if_the_named_row_is_missing():
+    """The register makes a claim about a specific row. If a re-extraction
+    changes the series and that row is no longer there, honouring the entry
+    would silently delete something else -- the build must stop instead."""
+    d = _merge_frame([("2026-07-11", 40, 1), ("2026-07-13", 63, 2)])
+    with pytest.raises(SystemExit, match="no such row was built"):
+        BS.merge_windows(d, "cases_daily_ituri", "cases_ituri",
+                         {("cases_daily_ituri", "cases_ituri"): {"2026-07-12"}})
+
+
+@pytest.mark.parametrize("target", ["2026-07-11", "2026-07-14"])
+def test_merge_windows_refuses_to_delete_the_first_or_last_row(target):
+    """Deleting an edge row has no neighbour to widen into on one side, so it
+    would drop data rather than merge a window -- a different operation the
+    register does not license."""
+    d = _merge_frame([("2026-07-11", 0, 1), ("2026-07-12", 40, 1),
+                      ("2026-07-13", 63, 1), ("2026-07-14", 0, 1)])
+    with pytest.raises(SystemExit, match="first or last row"):
+        BS.merge_windows(d, "cases_daily_ituri", "cases_ituri",
+                         {("cases_daily_ituri", "cases_ituri"): {target}})
+
+
+def test_merge_windows_refuses_to_delete_a_nonzero_row():
+    """The register asserts the row it names is a clamped zero -- its whole
+    value already moved to the row after it. A nonzero value here means the
+    register no longer describes this series, so the build stops rather than
+    discarding a real count."""
+    d = _merge_frame([("2026-07-11", 40, 1), ("2026-07-12", 7, 1),
+                      ("2026-07-13", 63, 1)])
+    with pytest.raises(SystemExit, match="not the clamped zero"):
+        BS.merge_windows(d, "cases_daily_ituri", "cases_ituri",
+                         {("cases_daily_ituri", "cases_ituri"): {"2026-07-12"}})
+
+
 def test_negative_values_reads_the_published_file(tmp_path):
     """The non-negativity gate reads back off disk, so it covers a column that
     never passed through the carry -- a stock reading, or one added later."""
@@ -1881,12 +1946,20 @@ def _synthetic_panel(path, ituri_cases, ituri_deaths):
 
 
 def _run_build(monkeypatch, panel, out_dir, *extra):
+    """`--window-merges` is pinned to a path that never exists unless a test
+    passes its own via `extra`, so a synthetic panel cannot collide with a
+    real register entry that happens to share a stream and column name --
+    `merge_windows` fails the build on any named row it cannot find, and the
+    real register's rows are dated well outside anything a synthetic panel
+    generates."""
     monkeypatch.chdir(ROOT)
     monkeypatch.setattr(sys, "argv", [
         "build_streams.py", "--panel", str(panel),
         "--geojson", str(ROOT / "data/raw/health_zones.geojson"),
         "--population", str(ROOT / "data/raw/zone_population.csv"),
-        "--out-dir", str(out_dir), *extra])
+        "--out-dir", str(out_dir),
+        "--window-merges", str(out_dir.parent / "no_window_merges.tsv"),
+        *extra])
     BS.main()
 
 

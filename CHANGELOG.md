@@ -38,6 +38,77 @@ same as withdrawn: the older tag stays exactly where it is.
 
 ---
 
+## `data/2026-08-30-r6` — 2026-09-03 — three clamped-zero rows deleted, not carried, so the province filter stops collapsing on 12 July
+
+**Breaking for a consumer reading `cases_daily_ituri`, `deaths_daily_ituri` or
+`deaths_daily_nord_kivu` at daily resolution across 12–13 July 2026.** Each
+file loses its `2026-07-12` row; the `2026-07-13` row is unchanged in value
+and its `days_covered` becomes `2`. No published total moves.
+
+### What was there and why it broke a filter
+
+The source's own province table went mid-redistribution on 12 July: Ituri's
+cumulative cases fell by 39 and deaths by 23, Nord-Kivu's deaths fell by 1,
+each a downward revision our carry-forward (`carry_forward` in
+`build_streams.py`, recorded row by row in `revisions.tsv`) clamps to zero
+and pays off on the next row that moves upward enough to absorb it. All
+three deficits close in full on 13 July, so the
+existing published values were already exactly right: 13 July's 63 Ituri
+cases is `-39 + 102`, its 30 deaths `-23 + 53`, and Nord-Kivu's 9 deaths
+`-1 + 10`.
+
+The clamped zero itself was the problem, independent of being correct. A
+zero that isn't a reported observation still gets scored as one: in a
+particle filter run against these streams at daily resolution, that single
+row collapsed the effective sample size from 19,200 particles to 2.2, and
+pinned the latent trajectory across the date by construction.
+
+### Why deletion and not `NA`
+
+An `NA` row closes an incidence bin at its own time (`docs/camdl-data-spec.md`
+in the modelling repo, "Missing observations: `NA` is a hole, not a zero").
+Marking 12 July `NA` alone would leave 13 July a **one-day** window still
+carrying the two-day total of 63 — the same class of defect, the other
+direction: a count scored against less flow than it represents instead of
+more. Deleting the row is the encoding the spec itself names for exactly
+this case: "the following row's exposure window silently widens to span the
+gap" is a caution against deleting when the surviving count does *not*
+already cover the gap. Here it does, by construction, because the carry paid
+the deficit into 13 July before either row was written.
+
+### What licenses deleting these three rows and not others
+
+`registers/window_merged_rows.tsv` is new: a hand-authored register, one row
+per (stream, column, date) deleted, each justified by the arithmetic above.
+`build_streams.py`'s `merge_windows` reads it and re-verifies every entry
+against the series it just built — the named row must exist, must not be the
+first or last row of its stream, and its carried value must be exactly
+zero — before deleting it and recomputing the following row's
+`days_covered`. A register entry that no longer matches (a re-extraction
+changes the series under it) stops the build rather than silently deleting
+the wrong row.
+
+This is deliberately not a general rule the build applies to every clamped
+zero it finds. `revisions.tsv` carries two more rows of the identical shape —
+`cases_daily_nord_kivu` and `deaths_daily_nord_kivu`, `2026-06-11`, discharged
+in full by `2026-06-13` — left as a published carried zero because extending
+this treatment to them has not been decided. The Haut-Uélé deficit spanning
+18–22 July is a different shape entirely: it discharges over five rows, two
+of which are genuine reported zeros, and deleting any one of them would leave
+a negative count for its neighbour to carry — `merge_windows` refuses this by
+construction, since a deleted row must be interior with the deficit fully
+absorbed by the very next row.
+
+### What a consumer should do
+
+A daily-resolution reader of the three affected streams sees a two-day gap in
+the observation schedule at 12–13 July instead of a zero on 12 July, exactly
+as `days_covered = 2` on the 13 July row already stated before this release —
+that field was correct throughout; only the row set is now consistent with
+it. A reader at weekly resolution, or of `cases_daily_national` /
+`deaths_daily_national` / `deaths_daily_nord_kivu`'s national counterpart, is
+untouched: none of those files had a clamped row here.
+
 ## `data/2026-08-30-r5` — 2026-09-01 — r4 does not rebuild; and the rows we said we published were not reachable
 
 **Take this instead of `r4`.** Two defects, both ours, both found by a consumer
