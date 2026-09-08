@@ -48,6 +48,8 @@ matplotlib.use("Agg")
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import polars as pl
+
+from lib import streams as streams_lib
 from scipy.stats import beta
 
 COMM, CARE = "#D55E00", "#0072B2"     # Okabe-Ito, CVD-validated pair
@@ -71,8 +73,7 @@ def main() -> None:
     fig.get_layout_engine().set(rect=(0, 0, 1, 0.88))
 
     for ci, scope in enumerate(args.scopes):
-        d = pl.read_csv(args.streams / f"community_deaths_{scope}.tsv",
-                        separator="\t", null_values="NA")
+        d = streams_lib.read(args.streams / f"community_deaths_{scope}.tsv")
         num, den = f"community_deaths_{scope}", f"deaths_split_{scope}"
         # The death stream over the same weeks, to expose what was never
         # classified. Absent for a scope with no death stream; then the band
@@ -80,7 +81,7 @@ def main() -> None:
         dstream = args.streams / f"deaths_{scope}.tsv"
         unclassified = None
         if dstream.exists():
-            w = pl.read_csv(dstream, separator="\t", null_values="NA")
+            w = streams_lib.read(dstream)
             j = d.join(w, on="time", how="left")
             unclassified = [max(int(a or 0) - int(b), 0) for a, b
                             in zip(j[f"deaths_{scope}"], j[den])]

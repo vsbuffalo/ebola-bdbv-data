@@ -279,6 +279,74 @@ def spans(times, left) -> list[int]:
     return out
 
 
+#: The two columns a flow file states its accumulation window in. Half-open:
+#: `[window_start, window_stop)` covers every calendar day from `window_start`
+#: up to but not including `window_stop`, so the width is exactly
+#: `window_stop - window_start` and two adjacent rows share a boundary value
+#: without overlapping. Named here rather than spelled at each site because
+#: three read-back gates and the data dictionary all have to agree on which
+#: columns state time and which observe something.
+WINDOW_COLUMNS = ("window_start", "window_stop")
+
+
+def as_windows(d: pl.DataFrame) -> pl.DataFrame:
+    """A flow frame keyed on `time` re-keyed on the window its count covers.
+
+    THE WINDOW IS PART OF THE OBSERVATION, AND INFERRING IT FROM ROW SPACING
+    IS THE DEFECT THIS CLOSES. A row covers `(previous report day, this report
+    day]` -- `daily_increments` defines it, `spans` measures it -- but the file
+    carried only the right-hand end, so a consumer recovered the left one by
+    subtracting the previous row's time. Delete an interior row and the next
+    row's window silently widens to cover two: the model still fits, reports a
+    different answer, and nothing in the file says so. The first row of a file
+    was worse than silent -- it has no predecessor, so its window was not
+    recoverable at all, and 25 of the published flow files open on a window
+    wider than one day.
+
+        window_start = time - (days_covered - 1) days
+        window_stop  = time + 1 day
+
+    HALF-OPEN, and the reason to prefer it: the width needs no off-by-one
+    correction and adjacent rows tile by sharing a value rather than by
+    differing by one day. A row labelled 2026-07-13 covering 2 days becomes
+    `[2026-07-12, 2026-07-14)` -- the civil days 12 and 13 July.
+
+    `time` GOES, because a stream declares one set of temporal columns and a
+    file carrying both would leave a consumer to decide which is authoritative.
+    `window_stop` sits where `time` did and is one day later than it.
+
+    `days_covered` STAYS as provenance rather than as the window. It is now
+    exactly `window_stop - window_start`, and `accumulation_windows` gates that
+    equality on every published row, so the two cannot drift apart.
+
+    Pure, and for flow files only: a stock is a reading at an instant, spans no
+    window, and keeps its `time` column.
+    """
+    if "days_covered" not in d.columns:
+        raise SystemExit(
+            "a flow stream reached as_windows with no `days_covered` column, "
+            "so the window it claims cannot be stated: " + str(d.columns))
+    t = pl.col("time").str.to_date("%Y-%m-%d")
+    return (d.with_columns(
+        (t - pl.duration(days=pl.col("days_covered") - 1))
+        .dt.to_string("%Y-%m-%d").alias("window_start"),
+        (t + pl.duration(days=1)).dt.to_string("%Y-%m-%d").alias("window_stop"))
+        .select(*WINDOW_COLUMNS, *[c for c in d.columns if c != "time"]))
+
+
+def observation_day() -> pl.Expr:
+    """The day a published flow row observes, recovered from its window.
+
+    `window_stop` is EXCLUSIVE, so the day the source spoke is the day before
+    it -- the value the file used to carry as `time`. Wanted wherever this
+    build reads its own output back and lines it up against a frame still
+    keyed on the report date, and wherever a figure needs the observation on
+    the day it was reported rather than a day later.
+    """
+    return (pl.col("window_stop").str.to_date("%Y-%m-%d")
+            - pl.duration(days=1)).dt.to_string("%Y-%m-%d")
+
+
 def calendar_day_grid(times) -> list:
     """Every calendar day the stream spans, so a single-day-figure file has a
     ROW on each and every row's window is exactly one day.
@@ -482,6 +550,20 @@ def read_stream(path: Path) -> pl.DataFrame:
                        null_values=NULL_TOKEN)
 
 
+def row_label(r: dict) -> str:
+    """How a published row names its position in time, for a finding.
+
+    The two published forms state time differently and every gate below
+    reports on both: a flow row names the half-open window its count covers,
+    a stock row names the instant it was read at. Naming a row by whichever
+    it carries keeps a finding readable without each gate knowing which kind
+    of file it is walking.
+    """
+    if "window_start" in r:
+        return f"[{r['window_start']}, {r['window_stop']})"
+    return str(r["time"])
+
+
 #: What a model does with a denominator, which decides what an UNSCORED row
 #: must carry in it. Two roles, and the difference is the whole reason the
 #: distinction is written down rather than assumed:
@@ -670,6 +752,14 @@ def merge_windows(d: pl.DataFrame, stream: str, column: str,
     published; deleting it only changes which row the schedule says the
     merged report days belong to.
 
+    ALSO RETURNS `n_merged`: how many deleted report days each surviving row
+    absorbed. A daily companion row normally covers one report day, and where
+    its window is wider than a day that is the SOURCE having skipped a report
+    -- still one report day fed it. A merged row is the one case where a
+    widened window really does span two report days the source published on,
+    so a fixed `n_report_days` of 1 understates it. Invisible while the window
+    was inferred from row spacing; visible the moment the row states it.
+
     THREE CHECKS, ALL RE-VERIFIED AGAINST THE BUILT SERIES rather than
     trusted from the register, because the register is a claim about a past
     reading and the series can change under it: the named date must be a row
@@ -683,7 +773,7 @@ def merge_windows(d: pl.DataFrame, stream: str, column: str,
     dates = d["date"].dt.to_string("%Y-%m-%d").to_list()
     targets = merges.get((stream, column), set())
     if not targets:
-        return d
+        return d.with_columns(pl.lit(0, pl.Int64).alias("n_merged"))
     present = set(dates) & targets
     if missing := targets - present:
         raise SystemExit(
@@ -705,10 +795,19 @@ def merge_windows(d: pl.DataFrame, stream: str, column: str,
                 "clamped zero registers/window_merged_rows.tsv asserts -- "
                 "the register no longer matches this series")
     first_span = d["days_covered"][0]
+    dropped = sorted(dt.date.fromisoformat(t) for t in present)
     d = d.filter(~pl.col("date").dt.to_string("%Y-%m-%d").is_in(present))
+    # How many deleted report days each surviving row's widened window now
+    # spans: those strictly between it and the surviving row before it. The
+    # first surviving row absorbs none -- `merge_windows` refuses to delete a
+    # stream's first row, so nothing deleted can sit ahead of it.
+    kept = d["date"].to_list()
+    merged = [sum(1 for x in dropped if prev < x < cur)
+              for prev, cur in zip([kept[0]] + kept[:-1], kept)]
     return d.with_columns(
         (pl.col("date") - pl.col("date").shift(1)).dt.total_days()
-        .fill_null(first_span).alias("days_covered"))
+        .fill_null(first_span).alias("days_covered"),
+        pl.Series("n_merged", merged, dtype=pl.Int64))
 
 
 def negative_values(paths: list[Path]) -> list[str]:
@@ -728,62 +827,92 @@ def negative_values(paths: list[Path]) -> list[str]:
             if not t[col].dtype.is_numeric():
                 continue
             for r in t.filter(pl.col(col) < 0).iter_rows(named=True):
-                out.append(f"{path.name}: {col} = {r[col]} at {r['time']}")
+                out.append(f"{path.name}: {col} = {r[col]} at "
+                           f"{row_label(r)}")
     return out
 
 
 def observation_columns(columns) -> list[str]:
-    """A published file's observation columns: `time` and the row-describing
-    columns removed, everything else is something the source measured."""
-    return [c for c in columns if c != "time" and c not in METADATA_COLUMNS]
+    """A published file's observation columns: the temporal columns and the
+    row-describing ones removed, everything else is something the source
+    measured. A file states time as either `time` (a stock) or the window
+    pair (a flow), never both, so both forms are excluded here."""
+    return [c for c in columns
+            if c != "time" and c not in WINDOW_COLUMNS
+            and c not in METADATA_COLUMNS]
 
 
 def accumulation_windows(written: list[Written]) -> list[str]:
-    """Every scored row on a flow file whose `days_covered` is not the gap to
-    the row before it, as findings.
+    """Every flow row whose stated window is malformed or does not tile with
+    its neighbour, as findings.
 
-    THE INVARIANT, AND WHY IT IS A GATE RATHER THAN A CONVENTION:
+    THREE INVARIANTS, ALL FATAL:
 
-        for every SCORED row on a flow file
-            time - (time of the previous ROW, NA or scored) == days_covered
+        for every row on a flow file
+            window_stop > window_start                       (positive width)
+            window_stop - window_start == days_covered       (no drift)
+        for every row but the first
+            window_start == the previous row's window_stop   (tiles exactly)
 
-    The engines these files are written for accumulate a modelled flow from
-    the previous ROW OF THE SAME STREAM to this one, and a row that carries no
-    observation still resets the accumulator, because the reset is the row
-    existing rather than the row being scored. `days_covered` is what the file
-    claims that window to be. Where the two differ the model integrates over
-    one interval and compares the result against a count covering another, and
-    nothing in the file says so: the numerator silently widens while the
-    denominator stays where it was. Four published streams had gaps of 11 to
-    48 days under a `days_covered` of 1 before this gate existed, and one
-    assertion would have named every one of them.
+    WHAT EACH ONE IS FOR. The width check catches a reversed or empty window,
+    which no likelihood can evaluate. The `days_covered` check exists only
+    because that column survives as provenance: it is now derivable from the
+    window, so the one failure mode left is the two disagreeing, and a
+    consumer reading the redundant column would then read a different window
+    from the one the file states.
+
+    THE TILING CHECK IS THE ONE WITH A BODY COUNT, and it inherits the job the
+    row-spacing check used to do. Before windows were stated, a row's window
+    was inferred from the gap to its predecessor, so deleting an interior row
+    silently widened its neighbour and four published streams sat 11 to 48
+    days apart while claiming one day -- asking a model to explain up to 48
+    days of accumulated flow with a single day of it. Stating the window
+    removes that failure mode and replaces it with two others this catches:
+    an OVERLAP, where two rows both claim a day and a count is scored twice,
+    and a GAP, where a day belongs to no row at all.
+
+    A GAP IS FATAL HERE EVEN THOUGH THE FORMAT CAN EXPRESS ONE. Every stream
+    this pipeline publishes covers its span without holes -- the flow families
+    that go quiet carry an `NA` row for the silent day rather than skipping
+    it -- so a gap appearing means a builder dropped a row, not that anyone
+    decided to state one. Making it fatal keeps that guarantee checked; a
+    deliberate gap would be a change to this gate, argued for on its own.
 
     Read back off DISK, like `negative_values` and for the same reason: what a
     consumer fits is the file. Flow files only -- a stock is a reading at an
-    instant, accumulates over no window and carries no `days_covered`, so
-    there is nothing here for it to violate. The FIRST row of a file is
-    exempt: it has no previous row, so the gap it would be measured against
-    does not exist.
+    instant, spans no window, and keeps its `time` column.
     """
     out: list[str] = []
     for w in sorted(written, key=lambda w: w.path):
         if w.resolution == STOCK:
             continue
         t = read_stream(w.path)
-        rows = t.iter_rows(named=True)
-        prev = next(rows, None)
-        if prev is None:
-            continue
-        for r in rows:
-            gap = (dt.date.fromisoformat(r["time"])
-                   - dt.date.fromisoformat(prev["time"])).days
-            prev = r
-            if r["n_report_days"] and gap != r["days_covered"]:
+        prev = None
+        for r in t.iter_rows(named=True):
+            start = dt.date.fromisoformat(r["window_start"])
+            stop = dt.date.fromisoformat(r["window_stop"])
+            width = (stop - start).days
+            if width <= 0:
                 out.append(
-                    f"{w.path.name}: the row at {r['time']} claims "
-                    f"days_covered = {r['days_covered']} but sits {gap} day(s) "
-                    "after the row before it, so a model accumulating between "
-                    f"rows would score {gap} day(s) of flow against it")
+                    f"{w.path.name}: the row at [{r['window_start']}, "
+                    f"{r['window_stop']}) spans {width} day(s), so it covers "
+                    "no time for a count to have accumulated over")
+            elif width != r["days_covered"]:
+                out.append(
+                    f"{w.path.name}: the row at [{r['window_start']}, "
+                    f"{r['window_stop']}) spans {width} day(s) but claims "
+                    f"days_covered = {r['days_covered']}, so the file states "
+                    "two different windows for one count")
+            if prev is not None and start != prev:
+                over = (prev - start).days
+                out.append(
+                    f"{w.path.name}: the row at [{r['window_start']}, "
+                    f"{r['window_stop']}) "
+                    + (f"overlaps the row before it by {over} day(s), which "
+                       "scores those days twice"
+                       if over > 0 else
+                       f"leaves {-over} day(s) after {prev} covered by no row"))
+            prev = stop
     return out
 
 
@@ -817,17 +946,20 @@ def unscored_rows(written: list[Written]) -> list[str]:
             scored = bool(r["n_report_days"])
             for c in obs:
                 if scored and r[c] is None:
-                    out.append(f"{w.path.name}: {c} is empty at {r['time']} on "
-                               "a row marked scored (n_report_days > 0)")
+                    out.append(f"{w.path.name}: {c} is empty at "
+                               f"{row_label(r)} on a row marked scored "
+                               "(n_report_days > 0)")
                 elif not scored and c not in div and r[c] is not None:
-                    out.append(f"{w.path.name}: {c} = {r[c]} at {r['time']} on "
-                               "a row marked unscored (n_report_days = 0)")
+                    out.append(f"{w.path.name}: {c} = {r[c]} at "
+                               f"{row_label(r)} on a row marked unscored "
+                               "(n_report_days = 0)")
             for c in div:
                 if not scored and not r[c]:
                     out.append(
                         f"{w.path.name}: the divisor {c} is "
-                        f"{'empty' if r[c] is None else r[c]} at {r['time']} "
-                        "on an unscored row, where it can still be divided by")
+                        f"{'empty' if r[c] is None else r[c]} at "
+                        f"{row_label(r)} on an unscored row, where it can "
+                        "still be divided by")
     return out
 
 
@@ -921,16 +1053,31 @@ def stream_facts(path: Path) -> dict:
     t = read_stream(path)
     scored = (t.filter(pl.col("n_report_days") > 0)
               if "n_report_days" in t.columns else t)
-    times = sorted(str(x) for x in scored["time"].to_list())
+    # TWO DIFFERENT DATES, AND CONFLATING THEM MISREPORTS BOTH. `covers_*` is
+    # what the file states -- a flow row's window is half-open, so the span it
+    # covers runs from the first `window_start` to the last `window_stop`, and
+    # that last value is one day AFTER the day the source spoke. `days` is the
+    # day each observation is OF, which is what a gap between observations is
+    # measured in and what compares against the data date. For a stock the two
+    # coincide, because a reading at an instant covers nothing.
+    if "window_start" in t.columns:
+        starts = sorted(str(x) for x in scored["window_start"].to_list())
+        stops = sorted(str(x) for x in scored["window_stop"].to_list())
+        days = [str(dt.date.fromisoformat(s) - dt.timedelta(days=1))
+                for s in stops]
+        covers_first, covers_last = (starts[0], stops[-1]) if starts else ("-", "-")
+    else:
+        days = sorted(str(x) for x in scored["time"].to_list())
+        covers_first, covers_last = (days[0], days[-1]) if days else ("-", "-")
     return {"n_obs": scored.height,
             "n_rows": t.height,
             "n_holes": t.height - scored.height,
-            "first": times[0] if times else "-",
-            "last": times[-1] if times else "-",
-            "times": times,
+            "first": covers_first,
+            "last": covers_last,
+            "last_obs": days[-1] if days else "-",
+            "days": days,
             "all_columns": list(t.columns),
-            "columns": [c for c in t.columns
-                        if c != "time" and c not in METADATA_COLUMNS]}
+            "columns": observation_columns(t.columns)}
 
 
 def _table(rows: list[list[str]], header: list[str],
@@ -1036,32 +1183,50 @@ def data_dictionary(written: list[Written], register: Path, *,
         "overwrites it. Every count and date below is read back off the file "
         "it describes.", "",
         "## Reading any row", "",
-        "- **`time` is the observation time, and what it spans depends on the "
-        "resolution.** A weekly row is scored over its 7-day bin. A daily row "
-        "covers `(previous report day, this report day]` — report days are "
-        "irregular, so `days_covered` states the length of that interval, and "
-        "nothing is spread across it. A stock row is a reading at that "
-        "instant and accumulates over no window at all.",
+        "- **A flow row states the window its count covers, and a stock row "
+        "states the instant it was read at.** A flow file carries "
+        "`window_start` and `window_stop`; a stock file carries `time`. No "
+        "file carries both, so there is never a question of which column is "
+        "authoritative.",
+        "- **The window is half-open: `[window_start, window_stop)`.** It "
+        "covers every calendar day from `window_start` up to but not "
+        "including `window_stop`, so its width is exactly "
+        "`window_stop - window_start` with no off-by-one, and two adjacent "
+        "rows share a boundary value without overlapping — the instant "
+        "closing one window is the instant opening the next, counted once. "
+        "This is the BED convention for genomic intervals, and for the same "
+        "reasons. A row reading `2026-07-12` to `2026-07-14` covers the civil "
+        "days 12 and 13 July.",
+        "- **`window_stop` is one day later than the day the source spoke.** "
+        "A report whose figures are stated for 13 July closes a window at "
+        "14 July. Plot from `window_start`, or from `window_stop` minus one "
+        "day; plotting `window_stop` itself puts every observation a day "
+        "later than the report it came from.",
         "- **A day with no report is absent, never zero.** A gap is a missing "
         "observation, not an observed absence of transmission.",
-        "- **EVERY FLOW FILE SATISFIES THIS, AND THE BUILD FAILS IF IT DOES "
-        "NOT:**",
+        "- **Every flow file satisfies all three of these, and the build "
+        "fails if it does not:**",
         "",
         "  ```",
-        "  for every SCORED row:  time - (time of the previous ROW, NA or "
-        "scored) == days_covered",
+        "  window_stop > window_start                        (positive width)",
+        "  window_stop - window_start == days_covered        (no drift)",
+        "  window_start == the previous row's window_stop    (tiles exactly)",
         "  ```",
         "",
-        "  An engine accumulates a modelled flow from the previous ROW OF THE "
-        "SAME STREAM to this one, and a row carrying no observation still "
-        "resets that accumulator, because what resets it is the row being "
-        "present and not the row being scored. `days_covered` is what the file "
-        "claims the window to be. A scored row whose `days_covered` understates "
-        "its gap therefore makes the model accumulate over a window the row "
-        "does not claim — it is scored against more flow than it represents, "
-        "and nothing in the file says so. Where the source published no report "
-        "at all, the gap widens and `days_covered` widens with it: an honest "
-        "wide bin rather than a silent one.",
+        "  The third is the one that matters most. Before these columns "
+        "existed a row's window was inferred from the gap to the row before "
+        "it, so deleting an interior row silently widened its neighbour: the "
+        "model accumulated over one interval, compared the result against a "
+        "count covering another, and nothing in the file said so. Stating "
+        "both ends removes that failure mode and leaves two this gate "
+        "catches — an overlap, where two rows both claim a day and its count "
+        "is scored twice, and a gap, where a day belongs to no row. Where the "
+        "source published no report at all, the window widens to say so: an "
+        "honest wide bin rather than a silent one.",
+        "- **`days_covered` is provenance now, not the window.** It is "
+        "exactly `window_stop - window_start` and gated to stay that way. "
+        "Divide by it for a daily rate; it is not a coverage count and "
+        "`n_report_days` is not a denominator.",
         "- **A HOLE IS A ROW WITH `NA` IN IT, and `n_report_days` says which "
         "rows those are.** On the flow families the source states as a single "
         "24-hour figure per report, every report day the file spans is a row: "
@@ -1083,8 +1248,9 @@ def data_dictionary(written: list[Written], register: Path, *,
         "rather than clipped, so a stream still totals exactly what the "
         "source's cumulative moved. `revisions.tsv` below is the row-by-row "
         "record of every row that touched.",
-        "- **Observation columns and metadata columns.** The first column is "
-        "always `time`. "
+        "- **Observation columns and metadata columns.** The first columns "
+        "are always `window_start` and `window_stop` on a flow file, or "
+        "`time` on a stock file. "
         + ", ".join(f"`{c}`" for c in METADATA_COLUMNS)
         + " describe the row rather than the epidemic; every other column is "
         "an observation, and each is named below.",
@@ -1135,12 +1301,16 @@ def data_dictionary(written: list[Written], register: Path, *,
         if w.path.name == DICTIONARY:
             continue
         f = stream_facts(w.path)
-        last = f["last"]
+        # THE DAY THE SOURCE LAST SPOKE, not the edge of the window that day
+        # closed. A flow row's `window_stop` is one day after the observation,
+        # so comparing it against the data date would report every current
+        # stream as running a day past the newest report it was built from.
+        last = f["last_obs"]
         if last >= data_date:
             continue
         gap = (dt.date.fromisoformat(data_date)
                - dt.date.fromisoformat(last)).days
-        days = [dt.date.fromisoformat(t) for t in f["times"]]
+        days = [dt.date.fromisoformat(t) for t in f["days"]]
         # None, not 0, where there IS no interior gap: a file with a single
         # observation has nothing to be compared against, and calling its
         # trailing gap "wider than any gap inside the stream" would report the
@@ -1174,7 +1344,7 @@ def data_dictionary(written: list[Written], register: Path, *,
               if gap <= widest else
               "yes — wider than any gap inside the stream"]
              for n, last, gap, widest in sorted(behind)],
-            ["File", "Last `time`", "Behind the data date",
+            ["File", "Last observation", "Behind the data date",
              "Widest gap inside the stream", "Unusual for this stream?"],
             ["---", "---", "---:", "---:", "---"])
         out += [""]
@@ -1202,7 +1372,7 @@ def data_dictionary(written: list[Written], register: Path, *,
         # scored over is exactly the window its row claims.
         out += _table(rows,
                       ["File", "Place", "Resolution", "Obs", "`NA` rows",
-                       "First `time`", "Last `time`", "Observation column(s)"],
+                       "Covers from", "Covers to", "Observation column(s)"],
                       ["---", "---", "---", "---:", "---:", "---", "---",
                        "---"])
         # HOW TO READ IT, beneath the table that says what is in it. Every
@@ -1946,6 +2116,13 @@ def main() -> None:
         they are written under.
         """
         assert resolution in RESOLUTION_PROSE, resolution
+        # THE SINGLE SEAM WHERE A FLOW FILE BECOMES WINDOW-KEYED. Every
+        # builder above works in `time` because that is what differencing a
+        # cumulative produces; the published form states the window instead,
+        # and doing the conversion here rather than at each of the twelve
+        # write sites is what stops one of them from being missed.
+        if resolution != STOCK:
+            d = as_windows(d)
         # THE ONE FLAG A CONSUMER ACTS ON, AS A COLUMN RATHER THAN A SUBSTRING.
         # `flags` is prose the page said about the day and it carries several
         # values; a consumer wanting to drop batch-consolidation days had to
@@ -2364,8 +2541,13 @@ def main() -> None:
         # needs one code path and a model can swap resolutions by changing a
         # path. It is also the honest name -- a "daily" row covers 2 or 3
         # days on 5 of 82, and a "weekly" row 4 to 8.
+        # ONE REPORT DAY PER ROW, PLUS ANY THIS ROW ABSORBED. A widened window
+        # here is normally the source having skipped reports, so one report
+        # day still fed the row; a row that swallowed a merged neighbour is
+        # the exception, and `merge_windows` is the only thing that knows.
         write_stream(
-            d.with_columns(pl.lit(1, pl.Int64).alias("n_report_days"))
+            d.with_columns((1 + pl.col("n_merged")).cast(pl.Int64)
+                           .alias("n_report_days"))
             .select(pl.col("date").dt.to_string("%Y-%m-%d").alias("time"),
                     pl.col("count").alias(obs), "days_covered",
                     "n_report_days", "flags"),
@@ -2460,7 +2642,7 @@ def main() -> None:
         }
         if diff_path.exists():
             diff = read_stream(diff_path)
-            both = (diff.select(pl.col("time"),
+            both = (diff.select(observation_day().alias("time"),
                                 pl.col(f"{stem}_{slug}").cast(pl.Int64)
                                 .alias("moved"),
                                 pl.col("days_covered").cast(pl.Int64))
@@ -2506,7 +2688,13 @@ def main() -> None:
         note_path = args.out_dir / f"{stem}_notified_{slug}.tsv"
         if not base_path.exists():
             return
-        base = read_stream(base_path)
+        # BOTH INPUTS ARE FILES THIS BUILD ALREADY PUBLISHED, so they state
+        # windows rather than a report day. Recovering the observation day
+        # here keeps the join key, the batch-date lookup and the recon record
+        # all in the terms the register and the source use; `write_stream`
+        # converts back on the way out.
+        base = read_stream(base_path).with_columns(
+            observation_day().alias("time"))
         # A place with no notified stream still gets this family, identical to
         # the differenced one. The banner printed its 24-hour breakdown only for
         # sitreps 059-083 and only for the provinces affected then, so Bas-Uélé
@@ -2517,7 +2705,8 @@ def main() -> None:
         # is registered the series is the differenced one, which is exactly
         # what it means.
         if note_path.exists():
-            note = read_stream(note_path)
+            note = read_stream(note_path).with_columns(
+                observation_day().alias("time"))
         else:
             note = base.select("time").with_columns(
                 pl.lit(None, pl.Int64).alias(f"{stem}_notified_{slug}"))
@@ -3141,9 +3330,9 @@ def main() -> None:
     #   3. every deficit the carry opened was discharged before the series
     #      ended. A residual means part of a revision was dropped on the
     #      floor, which also breaks (1) -- this names the cause;
-    #   4. every scored row on a flow file claims the window it actually
-    #      sits in, so a model accumulating between rows scores each count
-    #      over the interval its own row states;
+    #   4. every flow row states a window of positive width that agrees with
+    #      its `days_covered` and tiles with its neighbours, so no day is
+    #      scored twice and none is covered by no row at all;
     #   5. an unscored row is unscored in every observation cell, and any
     #      divisor beside it is present and positive;
     #   6. a file with two observation columns has said which of them is the
@@ -3176,13 +3365,14 @@ def main() -> None:
                        + "\n  ".join(carry_failures))
         if windows:
             msg.append(
-                "A SCORED ROW DOES NOT SIT WHERE ITS `days_covered` SAYS IT "
-                "DOES. A model accumulates a modelled flow from the previous "
-                "ROW of the stream, scored or not, so a row further from its "
-                "predecessor than the window it claims is scored against more "
-                "flow than it represents. Emit a row -- with an empty "
-                "observation -- on every report day in the gap:\n  "
-                + "\n  ".join(windows))
+                "A FLOW ROW STATES A WINDOW ITS FILE CANNOT SUPPORT. Every "
+                "row states `[window_start, window_stop)` and a model scores "
+                "its count over exactly that interval, so the windows of one "
+                "stream must have positive width, must agree with the "
+                "`days_covered` beside them, and must tile: an overlap scores "
+                "a day twice, a gap leaves a day covered by no row. Emit a "
+                "row -- with an empty observation -- on every day in a "
+                "gap:\n  " + "\n  ".join(windows))
         if unscored:
             msg.append(
                 "AN UNSCORED ROW IS MALFORMED. A row is either an observation "

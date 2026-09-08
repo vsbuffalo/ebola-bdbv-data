@@ -197,13 +197,14 @@ next fetch; counts stated there cannot.
 `cases_daily_ituri.tsv` is the same quantity per report day. Both come from the
 same panel, the same registers and the same gate — a stream's total equals what
 the source's cumulative moved, exactly — so the two resolutions cannot disagree
-about what a report said. The daily files state the interval each row covers,
-because report days are irregular: `days_covered` is the length of
-`(previous report day, this report day]`, and nothing is spread across it. Days
-with no report are absent, never zero. A `flags` column carries the source's own
-words about that day (`consolidating`, `harmonisation`,
-`harmonisation_undercount`, `stale_distribution`, `-` for none), so a consumer
-can down-weight batch consolidation rather than absorb it in dispersion.
+about what a report said. Every flow file states the interval each row covers,
+because report days are irregular: a row carries `window_start` and
+`window_stop`, the half-open interval `[window_start, window_stop)` its count
+accumulated over, and nothing is spread across it. Days with no report are
+absent, never zero. A `flags` column carries the source's own words about that
+day (`consolidating`, `harmonisation`, `harmonisation_undercount`,
+`stale_distribution`, `-` for none), so a consumer can down-weight batch
+consolidation rather than absorb it in dispersion.
 
 **A stream states how much of its population it saw.** This is part of the
 contract, not a house style. Where a row's value is a total over provinces or
@@ -223,32 +224,50 @@ beside it, and the ones read out of **prose** also carry `checks`, the source's
 own arithmetic on the passage a value came from (`closes`, `contradicts`,
 `unchecked`).
 
-**Every flow file claims the window it sits in, and the build fails if one does
-not.**
+**Every flow file states the window each row covers, and the build fails if one
+does not.**
 
 ```
-for every SCORED row:  time - (time of the previous ROW, NA or scored) == days_covered
+window_stop > window_start                        (positive width)
+window_stop - window_start == days_covered        (no drift)
+window_start == the previous row's window_stop    (tiles exactly)
 ```
 
-An engine accumulates a modelled flow from the previous **row** of the same
-stream to this one, and a row carrying no observation still resets that
-accumulator — what resets it is the row being present, not the row being scored.
-So a scored row whose `days_covered` understates its gap makes the model
-accumulate over a window the row does not claim: it is scored against more flow
-than it represents, and nothing in the file says so. The families the source
-states as a single 24-hour figure per report — the care ledger's admissions and
-exits, the daily laboratory files, the daily community-death split — therefore
-carry **a row on every report day they span**, holding `NA` where the source
-said nothing. An `NA` contributes no likelihood term and is **not an observed
-zero**: a report that does not mention absconders is silent about them, not
-reporting none. Read these files with the token declared (in polars,
+The window is **half-open**: `[window_start, window_stop)` covers every calendar
+day from `window_start` up to but not including `window_stop`, so its width is
+exactly `window_stop - window_start` and two adjacent rows share a boundary
+value without overlapping. This is the BED convention for genomic intervals, and
+for the same reasons. Note that `window_stop` is therefore **one day after the
+day the source spoke** — a report stating figures for 13 July closes a window at
+14 July — so anything dating an observation should read `window_start`, or
+`window_stop` minus a day; `scripts/lib/streams.py` does this in one place for
+every consumer in this repository.
+
+Before these columns existed a row's window was inferred from the gap to the row
+before it, which meant deleting an interior row silently widened its neighbour:
+the model accumulated over one interval, compared the result against a count
+covering another, and nothing in the file said so. Four published streams sat 11
+to 48 days apart while claiming one day. Stating both ends removes that failure
+mode and leaves two the gate catches — an **overlap**, where two rows both claim
+a day and its count is scored twice, and a **gap**, where a day belongs to no
+row at all.
+
+The families the source states as a single 24-hour figure per report — the care
+ledger's admissions and exits, the daily laboratory files, the daily
+community-death split — carry **a row on every calendar day they span**, holding
+`NA` where the source said nothing. The grid is calendar days rather than report
+days because a 24-hour figure covers one day however wide the silence behind it:
+a row must exist on every day the value does not cover, and a row carrying `NA`
+asserts only that the day existed and nobody reported this quantity, which the
+source does license. An `NA` contributes no likelihood term and is **not an
+observed zero**: a report that does not mention absconders is silent about them,
+not reporting none. Read these files with the token declared (in polars,
 `null_values="NA"`), because `NA` is not a null token by default and one hole
-otherwise turns a count column into a string column. The grid is **report days,
-never calendar days** — a row on a day the archive holds no report for would
-assert a bin the source never licensed. Stocks are outside all of this:
-`care_census_*`, `patients_isolated*` and `cumul_recovered` are readings at an
-instant, carry no `days_covered`, accumulate over no window, and a 46-day gap in
-one of them is a reading taken 46 days later.
+otherwise turns a count column into a string column. Stocks are outside all of
+this: `care_census_*`, `patients_isolated*` and `cumul_recovered` are readings
+at an instant, keep a plain `time` column, carry no `days_covered`, accumulate
+over no window, and a 46-day gap in one of them is a reading taken 46 days
+later.
 
 **No published count is negative, and no case is lost making it so.** INSP
 revises its own cumulative downward — Nord-Kivu goes 44 cases / 26 deaths on 10
@@ -275,8 +294,8 @@ dropped.
 [`data/build/streams/README.md`](data/build/streams/README.md).** The contract
 above says what the files guarantee; that one says what each of them *is* — one
 row per published file, giving what it measures in a sentence, its resolution,
-its place, how many observations it holds and the first and last `time` it
-covers, with the two files that are not observation streams (`revisions.tsv` and
+its place, how many observations it holds and the span it covers, with the two
+files that are not observation streams (`revisions.tsv` and
 `uganda_exports.tsv`) treated separately. **It also says how each family is to
 be read** — the construction its rows come from, what the quantity is not, and
 what a consumer must condition on — because none of that is visible in a span or
@@ -385,13 +404,12 @@ province row — the check that caught duplicate zone spellings inflating both
 sides of gate one at once. Every stream ends at a final gap of **zero**;
 `cases_ituri` now agrees with the printed row on 65 of 67 dates, and the two
 that differ are the source's own registered self-disagreement (sitrep 059's
-note). Each bin's observation `time` is its **last report day**, so an engine
-that accumulates between observations scores every window against exactly the
-days its count covers — the trailing partial week included. The unassigned pool
-is summed within a report and zeroed when a report stops printing it; the
-ascertainment streams read the printed province rows and carry a per-date check
-against the zone breakdown. Per-date tallies live in
-`data/build/streams/meta.json`.
+note). Each bin's window closes on its **last report day** — `window_stop` is
+the day after it — so an engine scores every window against exactly the days its
+count covers, the trailing partial week included. The unassigned pool is summed
+within a report and zeroed when a report stops printing it; the ascertainment
+streams read the printed province rows and carry a per-date check against the
+zone breakdown. Per-date tallies live in `data/build/streams/meta.json`.
 
 **4. The registers.** When a page itself does not add up, that is a finding
 about the document, and it is recorded — not silenced — in `registers/`: one row

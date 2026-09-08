@@ -41,6 +41,8 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import polars as pl
+
+from lib import streams as streams_lib
 from matplotlib.patches import FancyArrowPatch, FancyBboxPatch
 
 COMM, CARE = "#D55E00", "#0072B2"
@@ -93,10 +95,8 @@ def main() -> None:
     # 118 deaths into the unclassified box that were never in the window at
     # all. The daily files share the report-day grid, so their spans agree by
     # construction -- and the assertion below says so rather than assuming it.
-    c = pl.read_csv(args.streams / f"community_deaths_daily_{s}.tsv",
-                    separator="\t", null_values="NA")
-    d = pl.read_csv(args.streams / f"deaths_daily_{s}.tsv", separator="\t",
-                    null_values="NA")
+    c = streams_lib.read(args.streams / f"community_deaths_daily_{s}.tsv")
+    d = streams_lib.read(args.streams / f"deaths_daily_{s}.tsv")
     lo, hi = c["time"].min(), c["time"].max()
     j = (d.filter((pl.col("time") >= lo) & (pl.col("time") <= hi))
            .select(["time", f"deaths_{s}", "days_covered"])

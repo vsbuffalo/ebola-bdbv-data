@@ -53,7 +53,15 @@ _SOURCE_DIRS = ("data/raw/", "registers/")
 @functools.lru_cache(maxsize=None)
 def _declared() -> frozenset[str]:
     text = PIPELINE.read_text()
-    return frozenset(re.findall(r"data/build/[\w./\-]+", text))
+    declared = set(re.findall(r"data/build/[\w./\-]+", text))
+    # $(FIGDIR) is data/build/figures/$(RELEASE), a Make variable the literal
+    # scan above cannot see by construction (the module docstring's "known
+    # edge"). `figures:` aliases it with `ln -sfn $(RELEASE) .../latest`
+    # expressly "for anything that wants a stable path" -- so every
+    # $(FIGDIR)/<file> output is also declared at .../figures/latest/<file>.
+    for name in re.findall(r"\$\(FIGDIR\)/([\w.\-]+)", text):
+        declared.add(f"data/build/figures/latest/{name}")
+    return frozenset(declared)
 
 
 def _require_declared(rel: str) -> Path:
@@ -89,8 +97,19 @@ def load(rel: str) -> pl.DataFrame:
     # column draws the strings at the axis baseline -- a hole rendered as an
     # observed zero, in a figure that looks entirely plausible.
     path = _require_declared(rel)
-    return pl.read_csv(path, separator=_sep(path), infer_schema_length=None,
-                       null_values="NA")
+    d = pl.read_csv(path, separator=_sep(path), infer_schema_length=None,
+                    null_values="NA")
+    # `time` IS RESTORED ON A PUBLISHED FLOW STREAM, which states the half-open
+    # window `[window_start, window_stop)` its count accumulated over rather
+    # than a report day. `window_stop` is exclusive, so the day the source
+    # spoke is the day before it -- exactly what `time` used to hold. A
+    # document plotting `window_stop` would put every observation one day
+    # later than the report it came from, with nothing failing.
+    if "window_stop" in d.columns:
+        d = d.with_columns((pl.col("window_stop").str.to_date("%Y-%m-%d")
+                            - pl.duration(days=1))
+                           .dt.to_string("%Y-%m-%d").alias("time"))
+    return d
 
 
 def load_json(rel: str) -> dict:

@@ -38,30 +38,98 @@ same as withdrawn: the older tag stays exactly where it is.
 
 ---
 
+## Unreleased — flow files state their accumulation window in two columns
+
+**Breaking for every consumer of a flow stream.** A flow file no longer carries
+`time`. It carries `window_start` and `window_stop`, the half-open interval
+`[window_start, window_stop)` its count accumulated over. Stock files
+(`care_census_*`, `patients_isolated*`, `cumul_recovered`, `uganda_exports`) are
+unchanged and keep `time`. No file carries both forms.
+
+**Migration.** `window_stop` sits where `time` did and is **one day later than
+it**: a row that read `2026-07-13` now reads `window_start 2026-07-12`,
+`window_stop 2026-07-14`. Anything that dates an observation — an axis, a join
+against the report calendar, a comparison against a data date — wants
+`window_stop` minus one day, which is exactly the old `time` value. In this
+repository `scripts/lib/streams.py` does that once for every consumer.
+
+**No published count changes.** 106 flow files, 4,316 rows: every total, every
+row and every observation is identical to `data/2026-08-30-r6`. The conversion
+is `window_start = time - (days_covered - 1)`, `window_stop = time + 1`, applied
+at the single write site in `build_streams.py`, and all 4,210 interior
+boundaries tile exactly — no gaps, no overlaps.
+
+### What the old form could not say
+
+A row's window was inferred from the gap to the row before it. Delete an
+interior row and its neighbour silently widened to cover two days: the model
+still fit and reported a different answer, with nothing in the file saying so.
+That is why the omit-and-record convention of `registers/window_merged_rows.tsv`
+existed, and why correctness lived in a script and a register rather than in the
+data.
+
+The **first row of every file** was worse than silent. It has no predecessor, so
+its window was not recoverable at all and a consumer inferring from row spacing
+had to assume one day. Twenty-five of the 106 flow files open on a window wider
+than that — `lab_national` on seven days, `deaths_national` on five — and those
+first rows now say so for the first time. This is the one place the new form
+changes what a consumer reads, and it is a correction.
+
+### The gate that replaces the row-spacing check
+
+`accumulation_windows` no longer compares `days_covered` against row spacing. It
+checks three things on every flow row, all fatal: positive width,
+`window_stop - window_start == days_covered`, and `window_start` equal to the
+previous row's `window_stop`. `days_covered` survives as provenance — exactly
+the window's width, gated to stay so — and remains the right divisor for a daily
+rate. `n_report_days` is not, and never was, a denominator.
+
+Overlaps and gaps are both fatal. Every stream published here covers its span
+without holes: the flow families that go quiet carry an `NA` row for the silent
+day rather than skipping it. A gap appearing means a builder dropped a row.
+
+### Two corrections riding along
+
+`n_report_days` was a constant `1` on the daily companion streams, which is
+right wherever a widened window came from the source skipping a report — one
+report day still fed the row — and wrong on the three rows widened by
+`window_merged_rows.tsv`, where the source did publish on both days. Those rows
+(`cases_daily_ituri`, `deaths_daily_ituri`, `deaths_daily_nord_kivu` at
+`2026-07-13`) now read `2`. Invisible while the window was inferred; visible the
+moment the row states it.
+
+`registers/stream_families.tsv` and the repository README both still described
+the care streams as carrying a row on every **report** day, and the README
+stated the grid was "report days, never calendar days". Both were superseded
+when the grid became calendar days; a row now exists on every calendar day a
+flow family spans. The register text is what `meta.json` and the generated data
+dictionary publish, so the stale sentence had been shipping to consumers.
+
+---
+
 ## `data/2026-08-30-r6` — 2026-09-03 — three clamped-zero rows deleted, not carried, so the province filter stops collapsing on 12 July
 
 **Breaking for a consumer reading `cases_daily_ituri`, `deaths_daily_ituri` or
-`deaths_daily_nord_kivu` at daily resolution across 12–13 July 2026.** Each
-file loses its `2026-07-12` row; the `2026-07-13` row is unchanged in value
-and its `days_covered` becomes `2`. No published total moves.
+`deaths_daily_nord_kivu` at daily resolution across 12–13 July 2026.** Each file
+loses its `2026-07-12` row; the `2026-07-13` row is unchanged in value and its
+`days_covered` becomes `2`. No published total moves.
 
 ### What was there and why it broke a filter
 
 The source's own province table went mid-redistribution on 12 July: Ituri's
-cumulative cases fell by 39 and deaths by 23, Nord-Kivu's deaths fell by 1,
-each a downward revision our carry-forward (`carry_forward` in
-`build_streams.py`, recorded row by row in `revisions.tsv`) clamps to zero
-and pays off on the next row that moves upward enough to absorb it. All
-three deficits close in full on 13 July, so the
-existing published values were already exactly right: 13 July's 63 Ituri
-cases is `-39 + 102`, its 30 deaths `-23 + 53`, and Nord-Kivu's 9 deaths
-`-1 + 10`.
+cumulative cases fell by 39 and deaths by 23, Nord-Kivu's deaths fell by 1, each
+a downward revision our carry-forward (`carry_forward` in `build_streams.py`,
+recorded row by row in `revisions.tsv`) clamps to zero and pays off on the next
+row that moves upward enough to absorb it. All three deficits close in full on
+13 July, so the existing published values were already exactly right: 13 July's
+63 Ituri cases is `-39 + 102`, its 30 deaths `-23 + 53`, and Nord-Kivu's 9
+deaths `-1 + 10`.
 
-The clamped zero itself was the problem, independent of being correct. A
-zero that isn't a reported observation still gets scored as one: in a
-particle filter run against these streams at daily resolution, that single
-row collapsed the effective sample size from 19,200 particles to 2.2, and
-pinned the latent trajectory across the date by construction.
+The clamped zero itself was the problem, independent of being correct. A zero
+that isn't a reported observation still gets scored as one: in a particle filter
+run against these streams at daily resolution, that single row collapsed the
+effective sample size from 19,200 particles to 2.2, and pinned the latent
+trajectory across the date by construction.
 
 ### Why deletion and not `NA`
 
@@ -69,43 +137,42 @@ An `NA` row closes an incidence bin at its own time (`docs/camdl-data-spec.md`
 in the modelling repo, "Missing observations: `NA` is a hole, not a zero").
 Marking 12 July `NA` alone would leave 13 July a **one-day** window still
 carrying the two-day total of 63 — the same class of defect, the other
-direction: a count scored against less flow than it represents instead of
-more. Deleting the row is the encoding the spec itself names for exactly
-this case: "the following row's exposure window silently widens to span the
-gap" is a caution against deleting when the surviving count does *not*
-already cover the gap. Here it does, by construction, because the carry paid
-the deficit into 13 July before either row was written.
+direction: a count scored against less flow than it represents instead of more.
+Deleting the row is the encoding the spec itself names for exactly this case:
+"the following row's exposure window silently widens to span the gap" is a
+caution against deleting when the surviving count does *not* already cover the
+gap. Here it does, by construction, because the carry paid the deficit into 13
+July before either row was written.
 
 ### What licenses deleting these three rows and not others
 
-`registers/window_merged_rows.tsv` is new: a hand-authored register, one row
-per (stream, column, date) deleted, each justified by the arithmetic above.
+`registers/window_merged_rows.tsv` is new: a hand-authored register, one row per
+(stream, column, date) deleted, each justified by the arithmetic above.
 `build_streams.py`'s `merge_windows` reads it and re-verifies every entry
 against the series it just built — the named row must exist, must not be the
-first or last row of its stream, and its carried value must be exactly
-zero — before deleting it and recomputing the following row's
-`days_covered`. A register entry that no longer matches (a re-extraction
-changes the series under it) stops the build rather than silently deleting
-the wrong row.
+first or last row of its stream, and its carried value must be exactly zero —
+before deleting it and recomputing the following row's `days_covered`. A
+register entry that no longer matches (a re-extraction changes the series under
+it) stops the build rather than silently deleting the wrong row.
 
-This is deliberately not a general rule the build applies to every clamped
-zero it finds. `revisions.tsv` carries two more rows of the identical shape —
+This is deliberately not a general rule the build applies to every clamped zero
+it finds. `revisions.tsv` carries two more rows of the identical shape —
 `cases_daily_nord_kivu` and `deaths_daily_nord_kivu`, `2026-06-11`, discharged
 in full by `2026-06-13` — left as a published carried zero because extending
 this treatment to them has not been decided. The Haut-Uélé deficit spanning
-18–22 July is a different shape entirely: it discharges over five rows, two
-of which are genuine reported zeros, and deleting any one of them would leave
-a negative count for its neighbour to carry — `merge_windows` refuses this by
+18–22 July is a different shape entirely: it discharges over five rows, two of
+which are genuine reported zeros, and deleting any one of them would leave a
+negative count for its neighbour to carry — `merge_windows` refuses this by
 construction, since a deleted row must be interior with the deficit fully
 absorbed by the very next row.
 
 ### What a consumer should do
 
 A daily-resolution reader of the three affected streams sees a two-day gap in
-the observation schedule at 12–13 July instead of a zero on 12 July, exactly
-as `days_covered = 2` on the 13 July row already stated before this release —
-that field was correct throughout; only the row set is now consistent with
-it. A reader at weekly resolution, or of `cases_daily_national` /
+the observation schedule at 12–13 July instead of a zero on 12 July, exactly as
+`days_covered = 2` on the 13 July row already stated before this release — that
+field was correct throughout; only the row set is now consistent with it. A
+reader at weekly resolution, or of `cases_daily_national` /
 `deaths_daily_national` / `deaths_daily_nord_kivu`'s national counterpart, is
 untouched: none of those files had a clamped row here.
 

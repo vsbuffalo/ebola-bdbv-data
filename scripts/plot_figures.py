@@ -118,6 +118,34 @@ def _dates(col: pl.Series) -> list:
     return [mdates.datestr2num(d) for d in col.to_list()]
 
 
+def _stream(path, *, dates: bool = False) -> pl.DataFrame:
+    """A published stream, with `time` restored as the day each row observes.
+
+    THE FILES STATE A WINDOW, AND AN AXIS WANTS THE REPORT DAY. A flow file
+    carries `[window_start, window_stop)`; `window_stop` is exclusive, so the
+    day the source spoke is the day before it -- exactly what the `time`
+    column used to hold. Plotting `window_stop` itself would put every point
+    one day later than the report it came from, which is the same class of
+    error as labelling a weekly bin with its nominal end: nothing fails, every
+    series just slides. A stock file already carries `time`.
+
+    `NA` is declared as the null token because polars does not treat it as one
+    by default, and one hole otherwise turns a count column into a string
+    column that a plotting library draws at the axis baseline -- a hole
+    rendered as an observed zero. `dates=True` returns `time` as a date, which
+    is what `try_parse_dates` gave the call sites that ask for it.
+    """
+    d = pl.read_csv(path, separator="\t", infer_schema_length=None,
+                    null_values="NA")
+    if "window_stop" in d.columns:
+        day = pl.col("window_stop").str.to_date("%Y-%m-%d") - pl.duration(days=1)
+    else:
+        day = pl.col("time").str.to_date("%Y-%m-%d")
+    return d.with_columns(
+        day.alias("time") if dates
+        else day.dt.to_string("%Y-%m-%d").alias("time"))
+
+
 def _header(fig, title: str, subtitle: str, *, title_size: float = 12,
             sub_size: float = 8.5) -> None:
     """Left-aligned bold title with the subtitle as a second block beneath it,
@@ -408,8 +436,7 @@ def draw_release_grid(inputs: dict[str, Path], out: Path) -> None:
     # second half of the same trap: polars does not parse it as null by
     # default, so one hole turns a count column into a string column and a
     # plotting library draws the strings at the axis baseline.
-    streams = {name: pl.read_csv(p, separator="\t", infer_schema_length=None,
-                                 null_values="NA")
+    streams = {name: _stream(p)
                for name, p in inputs.items() if name.startswith("stream_")}
     streams = {n: (d.filter(pl.col("n_report_days") > 0)
                    if "n_report_days" in d.columns else d)
@@ -691,8 +718,8 @@ def draw_epi_curve(inputs: dict[str, Path], out: Path) -> None:
     and hoping a label explains it invites the eye to compare heights that
     are not on one scale.
     """
-    cases = pl.read_csv(inputs["cases"], separator="\t", try_parse_dates=True)
-    deaths = pl.read_csv(inputs["deaths"], separator="\t", try_parse_dates=True)
+    cases = _stream(inputs["cases"], dates=True)
+    deaths = _stream(inputs["deaths"], dates=True)
 
     fig = plt.figure(figsize=(13.333, 7.5), constrained_layout=True)
     outer = fig.add_gridspec(2, 1, height_ratios=[1.25, 1], hspace=0.08)
@@ -1000,10 +1027,8 @@ def draw_ascertainment(inputs: dict[str, Path], out: Path) -> None:
     # `drop_nulls` below does not remove them, and matplotlib draws them as
     # categorical values at the axis baseline -- a hole rendered as an
     # observed zero.
-    d = pl.read_csv(inputs["split"], separator="\t", try_parse_dates=True,
-                    null_values="NA")
-    deaths = pl.read_csv(inputs["deaths"], separator="\t", try_parse_dates=True,
-                         null_values="NA")
+    d = _stream(inputs["split"], dates=True)
+    deaths = _stream(inputs["deaths"], dates=True)
     d = (d.drop_nulls(["community_deaths_national", "deaths_split_national"])
          .filter(pl.col("deaths_split_national") > 0)
          .join(deaths.select("time", "deaths_national"), on="time", how="left")
@@ -3005,8 +3030,7 @@ def draw_response_timeline(inputs: dict[str, Path], out: Path) -> None:
     steady stock rather than a ward that filled up.
     """
     caveat = pl.read_csv(inputs["caveat"])
-    cases = (pl.read_csv(inputs["cases"], separator="\t", null_values="NA",
-                         try_parse_dates=True)
+    cases = (_stream(inputs["cases"], dates=True)
              .drop_nulls("cases_national").sort("time"))
     banner = pl.read_csv(inputs["banner"]).sort("date")
     care = pl.read_csv(inputs["care"])
@@ -4219,8 +4243,7 @@ def draw_ascertainment_provinces(inputs: dict[str, Path], out: Path) -> None:
     say which points are worth believing; the dashed pooled line per row is
     the province's own average over the whole window, which is.
     """
-    nat = pl.read_csv(inputs["national"], separator="\t", try_parse_dates=True,
-                      null_values="NA")
+    nat = _stream(inputs["national"], dates=True)
     nat = (nat.drop_nulls(["community_deaths_national", "deaths_split_national"])
            .filter(pl.col("deaths_split_national") > 0).sort("time"))
     nat_pooled = (nat["community_deaths_national"].sum()
@@ -4228,8 +4251,7 @@ def draw_ascertainment_provinces(inputs: dict[str, Path], out: Path) -> None:
 
     rows = []
     for name, slug in ASCERTAINMENT_PROVINCES:
-        d = pl.read_csv(inputs[slug], separator="\t", try_parse_dates=True,
-                        null_values="NA")
+        d = _stream(inputs[slug], dates=True)
         d = (d.drop_nulls([f"community_deaths_{slug}", f"deaths_split_{slug}"])
              .filter(pl.col(f"deaths_split_{slug}") > 0).sort("time"))
         comm = d[f"community_deaths_{slug}"].to_list()
@@ -4539,8 +4561,7 @@ def draw_province_overview(inputs: dict[str, Path], out: Path) -> None:
         # published: a province that stops being published loses its panel, and
         # the missing input stops the figure rather than quietly shrinking it.
         slug = PROV_SLUG[prov]
-        st = pl.read_csv(inputs[f"cases_daily_{slug}"], separator="\t",
-                         null_values="NA").drop_nulls(f"cases_{slug}")
+        st = _stream(inputs[f"cases_daily_{slug}"]).drop_nulls(f"cases_{slug}")
         xs = [mdates.date2num(x) for x in
               st["time"].str.to_date().to_list()]
         ys = st[f"cases_{slug}"].to_list()

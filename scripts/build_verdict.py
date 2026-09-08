@@ -40,6 +40,21 @@ SERIES = ROOT / "data/build/series"
 STREAMS = ROOT / "data/build/streams"
 
 
+def newest_observation(path: Path) -> str:
+    """The last day a published flow stream observes.
+
+    A flow file states a half-open window, so its final `window_stop` is the
+    EXCLUSIVE edge of the interval the newest report closed -- one day after
+    that report. Both callers below compare this against a report date, and
+    using the edge would report every current build as running a day ahead of
+    the series it was made from.
+    """
+    return (pl.read_csv(path, separator="\t", null_values="NA")
+            .select((pl.col("window_stop").str.to_date("%Y-%m-%d")
+                     - pl.duration(days=1)).dt.to_string("%Y-%m-%d"))
+            .to_series().max())
+
+
 def _colour() -> bool:
     """Colour only for a human at a terminal. `NO_COLOR` is honoured because it
     is the convention every other tool on the machine honours."""
@@ -93,8 +108,7 @@ def collect() -> tuple[list[str], list[str], list[str], dict[str, str]]:
     nat = STREAMS / "cases_daily_national.tsv"
     if zt_all is not None and nat.exists():
         newest_series = zt_all["date"].max()
-        newest_stream = pl.read_csv(nat, separator="\t",
-                                    null_values="NA")["time"].max()
+        newest_stream = newest_observation(nat)
         if newest_stream != newest_series:
             blocking.append(
                 f"the streams end {newest_stream} but the series reach "
@@ -170,8 +184,7 @@ def collect() -> tuple[list[str], list[str], list[str], dict[str, str]]:
         # window length and it is the LAST date a reader wants here.
         nat = STREAMS / "cases_daily_national.tsv"
         if nat.exists():
-            facts["data date"] = pl.read_csv(
-                nat, separator="\t", null_values="NA")["time"].max()
+            facts["data date"] = newest_observation(nat)
         rc = m.get("reconciliation", {})
         off = [k for k, v in rc.items()
                if isinstance(v, dict) and v.get("difference") not in (None, 0)]

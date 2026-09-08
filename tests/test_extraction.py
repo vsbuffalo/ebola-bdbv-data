@@ -1679,6 +1679,30 @@ import build_streams as BS                                        # noqa: E402
 
 STREAMS = ROOT / "data" / "build" / "streams"
 SERIES = ROOT / "data" / "build" / "series"
+
+
+def _published(path):
+    """A published stream read back with a `time` column restored.
+
+    A flow file states a half-open window rather than a report day, and the
+    day it observes is `window_stop` minus one -- exactly the value `time`
+    used to hold. Restoring it here lets the assertions below stay in REPORT
+    DATES, which is what the source pages carry and what every register keys
+    on; a test that had to spell a window would be asserting against the
+    format instead of against the document. A stock file already carries
+    `time` and is returned unchanged.
+    """
+    t = BS.read_stream(path)
+    if "window_stop" not in t.columns:
+        return t
+    return t.with_columns(BS.observation_day().alias("time"))
+
+
+def _first_observation(t):
+    """The first observation column of a published file, whichever temporal
+    columns it leads with. Was `columns[1]` while every file led with a single
+    `time`; a flow file now leads with two."""
+    return BS.observation_columns(t.columns)[0]
 needs_streams = pytest.mark.skipif(
     not (STREAMS / "revisions.tsv").exists(),
     reason="the streams are not built; run `make build && make streams`")
@@ -2063,17 +2087,20 @@ def test_an_untouched_build_still_writes_the_empty_record(monkeypatch, tmp_path)
 def _flow_file(path, rows, columns=("count",)):
     """A minimal published flow file, for testing the gates that read one.
 
-    `rows` is `(time, days_covered, n_report_days, *values)`. Written through
-    the same null token the build writes, so a test cannot pass against a file
-    spelled differently from the ones that ship.
+    `rows` is `(time, days_covered, n_report_days, *values)` -- the report day
+    and the interval length, which is how every builder in `build_streams`
+    still works internally. The file is written through `as_windows` and the
+    same null token the build writes, so it lands in the published form and a
+    test cannot pass against a file spelled differently from the ones that
+    ship.
     """
     cols = {"time": [r[0] for r in rows],
             "days_covered": [r[1] for r in rows],
             "n_report_days": [r[2] for r in rows]}
     for i, c in enumerate(columns):
         cols[c] = [r[3 + i] for r in rows]
-    (pl.DataFrame(cols)
-     .select(["time", *columns, "days_covered", "n_report_days"])
+    (BS.as_windows(pl.DataFrame(cols)
+                   .select(["time", *columns, "days_covered", "n_report_days"]))
      .write_csv(path, separator="\t", null_value=BS.NULL_TOKEN))
     return [BS.Written(path, BS.DAILY)]
 
@@ -2081,20 +2108,23 @@ def _flow_file(path, rows, columns=("count",)):
 def test_the_gate_catches_the_defect_that_shipped(tmp_path):
     """The exact shape `care_admissions_nord_kivu` shipped at r4: two scored
     rows 48 days apart, each claiming a one-day window. A model would score
-    the second against 48 days of accumulated flow."""
+    the second against 48 days of accumulated flow.
+
+    Stated as windows the defect is a GAP -- 47 days between the first row's
+    `window_stop` and the second's `window_start` belong to no row -- which is
+    the same defect named in the terms the file now uses."""
     p = tmp_path / "care_admissions_nord_kivu.tsv"
     bad = BS.accumulation_windows(_flow_file(p, [
         ("2026-06-01", 1, 1, 3), ("2026-07-19", 1, 1, 5)],
         columns=("admissions_nord_kivu",)))
     assert len(bad) == 1
-    assert "2026-07-19" in bad[0] and "48 day(s) after" in bad[0]
+    assert "2026-07-19" in bad[0] and "47 day(s) after 2026-06-02" in bad[0]
 
 
 def test_the_gate_passes_once_the_hole_is_a_row(tmp_path):
     """The control: the same two observations with the report days between
     them present as `NA` rows. Nothing scored changed -- the counts are the
-    same 3 and 5 at the same two times -- but every scored row now sits one
-    day after the row before it."""
+    same 3 and 5 at the same two times -- but the windows now tile."""
     p = tmp_path / "care_admissions_nord_kivu.tsv"
     written = _flow_file(p, [("2026-06-01", 1, 1, 3),
                              ("2026-06-02", 1, 0, None),
@@ -2103,6 +2133,35 @@ def test_the_gate_passes_once_the_hole_is_a_row(tmp_path):
                          columns=("admissions_nord_kivu",))
     assert BS.accumulation_windows(written) == []
     assert BS.unscored_rows(written) == []
+
+
+def test_the_gate_catches_two_rows_claiming_the_same_day(tmp_path):
+    """The failure mode stating the window introduces, and the one row spacing
+    could never produce: an overlap. The second row's window opens before the
+    first one closes, so 2026-06-02 is inside both and its count is scored
+    twice."""
+    p = tmp_path / "care_admissions_ituri.tsv"
+    bad = BS.accumulation_windows(_flow_file(p, [
+        ("2026-06-02", 2, 1, 3), ("2026-06-03", 2, 1, 5)],
+        columns=("admissions_ituri",)))
+    assert len(bad) == 1
+    assert "overlaps the row before it by 1 day(s)" in bad[0]
+
+
+def test_the_gate_catches_days_covered_drifting_from_the_window(tmp_path):
+    """`days_covered` survives as provenance and is exactly the window's
+    width, so the one way it can go wrong is disagreeing with the two columns
+    beside it -- which would leave a consumer reading the redundant column a
+    different window from the one the file states."""
+    p = tmp_path / "care_admissions_ituri.tsv"
+    written = _flow_file(p, [("2026-06-01", 1, 1, 3)],
+                         columns=("admissions_ituri",))
+    t = pl.read_csv(p, separator="\t", null_values=BS.NULL_TOKEN)
+    (t.with_columns(pl.lit(4, pl.Int64).alias("days_covered"))
+     .write_csv(p, separator="\t", null_value=BS.NULL_TOKEN))
+    bad = BS.accumulation_windows(written)
+    assert len(bad) == 1
+    assert "spans 1 day(s) but claims days_covered = 4" in bad[0]
 
 
 def test_an_unscored_row_is_not_read_as_an_observed_zero(tmp_path):
@@ -2258,7 +2317,7 @@ def test_a_hole_carries_its_metadata_rather_than_being_a_bare_row():
     nothing downstream reads these columns into a likelihood. Every NA row in
     the release carries its silence count, its source flags, and -- on the
     care ledger, which has one -- its `checks` verdict."""
-    d = BS.read_stream(STREAMS / "care_admissions_nord_kivu.tsv")
+    d = _published(STREAMS / "care_admissions_nord_kivu.tsv")
     holes = d.filter(pl.col("n_report_days") == 0)
     assert holes.height > 0
     assert holes["admissions_nord_kivu"].null_count() == holes.height
@@ -2288,7 +2347,7 @@ def test_a_hole_is_spelled_NA_on_disk_and_not_left_empty():
     ("lab_daily_national", "tests_national"),
 ])
 def test_a_published_divisor_is_never_empty_or_zero(stream, column):
-    d = BS.read_stream(STREAMS / f"{stream}.tsv")
+    d = _published(STREAMS / f"{stream}.tsv")
     assert d[column].null_count() == 0
     assert d.filter(pl.col(column) == 0).height == 0
 
@@ -2311,7 +2370,7 @@ STOCK_FILES = sorted(
 def test_a_stock_is_left_alone(stream):
     """No `days_covered`, no `n_report_days`, no hole, and the long gaps the
     source left are still there."""
-    d = BS.read_stream(STREAMS / f"{stream}.tsv")
+    d = _published(STREAMS / f"{stream}.tsv")
     assert "days_covered" not in d.columns
     assert "n_report_days" not in d.columns
     obs = [c for c in d.columns
@@ -2325,7 +2384,7 @@ def test_the_care_census_keeps_the_gaps_the_source_left():
     """The sharpest case: Nord-Kivu's confirmed census has a 46-day gap. It is
     a reading 46 days later, not a widened window, and adding rows across it
     would invent readings the source never took."""
-    d = BS.read_stream(STREAMS / "care_census_confirmed_nord_kivu.tsv")
+    d = _published(STREAMS / "care_census_confirmed_nord_kivu.tsv")
     times = [dt.date.fromisoformat(t) for t in d["time"].to_list()]
     assert max(b - a for a, b in zip(times, times[1:])).days == 46
 
@@ -2418,11 +2477,17 @@ def test_the_stated_range_is_the_range_of_the_file():
     the file it names actually holds.
 
     OBS AND ROWS ARE TWO NUMBERS, and the document states both. A flow file
-    has a row on every report day it spans and holes the ones the source said
-    nothing on, so counting rows as observations would report a stream printed
-    on nine days out of thirty-one as having thirty-one. `Obs` is the scored
-    count, `NA rows` the holes, and the stated span runs over the SCORED
-    times -- the first and last day the source actually stated the quantity.
+    has a row on every day it spans and holes the ones the source said nothing
+    on, so counting rows as observations would report a stream printed on nine
+    days out of thirty-one as having thirty-one. `Obs` is the scored count and
+    `NA rows` the holes.
+
+    THE STATED SPAN IS WHAT THE FILE COVERS, over its SCORED rows: from the
+    first `window_start` to the last `window_stop` on a flow file, and from
+    the first to the last `time` on a stock. Those are different kinds of
+    date -- a flow file's last value is the exclusive edge of the window the
+    source's final report closed, one day after that report -- which is why
+    the column reads "Covers to" rather than naming a report day.
     """
     rows = _dictionary_rows(DICTIONARY)
     assert rows
@@ -2431,10 +2496,15 @@ def test_the_stated_range_is_the_range_of_the_file():
         d = BS.read_stream(STREAMS / name)
         scored = (d.filter(pl.col("n_report_days") > 0)
                   if "n_report_days" in d.columns else d)
-        times = sorted(str(x) for x in scored["time"].to_list())
+        if "window_start" in d.columns:
+            bounds = (sorted(scored["window_start"].to_list())[0],
+                      sorted(scored["window_stop"].to_list())[-1])
+        else:
+            times = sorted(str(x) for x in scored["time"].to_list())
+            bounds = (times[0], times[-1])
         assert int(n_obs) == scored.height, name
         assert (0 if n_na == "—" else int(n_na)) == d.height - scored.height, name
-        assert (first, last) == (times[0], times[-1]), name
+        assert (first, last) == bounds, name
 
 
 @needs_dictionary
@@ -3737,10 +3807,10 @@ def _care_stream(path):
     stated; a flow file's other rows exist to close the accumulation interval,
     not to carry a value.
     """
-    t = BS.read_stream(path)
+    t = _published(path)
     if "n_report_days" in t.columns:
         t = t.filter(pl.col("n_report_days") > 0)
-    obs = [c for c in t.columns if c not in BS.METADATA_COLUMNS and c != "time"]
+    obs = BS.observation_columns(t.columns)
     assert len(obs) == 1, f"{path.name} publishes {obs}, expected one column"
     for prov, slug in CARE_PLACES.items():
         if path.stem.endswith("_" + slug):
@@ -3788,7 +3858,8 @@ def test_the_care_streams_carry_exactly_what_the_extraction_read():
                             & pl.col(col).is_not_null())
                 .sort("date"))
         assert got["time"].to_list() == want["date"].to_list(), path.name
-        assert got[got.columns[1]].to_list() == want[col].to_list(), path.name
+        assert got[_first_observation(got)].to_list() == want[col].to_list(), \
+            path.name
 
 
 @needs_care_streams
@@ -3823,20 +3894,23 @@ def test_a_care_flow_row_covers_the_window_it_claims():
     reads no column to decide the window: a file holding only the days the
     source spoke made each next row's window as wide as the silence behind it.
 
-    THE INVARIANT, and it is now exact: every calendar day the file spans is a
-    row, so `days_covered` is 1 EVERYWHERE and a row's value covers precisely
-    the interval since the row before it. A report-day grid got this right
-    only where the source published on consecutive days; the days nobody
-    published on stayed absent and kept widening the window.
+    THE INVARIANT, and the file now states it rather than implying it: every
+    calendar day the file spans is a row, so every row's window is exactly one
+    day and consecutive windows tile -- each row's `window_start` is the
+    previous row's `window_stop`. A report-day grid got this right only where
+    the source published on consecutive days; the days nobody published on
+    stayed absent and kept widening the window.
     """
     seen_no_report = seen_silent = False
     for path in _care_files():
         t = BS.read_stream(path)
         if "days_covered" not in t.columns:
             continue                       # a stock; the test below covers it
-        times = [dt.date.fromisoformat(x) for x in t["time"].to_list()]
-        gaps = [(b - a).days for a, b in zip(times, times[1:])]
-        assert set(gaps) <= {1}, f"{path.name} skips a calendar day"
+        starts = [dt.date.fromisoformat(x) for x in t["window_start"].to_list()]
+        stops = [dt.date.fromisoformat(x) for x in t["window_stop"].to_list()]
+        assert all((b - a).days == 1 for a, b in zip(starts, stops)), \
+            f"{path.name} has a window that is not one day wide"
+        assert starts[1:] == stops[:-1], f"{path.name} skips a calendar day"
         assert set(t["days_covered"].to_list()) == {1}, path.name
         assert set(t["n_report_days"].to_list()) <= {0, 1}, path.name
         # A hole is one of two facts and the column says which: 1 where a
@@ -3884,12 +3958,12 @@ def test_the_absconder_streams_are_published_thin_and_say_how_thin():
         t = BS.read_stream(p)
         scored = t.filter(pl.col("n_report_days") > 0)
         obs[p.stem] = scored.height
-        assert (scored[t.columns[1]] >= 0).all()
+        assert (scored[_first_observation(t)] >= 0).all()
         assert t["n_report_days_silent"].min() >= 0
         # The silence is a hole, not a zero: every unscored row is empty in
         # the observation column.
         holes = t.filter(pl.col("n_report_days") == 0)
-        assert holes[t.columns[1]].null_count() == holes.height, p.name
+        assert holes[_first_observation(t)].null_count() == holes.height, p.name
     assert obs["care_exits_absconded_nord_kivu"] == 1
     assert obs["care_exits_absconded_ituri"] == 8
     assert obs["care_exits_absconded_national"] == 14
@@ -4112,9 +4186,11 @@ def test_the_build_stops_if_a_flow_stream_loses_its_report_day_rows(monkeypatch,
     with pytest.raises(SystemExit) as e:
         _run_build(monkeypatch, panel, out, "--care", str(care))
     msg = str(e.value)
-    assert "A SCORED ROW DOES NOT SIT WHERE ITS `days_covered` SAYS" in msg
+    assert "A FLOW ROW STATES A WINDOW ITS FILE CANNOT SUPPORT" in msg
     assert "care_admissions_ituri.tsv" in msg
-    assert "2026-05-22 claims days_covered = 1 but sits 2 day(s) after" in msg
+    # Stated as windows the defect is a gap: 2026-05-21 is covered by no row.
+    assert ("the row at [2026-05-22, 2026-05-23) leaves 1 day(s) after "
+            "2026-05-21 covered by no row") in msg
     # The stock beside it is not implicated: it carries no `days_covered` and
     # accumulates over no window, so the gate has nothing to say about it.
     assert "care_census_ituri.tsv" not in msg
@@ -4131,14 +4207,14 @@ def test_the_same_build_passes_with_the_report_day_rows_present(monkeypatch,
     _synthetic_care(care)
     out = tmp_path / "streams"
     _run_build(monkeypatch, panel, out, "--care", str(care))   # does not raise
-    d = BS.read_stream(out / "care_admissions_ituri.tsv")
+    d = _published(out / "care_admissions_ituri.tsv")
     assert d["time"].to_list() == ["2026-05-20", "2026-05-21", "2026-05-22"]
     assert d["admissions_ituri"].to_list() == [3, None, 2]
     assert d["n_report_days"].to_list() == [1, 0, 1]
     assert d["days_covered"].to_list() == [1, 1, 1]
     assert d["checks"].to_list() == ["unchecked", "unchecked", "unchecked"]
     # The stock is untouched: two rows, the two the source stated.
-    c = BS.read_stream(out / "care_census_ituri.tsv")
+    c = _published(out / "care_census_ituri.tsv")
     assert c["time"].to_list() == ["2026-05-20", "2026-05-22"]
 
 
@@ -4247,8 +4323,8 @@ def test_the_22_july_backlog_is_still_272_cases_and_174_deaths():
     consumer differencing the cumulative reads 369 as one day's incidence.
     """
     for stem, moved, notified in (("cases", 369, 97), ("deaths", 236, 62)):
-        d = BS.read_stream(STREAMS / f"{stem}_daily_national.tsv")
-        n = BS.read_stream(STREAMS / f"{stem}_notified_national.tsv")
+        d = _published(STREAMS / f"{stem}_daily_national.tsv")
+        n = _published(STREAMS / f"{stem}_notified_national.tsv")
         row = d.filter(pl.col("time") == "2026-07-22")
         assert int(row[f"{stem}_national"][0]) == moved
         assert int(row["days_covered"][0]) == 1, "not a one-day window"
@@ -4264,8 +4340,8 @@ def test_the_one_day_the_source_declares_the_split_closes_exactly():
     readings differ by retrospective attribution and by nothing else -- so if
     it ever stops holding, one of the two extractions has drifted.
     """
-    d = BS.read_stream(STREAMS / "deaths_daily_national.tsv")
-    n = BS.read_stream(STREAMS / "deaths_notified_national.tsv")
+    d = _published(STREAMS / "deaths_daily_national.tsv")
+    n = _published(STREAMS / "deaths_notified_national.tsv")
     moved = int(d.filter(pl.col("time") == "2026-08-02")["deaths_national"][0])
     row = n.filter(pl.col("time") == "2026-08-02")
     stated = int(row["deaths_notified_national"][0])
@@ -4280,7 +4356,7 @@ def test_the_notified_series_spans_only_the_window_the_source_printed_one():
     stretch the reports flag as consolidating. The register says so, and a
     span claimed in prose that the file does not have is the kind of drift
     these pins exist to catch."""
-    n = BS.read_stream(STREAMS / "cases_notified_national.tsv")
+    n = _published(STREAMS / "cases_notified_national.tsv")
     assert n["time"].min() == "2026-07-12"
     assert n["time"].max() == "2026-08-05"
     scored = n.filter(pl.col("n_report_days") > 0)
@@ -4331,8 +4407,8 @@ def test_the_22_july_backlog_splits_the_way_the_source_prints_it():
     want = {("cases", "ituri"): (347, 73), ("cases", "nord_kivu"): (16, 18),
             ("deaths", "ituri"): (213, 45), ("deaths", "nord_kivu"): (20, 14)}
     for (stem, slug), (moved, notified) in want.items():
-        d = BS.read_stream(STREAMS / f"{stem}_daily_{slug}.tsv")
-        n = BS.read_stream(STREAMS / f"{stem}_notified_{slug}.tsv")
+        d = _published(STREAMS / f"{stem}_daily_{slug}.tsv")
+        n = _published(STREAMS / f"{stem}_notified_{slug}.tsv")
         row = d.filter(pl.col("time") == "2026-07-22")
         assert int(row[f"{stem}_{slug}"][0]) == moved
         assert int(row["days_covered"][0]) == 1
@@ -4358,8 +4434,8 @@ def test_the_excluding_backlog_family_differs_only_where_the_source_says_so():
                 for p in str(r["places"]).split(",")}
     for stem in ("cases", "deaths"):
         for slug in ("national", "ituri", "nord_kivu", "haut_uele"):
-            a = BS.read_stream(STREAMS / f"{stem}_daily_{slug}.tsv")
-            b = BS.read_stream(STREAMS / f"{stem}_excluding_backlog_{slug}.tsv")
+            a = _published(STREAMS / f"{stem}_daily_{slug}.tsv")
+            b = _published(STREAMS / f"{stem}_excluding_backlog_{slug}.tsv")
             assert a["time"].to_list() == b["time"].to_list()
             j = a.select("time", pl.col(f"{stem}_{slug}").alias("base")).join(
                 b.select("time", pl.col(f"{stem}_{slug}").alias("var")),
@@ -4379,13 +4455,13 @@ def test_the_22_july_footnote_scope_excludes_haut_uele():
     substitution when this was first built.
     """
     for stem, value in (("cases", 5), ("deaths", 2)):
-        a = BS.read_stream(STREAMS / f"{stem}_daily_haut_uele.tsv")
-        b = BS.read_stream(STREAMS / f"{stem}_excluding_backlog_haut_uele.tsv")
+        a = _published(STREAMS / f"{stem}_daily_haut_uele.tsv")
+        b = _published(STREAMS / f"{stem}_excluding_backlog_haut_uele.tsv")
         row = lambda d: int(d.filter(pl.col("time") == "2026-07-22")
                             [f"{stem}_haut_uele"][0])
         assert row(a) == value and row(b) == value
     # and the notified reading, which is what would have been substituted
-    n = BS.read_stream(STREAMS / "cases_notified_haut_uele.tsv")
+    n = _published(STREAMS / "cases_notified_haut_uele.tsv")
     assert int(n.filter(pl.col("time") == "2026-07-22")
                ["cases_notified_haut_uele"][0]) == 6
 
@@ -4396,8 +4472,8 @@ def test_the_totals_the_register_and_release_notes_claim_are_real():
     number quoted in prose that no build checks is one that rots."""
     got = {}
     for stem in ("cases", "deaths"):
-        a = BS.read_stream(STREAMS / f"{stem}_daily_national.tsv")
-        b = BS.read_stream(STREAMS / f"{stem}_excluding_backlog_national.tsv")
+        a = _published(STREAMS / f"{stem}_daily_national.tsv")
+        b = _published(STREAMS / f"{stem}_excluding_backlog_national.tsv")
         got[stem] = (int(a[f"{stem}_national"].sum()),
                      int(b[f"{stem}_national"].sum()))
     # Pin the exclusion, not the totals. The archive total grows on every

@@ -61,6 +61,8 @@ from pathlib import Path
 
 import polars as pl
 
+from lib import streams as streams_lib
+
 # The one report-day whose case count is a backlog release rather than a day's
 # incidence: 369 against a same-week national norm near 80.
 BACKLOG_DUMPS = (dt.date(2026, 7, 22),)
@@ -71,13 +73,9 @@ def load(streams: Path, slug: str) -> pl.DataFrame:
     # `null_values="NA"`: the daily flow files hole the report days the source
     # said nothing on, and the `drop_nulls` below removes them only if they
     # are read as nulls rather than as the string "NA".
-    deaths = pl.read_csv(
-        streams / f"community_deaths_daily_{slug}.tsv", separator="\t",
-        try_parse_dates=True, null_values="NA"
-    )
-    cases = pl.read_csv(
-        streams / f"cases_daily_{slug}.tsv", separator="\t", try_parse_dates=True
-    )
+    deaths = streams_lib.read(
+        streams / f"community_deaths_daily_{slug}.tsv", dates=True)
+    cases = streams_lib.read(streams / f"cases_daily_{slug}.tsv", dates=True)
     return (
         deaths.join(cases, on="time", how="inner", suffix="_cases")
         .drop_nulls([f"community_deaths_{slug}", f"cases_{slug}"])
