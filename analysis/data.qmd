@@ -60,10 +60,10 @@ print.
 ```
 
 ```{python}
-figure("data/build/figures/availability.png")
+figure("data/build/figures/latest/availability.png")
 ```
 ![What each report states, at what geographic level, and the route it was read
-through.](../data/build/figures/availability.png)
+through.](../data/build/figures/latest/availability.png)
 
 The structure to keep in mind: the suspected and contact streams stop at the
 start of June; confirmed deaths begin then; the daily ascertainment split —
@@ -141,7 +141,7 @@ two versions of a revised report were read.
 dis = load("data/build/compare/inrb_disagreements.csv")
 scan = load("data/build/compare/scan_comparison.csv")
 cm = load_json("data/build/compare/compare_meta.json")["inrb"]
-figure("data/build/compare/comparison.png")
+figure("data/build/figures/latest/comparison.png")
 Markdown(f"""
 Against INRB-UMIE, per zone-day: **{stat(cm["cases_equal"])} of
 {stat(cm["cases_compared"])}** case values agree exactly and
@@ -160,10 +160,10 @@ file carries 192.
 """)
 ```
 ![Ours against INRB-UMIE on the identity line; the disagreements, signed, over
-time.](../data/build/compare/comparison.png)
+time.](../data/build/figures/latest/comparison.png)
 
 ```{python}
-figure("data/build/compare/comparison_series.png")
+figure("data/build/figures/latest/comparison_series.png")
 ```
 ![The three lineages as series: our summed zone rows, INSP's own printed
 totals (rings), and INRB-UMIE's transcription summed through the same
@@ -172,7 +172,7 @@ mixes value disagreements with row-coverage gaps in their file; ours − printed
 is pure arithmetic against the page, zero except the registered source
 self-disagreements. INRB's national file agrees with ours exactly wherever
 both exist, and carries five days from sitreps 001–004 that no other lineage
-has.](../data/build/compare/comparison_series.png)
+has.](../data/build/figures/latest/comparison_series.png)
 
 ## The identity method
 
@@ -204,27 +204,27 @@ on the assembled series below.
 ## The series
 
 ```{python}
-figure("data/build/figures/province_series.png")
+figure("data/build/figures/latest/province_series.png")
 ```
 ![Cumulative confirmed cases and deaths by province: the line is the sum of
 the printed health-zone rows; rings are the printed provincial-summary values,
 a check. Squares are the self-checking prose
-sentences.](../data/build/figures/province_series.png)
+sentences.](../data/build/figures/latest/province_series.png)
 
 ```{python}
-figure("data/build/figures/streams_detail.png")
+figure("data/build/figures/latest/streams_detail.png")
 ```
 ![Every extracted daily flow by province, with the source's own consolidation
 caveat as the pink
-rug.](../data/build/figures/streams_detail.png)
+rug.](../data/build/figures/latest/streams_detail.png)
 
 ```{python}
-figure("data/build/figures/national_detail.png")
+figure("data/build/figures/latest/national_detail.png")
 ```
 ![The four series the source prints for the country and nowhere else. Two are
 stocks — a reading at an instant, not a flow over a day — so they are drawn as
 levels and never smoothed. Same calendar as the panel
-above.](../data/build/figures/national_detail.png)
+above.](../data/build/figures/latest/national_detail.png)
 
 The fitted streams are weekly incidence per province, differenced from the
 forward-filled cumulative and binned from day 0
@@ -235,6 +235,16 @@ every printed province row.
 ```{python}
 lines = []
 for name, r in sorted(meta["reconciliation"].items()):
+    if r.get("kind") in ("care", "notified", "excluding_backlog"):
+        # Reconciliation shapes this table's "emitted vs moved" framing does
+        # not fit: care-ledger streams have their own figure (care_ledger.png)
+        # and a different check (census/admissions/exits, not a cumulative
+        # movement); notified and backlog-excluded streams check a distinct
+        # identity (vs_cumulative, differenced_total) this table's columns do
+        # not carry. Skipped rather than forced into columns that would
+        # misrepresent what was checked -- not shown here, not silently
+        # unchecked upstream.
+        continue
     if r.get("kind") == "stock":
         # A reading at an instant: no accumulation window, so no emitted-vs-
         # moved identity to report — the span is the series' own extent.
@@ -320,7 +330,7 @@ and a separate decision — but the confirmed census is the quantity a fit would
 want, because it reads a state where every fitted stream reads a flow.
 
 ```{python}
-figure("data/build/figures/care_ledger.png")
+figure("data/build/figures/latest/care_ledger.png")
 ```
 ![The care ledger the reports state in words. Panel A is the argument: the
 front-page tile and the care pillar's whole-response sentence are two readings
@@ -330,7 +340,7 @@ capacity per province — a ratio of sums, which cannot see a full centre inside
 a half-full province. Panel C is the ledger itself, faceted by the passage that
 printed it and never summed across facets. Panel D is every absconder count the
 reports print, drawn as isolated marks because that is what the data
-are.](../data/build/figures/care_ledger.png)
+are.](../data/build/figures/latest/care_ledger.png)
 
 ## What is not here
 
