@@ -21,6 +21,20 @@
 # under the cross-vintage L1 test. A row failing any check refuses its
 # vintage loudly.
 #
+# ONE HASH MUST NEVER GET A ROW HERE: 3eb931c88df2, sitrep 110, published
+# 2026-09-01. That figure is titled "Nombre des cas confirmes par date de
+# NOTIFICATION"; every figure below is "par date de debut des symptomes".
+# `lib/onset/identify.py` classified it `onset_daily` regardless, because it
+# separates the two families on fill colour and the source restyled its
+# notification chart into the onset chart's palette (dark blue 0.0067 against
+# a 0.05 threshold). The vintage is refused today only because this file has
+# no row for it, and the refusal register in `tests/test_onset.py` describes
+# missing rows as a backlog to clear -- so adding one here in good faith would
+# read notification-dated counts into the onset series, which is the exact
+# defect `identify.py` was written to prevent. Adding a row for this hash is
+# not the fix; a discriminator that does not rest on a colour the source
+# controls is.
+#
 # sha12       first 12 hex of the decoded-pixel SHA-256, the image identity
 # image_file  the published copy under data/build/onset/images/
 # first_label the leftmost labelled tick, exactly as printed
@@ -56,3 +70,4 @@ acdd9cc1ed36	2026-08-21-099-acdd9cc1ed36.png	06 avr 2026	2026-04-06	17 aout 2026
 0e94f3a740f4	2026-08-22-100-0e94f3a740f4.png	06 avr 2026	2026-04-06	17 aout 2026	2026-08-17
 a092256f32ec	2026-08-23-101-a092256f32ec.png	06 avr 2026	2026-04-06	24 aout 2026	2026-08-24
 f412bfc7d36e	2026-08-24-102-f412bfc7d36e.png	06 avr 2026	2026-04-06	24 aout 2026	2026-08-24
+513c1550bbf6	2026-09-04-113-513c1550bbf6.png	06 avr 2026	2026-04-06	31 aout 2026	2026-08-31

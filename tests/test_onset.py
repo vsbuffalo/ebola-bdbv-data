@@ -161,22 +161,53 @@ def test_stable_regions_never_fall(vintages):
 
 
 #: Onset vintages the reader refuses, each with the reason, so a refusal is a
-#: recorded gap rather than a silent skip. Four of the five are a maintenance
-#: backlog and not a defect in the reader: a new figure needs its printed tick
-#: labels registered in `registers/onset_axis_anchors.tsv` before it can be
-#: read, and 103, 106 and 107 arrived without that being done. 108 is
-#: different and is the one worth looking at -- its x ticks are not on the
-#: weekly grid every earlier report used, so its axis changed.
+#: recorded gap rather than a silent skip. They are four distinct causes and
+#: only one of them is a maintenance backlog:
 #:
-#: The cost is that the triangle ends on 2026-08-24 while the archive reaches
-#: 2026-08-30, so the newest onset cohort is more right-truncated than the
-#: reporting-delay summary's own follow-up figure implies.
+#:   * no anchor row (103, 106, 107) -- a genuine onset figure whose printed
+#:     tick labels have not been registered in
+#:     `registers/onset_axis_anchors.tsv` yet. This is the backlog, and
+#:     clearing an entry means reading the labels off the proof crop.
+#:
+#:   * first tick off the grid the rest form (59, 108, 109, 112) -- the
+#:     leftmost tick sits half a slot to a whole slot away from the weekly
+#:     spacing every other tick keeps, so the axis cannot be anchored on it.
+#:     108 and 109 are one image; 112 is a second with the same shape.
+#:
+#:   * the title's printed total not read (111) -- a genuine onset figure,
+#:     titled `(n = 4 936)` on the page, whose glyphs the title reader did not
+#:     resolve. It is refused rather than read because that total is the
+#:     checksum the bar sum is validated against, and reading the bars without
+#:     it would ship an unvalidated vintage.
+#:
+#:   * NOT AN ONSET FIGURE AT ALL (110) -- and this one is a defect, not a
+#:     gap. Sitrep 110 prints a chart titled "par date de notification" where
+#:     the others print "par date de debut des symptomes", and
+#:     `lib/onset/identify.py` classified it `onset_daily` anyway. That module
+#:     separates the two families on fill colour, and its premise -- "the
+#:     notification charts are the only ones with a dark blue fill" -- has
+#:     stopped holding: 110 measures dark_blue 0.0067 against a 0.05
+#:     threshold, because the source restyled its notification chart into the
+#:     onset chart's palette. The only thing standing between that chart and
+#:     the onset series is the missing anchor row, which the backlog above
+#:     invites someone to add. `registers/onset_axis_anchors.tsv` carries a
+#:     note naming the hash so nobody adds it; the classifier still needs a
+#:     discriminator that does not rest on a colour the source controls.
+#:
+#: The cost of the four real refusals is that the triangle's newest settled
+#: onset date is 2026-09-01 against an archive reaching 2026-09-04, so the
+#: newest onset cohort is more right-truncated than the reporting-delay
+#: summary's own follow-up figure implies.
 KNOWN_REFUSED = {
     59:  "first tick sits",
     103: "no anchor row",
     106: "no anchor row",
     107: "no anchor row",
     108: "x ticks are not on a weekly grid",
+    109: "x ticks are not on a weekly grid",
+    110: "no anchor row",
+    111: "printed n not found in the title",
+    112: "x ticks are not on a weekly grid",
 }
 
 
