@@ -102,7 +102,17 @@ _FINAL = re.compile(r"final|vf\d*|fv\d*|_ok|revised|corrig[eé]|corrected"
 
 # Non-MVE-2026 reports that the `sitrep` search also returns.
 _BARE = re.compile(r"\d{1,3}\.pdf", re.I)
-_EXCLUDE = re.compile(r"rougeole|rubeole|rubéole|MVE16|MVE-Ituri|MVE_Ituri", re.I)
+# `infod[ée]mi` catches the weekly INFODEMIC TRENDS bulletin, a separate
+# series the same site publishes: "BULLETIN HEBDOMADAIRE D'ANALYSE DES
+# TENDANCES INFODÉMIQUES EBOLA", an analysis of community feedback, calls to
+# the 151 hotline and media reaction. It carries no case counts and is not a
+# situation report. Only one of its uploads is named with `MVE`
+# (`Bulletin_infodemique_MVE_24-30_aout_2026.pdf`, 2026-09-08) and so only
+# that one ever reached the predicate; its siblings say `Ebola` and were
+# always filtered by the `MVE` test. Matching the series rather than the one
+# file means the next `MVE`-named issue does not reopen this.
+_EXCLUDE = re.compile(
+    r"rougeole|rubeole|rubéole|MVE16|MVE-Ituri|MVE_Ituri|infod[ée]mi", re.I)
 
 # The endpoint also returns situation reports for the PREVIOUS DRC Ebola
 # outbreak (the 16th epidemic, from September 2025), whose report numbers run
