@@ -141,8 +141,9 @@ DAY0 = dt.date(2026, 5, 19)
 BIN_DAYS = 7
 
 #: Streams are built for these; the rest are dropped and counted in the meta.
-#: Every province the source has ever reported a confirmed case in. All six,
-#: and it was three until 2026-09-01.
+#: Every province the source has ever reported a confirmed case in. All
+#: seven, and it was six until Sud-Ubangi joined at sitrep 119 (2026-09-10);
+#: three until 2026-09-01.
 #:
 #: The three added carry 26 cases between them against a national 6,100, and
 #: the case for publishing them anyway is that a province's importance to a
@@ -1760,11 +1761,16 @@ def populations(geojson: Path, pop_csv: Path) -> dict[str, int]:
     """Full-province denominators for the response frame: every zone in the
     geography, whether or not the province is affected or published.
 
-    The frame is the source's own, not ours. Sitrep 108: «60 des 151 (39,7%)
-    zones de santé *des six provinces* restent affectées depuis le début de
-    l'épidémie en RDC» -- six provinces, 151 health zones, and the geojson
-    holds exactly those 151. So this is the population the reports' own
-    affected-zone fraction is a fraction of.
+    The frame is the source's own, not ours, and it has moved once. Sitrep
+    108: «60 des 151 (39,7%) zones de santé *des six provinces* restent
+    affectées depuis le début de l'épidémie en RDC» -- six provinces, 151
+    health zones. Sitrep 119 (2026-09-10) widens it, adding Sud-Ubangi: «...
+    la RDC compte actuellement 62 zones de santé sur 167 (37,1%) affectées
+    et 7 provinces touchées». The geojson holds exactly those 167, cut from
+    the upstream nationwide file by `scripts/fetch_geography.py`. So this is
+    the population the reports' own affected-zone fraction is a fraction of,
+    at whichever frame the source currently states -- re-run `make
+    geography` if it widens again.
 
     Derived from the geojson rather than from `STREAM_PROVINCES`, which is the
     publication list and a different thing entirely. Iterating the publication
@@ -3212,13 +3218,15 @@ def main() -> None:
             "health_zones": n_zones,
             "national": sum(pops.values()),
             "definition":
-                "The six provinces of the response geography, all 151 health "
-                "zones, affected or not. This is the source's own frame: "
-                "sitrep 108 reads «60 des 151 (39,7%) zones de sante des six "
-                "provinces restent affectees depuis le debut de l'epidemie en "
-                "RDC». It is fixed by the geography, not by which provinces "
-                "this build publishes streams for, and a seventh province "
-                "reporting a case does not move it.",
+                "The response geography's current frame: 7 provinces, all "
+                "167 health zones, affected or not. This is the source's own "
+                "frame and it has moved once: sitrep 108 read «60 des 151 "
+                "(39,7%) zones de sante des six provinces» before sitrep 119 "
+                "(2026-09-10) added Sud-Ubangi -- «62 zones de sante sur 167 "
+                "(37,1%) affectees et 7 provinces touchees». Fixed by the "
+                "geography `scripts/fetch_geography.py` cuts, not by which "
+                "provinces this build publishes streams for; re-run `make "
+                "geography` if the source widens the frame again.",
             "source":
                 "WorldPop raster counts aggregated to health zone; see "
                 "data/raw/PROVENANCE.tsv for the pinned file and its hash. "

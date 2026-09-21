@@ -102,14 +102,23 @@ def test_reads_reconcile_with_their_own_titles(vintages):
     because the axis legitimately stops short of the report date, so the
     newest onsets are in the printed total but not yet plotted -- a real
     property of the chart, not reader slop, and one that costs more absolute
-    cases as the outbreak grows. An accepted vintage can legitimately sit
-    anywhere inside that 2%, so a fixed absolute bound is only really testing
-    a `printed_n` from when it was written (about 1,500): 127 prints 5,797
-    and reads 62 short, 1.07% -- comfortably inside the gate's own 2% and a
-    real test failure only because 30 stopped meaning 2% once the outbreak
-    grew past roughly 1,500 cases. Deriving the bound from the gate's own
-    constant is what keeps this assertion checking the gate rather than a
-    scale the outbreak has since outgrown."""
+    cases as the outbreak grows. A fixed absolute bound is only really
+    testing a `printed_n` from when it was written (about 1,500): 127 prints
+    5,797 and reads 62 short, 1.07%, a real test failure only because 30
+    stopped meaning 2% once the outbreak grew past roughly 1,500 cases.
+
+    THE BOUND IS STRICTLY TIGHTER THAN G2_UNDER, DELIBERATELY, not equal to
+    it. `status != "refused"` already means `gates.judge` itself guarantees
+    every surviving row sits inside G2_UNDER -- asserting `<= G2_UNDER` here
+    would be true by construction of the filter above and catch nothing but
+    a stale build artefact, the same failure mode this test exists to tell
+    apart from a real one. Three-quarters of the band -- 1.5% -- is the
+    companion to the "inner quarter" bound below (`0.25 * G2_UNDER`) read
+    from the other end: no accepted read should sit in the OUTER quarter of
+    G2's tolerance. It is independent of today's worst case rather than
+    fitted to it -- 1.07% clears it with real margin, not by construction --
+    so a future vintage genuinely drifting toward the edge of what G2 accepts
+    still has somewhere to fail before the gate itself would refuse it."""
     import polars as pl
     from lib.onset import gates
     read = vintages.filter(pl.col("read_total").is_not_null()
@@ -117,10 +126,12 @@ def test_reads_reconcile_with_their_own_titles(vintages):
                            & (pl.col("status") != "refused"))
     worst_frac = ((read["printed_n"] - read["read_total"])
                  / read["printed_n"]).max()
-    assert worst_frac <= gates.G2_UNDER, \
-        f"worst under-read is {worst_frac:.1%} of printed n, beyond G2's " \
-        f"own {gates.G2_UNDER:.0%} band -- an accepted vintage should never " \
-        f"fail the gate that accepted it"
+    bound = 0.75 * gates.G2_UNDER
+    assert worst_frac <= bound, \
+        f"worst under-read is {worst_frac:.1%} of printed n, beyond the " \
+        f"{bound:.1%} bound -- the outer quarter of G2's own " \
+        f"{gates.G2_UNDER:.0%} band, where an accepted vintage should not " \
+        f"sit even though the gate itself would still take it"
     # MOST READS LAND WELL INSIDE THE GATE'S BAND, NOT MERELY INSIDE IT: the
     # same scale argument applies to "exact" as to "worst" above. `<= 1 case`
     # was a tight bound while `px_per_case` ran 5-7 (sitreps 064-083); it has
