@@ -4500,10 +4500,17 @@ def draw_zone_spread(inputs: dict[str, Path], out: Path) -> None:
                               label="first case reported this fortnight")],
                loc="lower left", bbox_to_anchor=(0.01, 0.005), ncols=2,
                fontsize=8, frameon=False)
+    # DERIVED, NOT WRITTEN AS "SIX": the geojson IS the affected-province
+    # frame (`fetch_geography.AFFECTED`), so its own province count is the
+    # honest one -- a hardcoded "six" here was the same defect as the
+    # hand-kept province lists elsewhere in this file, just in a caption
+    # instead of a dict, and so it went stale silently instead of raising.
+    n_provinces = len({f["properties"]["province"] for f in geo["features"]})
     _header(fig, "How the outbreak reached each health zone",
-            f"{len(first)} of {len(geo['features'])} health zones in the six "
-            f"affected provinces have reported a confirmed case, "
-            f"{bins[0]:%-d %B} to {bins[-1] + dt.timedelta(days=13):%-d %B %Y}")
+            f"{len(first)} of {len(geo['features'])} health zones in the "
+            f"{n_provinces} affected provinces have reported a confirmed "
+            f"case, {bins[0]:%-d %B} to "
+            f"{bins[-1] + dt.timedelta(days=13):%-d %B %Y}")
     fig.savefig(out, dpi=200)
     plt.close(fig)
 
