@@ -93,6 +93,9 @@ from matplotlib.ticker import FixedLocator, MaxNLocator, MultipleLocator
 
 #: Fixed identity -> colour, in outbreak-size order. Colour follows the
 #: province, never its rank in any particular chart.
+#: A place with no hue here falls back to grey at the call site rather than
+#: raising: a province missing its colour is cosmetic, a province missing
+#: from the figure is not. Okabe-Ito, colourblind-safe.
 PROVINCE_COLOR = {
     "Ituri": "#0072B2",
     "Nord-Kivu": "#D55E00",
@@ -100,6 +103,11 @@ PROVINCE_COLOR = {
     "Tshopo": "#CC79A7",
     "Sud-Kivu": "#56B4E9",
     "Bas-Uélé": "#E69F00",
+    # Joined at sitrep 119 with one case in Bulu. Okabe-Ito's eighth slot is
+    # its yellow, which is unreadable as a thin line on white, so this takes a
+    # neutral dark grey: distinguishable from all six hues above without
+    # claiming a place in a palette it does not belong to.
+    "Sud-Ubangi": "#555555",
 }
 
 #: Level is ordinal: one hue, finest darkest.
@@ -1995,7 +2003,7 @@ def draw_streams_detail(inputs: dict[str, Path], out: Path) -> None:
                     continue
                 xs = _dates(d["date"])
                 ys = d["v"].to_list()
-            color = PROVINCE_COLOR[prov]
+            color = PROVINCE_COLOR.get(prov, "#666666")
             ax.scatter(xs, ys, s=7, color="#9a9a9a", zorder=2)
             smoothed = _roll_geomean(xs, ys)
             ax.plot(xs, smoothed, color=color, linewidth=1.7, zorder=3)
@@ -2551,7 +2559,7 @@ def draw_care_ledger(inputs: dict[str, Path], out: Path) -> None:
         if not d.height:
             continue
         axa.scatter(_dates(d["date"]), d["census_confirmed"].to_list(), s=24,
-                    marker="^", color=PROVINCE_COLOR[p], zorder=6,
+                    marker="^", color=PROVINCE_COLOR.get(p, "#666666"), zorder=6,
                     label=("care prose, one province's bullet — confirmed "
                            "(colour keys the province panels below)"
                            if first_triangle else "_"))
@@ -2912,7 +2920,7 @@ def draw_residuals(inputs: dict[str, Path], out: Path) -> None:
         m2 = sum((x - mean) ** 2 for x in res) / n
         m3 = sum((x - mean) ** 3 for x in res) / n
         skew = m3 / m2 ** 1.5
-        color = PROVINCE_COLOR[prov]
+        color = PROVINCE_COLOR.get(prov, "#666666")
 
         ax = axes[0][ci]
         ax.hist(res, bins=25, color=color, alpha=0.85)
@@ -4503,13 +4511,27 @@ def draw_zone_spread(inputs: dict[str, Path], out: Path) -> None:
 #: One hue per province, fixed. Assigned in the order the outbreak reached
 #: them and never by rank, so a province does not change colour between
 #: releases as case counts overtake one another.
-PROV_SLUG = {"Ituri": "ituri", "Nord-Kivu": "nord_kivu",
-             "Haut-Uélé": "haut_uele", "Tshopo": "tshopo",
-             "Sud-Kivu": "sud_kivu", "Bas-Uélé": "bas_uele"}
+#: DERIVED, NOT RESTATED. This was a hand-kept copy of `STREAM_PROVINCES` and
+#: went stale the moment a seventh province joined: Sud-Ubangi arrived in
+#: sitrep 119, the streams published it, and this figure died on a KeyError
+#: because the copy still held six. The publication list has exactly one home.
+def _prov_slug() -> dict[str, str]:
+    import sys as _sys
+    _sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from build_streams import STREAM_PROVINCES
+    return dict(STREAM_PROVINCES)
 
+
+PROV_SLUG = _prov_slug()
+
+#: Okabe-Ito, which is eight colours and so has room for a province or two
+#: more; a place with no entry falls back to grey rather than stopping the
+#: figure, because a province missing its hue is a cosmetic problem and a
+#: province missing from the page is not.
 PROV_COLOUR = {"Ituri": "#0072B2", "Nord-Kivu": "#D55E00",
                "Haut-Uélé": "#009E73", "Tshopo": "#CC79A7",
-               "Sud-Kivu": "#8C6D31", "Bas-Uélé": "#56B4E9"}
+               "Sud-Kivu": "#8C6D31", "Bas-Uélé": "#56B4E9",
+               "Sud-Ubangi": "#666666"}
 
 
 def draw_province_overview(inputs: dict[str, Path], out: Path) -> None:
@@ -4560,7 +4582,9 @@ def draw_province_overview(inputs: dict[str, Path], out: Path) -> None:
         # Reading the streams also makes this figure a check on what is
         # published: a province that stops being published loses its panel, and
         # the missing input stops the figure rather than quietly shrinking it.
-        slug = PROV_SLUG[prov]
+        slug = PROV_SLUG.get(prov)
+        if slug is None:
+            continue
         st = _stream(inputs[f"cases_daily_{slug}"]).drop_nulls(f"cases_{slug}")
         xs = [mdates.date2num(x) for x in
               st["time"].str.to_date().to_list()]
@@ -4648,10 +4672,13 @@ FIGURES = {
         draw_province_overview,
         {"province_series": "data/build/series/province_series.csv",
          "caveat": "data/build/series/provisional_caveat.csv",
+         # Derived from the publication list, like `PROV_SLUG` above and for
+         # the same reason: this was the fourth hand-kept copy of the province
+         # set, and a seventh province meant the figure asked for a stream its
+         # own declared inputs did not contain.
          **{f"cases_daily_{s}":
             f"data/build/streams/cases_excluding_backlog_{s}.tsv"
-            for s in ("ituri", "nord_kivu", "haut_uele", "tshopo",
-                      "sud_kivu", "bas_uele")}}),
+            for s in PROV_SLUG.values()}}),
     "streams_detail": (draw_streams_detail,
                        {"zone_table": "data/build/series/zone_table.csv",
                         "caveat": "data/build/series/provisional_caveat.csv",

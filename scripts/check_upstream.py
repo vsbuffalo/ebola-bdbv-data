@@ -56,7 +56,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fetch_sitrep_index import (API, EPIDEMIC_START, QUERY, _BARE, _NUM,
                                 parse_row)
-from lib.provenance import REPO_ROOT, UA
+from lib.provenance import REPO_ROOT, UA, _encode
 from lib.report_date import load_external_sitreps
 
 OK, BEHIND, CHANGED, UNREACHABLE, STALE = 0, 1, 2, 3, 4
@@ -117,28 +117,6 @@ def _alive(url: str) -> bool:
     return _head(url)[0] == 200
 
 
-def _ascii_url(url: str) -> str:
-    """A URL `urllib` can actually send, with non-ASCII path bytes
-    percent-encoded.
-
-    INSP NAMES 52 OF ITS 116 UPLOADS WITH `N°`, and `urllib` does not encode
-    non-ASCII path characters the way a browser or curl does -- it raises
-    `UnicodeEncodeError` while building the request, before any socket opens.
-    `_head` catches that with everything else and reports (0, -1), so the
-    check called a live URL UNVERIFIED and the gate refused to pass. Which of
-    those 52 it hit depended only on which URLs the rotating spot-check
-    sampled that day, so the failure looked intermittent and network-shaped
-    rather than total and local.
-
-    Only the PATH is encoded, and only bytes that are not already escaped:
-    `safe` keeps `%` so a URL recorded in already-encoded form is not
-    double-encoded into a 404.
-    """
-    parts = urllib.parse.urlsplit(url)
-    return urllib.parse.urlunsplit(
-        parts._replace(path=urllib.parse.quote(parts.path, safe="/%:@&=+$,~")))
-
-
 def _head(url: str) -> tuple[int, int]:
     """(status, content_length) for one URL; (0, -1) when the request itself
     failed. A dead link in the committed index is a CHANGE, and a link whose
@@ -147,7 +125,7 @@ def _head(url: str) -> tuple[int, int]:
     throwing them away made an in-place revision invisible end to end. A
     network failure is UNVERIFIED, never 'alive': treating an exception as a
     pass let a timeout wave a dead link through."""
-    req = urllib.request.Request(_ascii_url(url), method="HEAD",
+    req = urllib.request.Request(_encode(url), method="HEAD",
                                  headers={"User-Agent": UA})
     try:
         with urllib.request.urlopen(req, timeout=30) as r:

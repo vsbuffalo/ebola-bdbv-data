@@ -2,7 +2,7 @@
 # by design: `build` and `doc` never touch the network, so a rebuild can never
 # silently change what the source says.
 
-.PHONY: fmt verdict figures-release figures-compare watch-data-channel release-check escape-fraction care-ledger oneoff-testing oneoff-death-split oneoff-death-flow cron-install cron-uninstall check fetch refresh manifest verify build streams compare figures onset external \
+.PHONY: geography fmt verdict figures-release figures-compare watch-data-channel release-check escape-fraction care-ledger oneoff-testing oneoff-death-split oneoff-death-flow cron-install cron-uninstall check fetch refresh manifest verify build streams compare figures onset external \
 	external-update scan-refresh doc serve test
 
 # WHERE A FIGURE LANDS SAYS WHICH DATA MADE IT. Every figure this repository
@@ -29,6 +29,20 @@ FIGDIR  := data/build/figures/$(RELEASE)
 ##            the reports that exist.
 check:
 	@uv run python scripts/check_upstream.py
+
+## geography -- NETWORKED, and run only when a province JOINS the outbreak.
+##            Cuts the nationwide health-zone reference down to the provinces
+##            the reports say are affected, which is the frame their own
+##            "N zones de sante sur M" sentence counts against and therefore
+##            the denominator every per-capita quantity divides by. Refuses
+##            unless the cut comes out at --expect-zones, the count the
+##            reports print: 167 across 7 provinces since sitrep 119 added
+##            Sud-Ubangi, 151 across 6 before it. Rewrites the two committed
+##            reference files and their PROVENANCE rows; the frame itself is
+##            declared in AFFECTED in the script, one line per province with
+##            the report that added it.
+geography:
+	uv run python scripts/fetch_geography.py
 
 ## fetch   -- NETWORKED. Re-read the index and fetch any PDF we do not hold.
 ##            Run `check` first: when it reports CHANGED, this may do the wrong

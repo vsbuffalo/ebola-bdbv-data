@@ -162,6 +162,13 @@ PROVINCE_ALIASES = {
     "bas uele": "Bas-Uélé",
     "kinshasa": "Kinshasa",
     "maniema": "Maniema",
+    # Joined the outbreak at sitrep 119 (2026-09-10): one confirmed case and
+    # one death in Bulu health zone, printed as its own province row beneath
+    # Bas-Uélé. The source spaces the name; the hyphenated spelling is the
+    # standard one and is accepted so a later report changing its mind does
+    # not reopen this.
+    "sud-ubangi": "Sud-Ubangi",
+    "sud ubangi": "Sud-Ubangi",
 }
 
 

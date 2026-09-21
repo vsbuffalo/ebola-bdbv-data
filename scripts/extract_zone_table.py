@@ -76,10 +76,26 @@ MARKERS = "*†‡"
 #: did not say.
 NOT_REPORTED = {"—", "–", "-", "ND", "N/D", "NA", "N/A", "*"}
 
+#: EVERY SPELLING OF EVERY PROVINCE THE REPORTS MIGHT NAME, because a province
+#: missing from this set is not merely unlabelled -- `norm` keeps the hyphen,
+#: so each name is listed both hyphenated and spaced.
+#:
+#: A MISSING PROVINCE CORRUPTS ITS NEIGHBOUR SILENTLY, which is why this set is
+#: worth keeping ahead of the outbreak rather than in step with it. An
+#: unrecognised province header is not dropped; it is read as a health zone,
+#: and `carry_province` then files it -- and every zone printed beneath it --
+#: under whichever province was named last. `Sud Ubangi` arrived in sitrep 119
+#: (2026-09-10) with one case in Bulu, and both its header row and Bulu were
+#: carried into Bas-Uélé above them, putting that province 2 cases and 2 deaths
+#: over its own printed total on nine consecutive reports. Only the printed
+#: provincial total caught it; a province the source does not print a total for
+#: would have been absorbed in silence.
 PROVINCES = {norm(p) for p in (
     "Ituri", "Nord-Kivu", "Nord Kivu", "Sud-Kivu", "Sud Kivu", "Haut-Uele",
     "Haut-Uélé", "Haut Uele", "Haut Uélé", "Tshopo", "Kinshasa", "Maniema",
-    "Bas-Uele", "Bas-Uélé", "Bas Uele", "Bas Uélé")}
+    "Bas-Uele", "Bas-Uélé", "Bas Uele", "Bas Uélé",
+    "Sud-Ubangi", "Sud Ubangi", "Nord-Ubangi", "Nord Ubangi", "Equateur",
+    "Équateur", "Mongala", "Tshuapa")}
 
 TOTAL = re.compile(r"^total")
 #: `Sous total Ituri` -- a province's own total, printed as a labelled subtotal

@@ -2852,8 +2852,12 @@ def test_the_population_table_covers_the_geography_not_the_published_set(
     assert narrowed == full, (
         "the population table tracked the publication list; a province we "
         "stop publishing would silently leave the susceptible pool")
+    # Seven since sitrep 119 (2026-09-10) added Sud-Ubangi. The frame is the
+    # reports' own -- "62 zones de sante sur 167 (37,1%) affectees et 7
+    # provinces touchees" -- and `scripts/fetch_geography.py` cuts the
+    # nationwide reference to exactly it.
     assert set(full) == {"bas_uele", "haut_uele", "ituri", "nord_kivu",
-                         "sud_kivu", "tshopo"}
+                         "sud_kivu", "tshopo", "sud_ubangi"}
 
 
 def test_the_population_parts_add_to_the_whole_exactly():
@@ -2862,7 +2866,11 @@ def test_the_population_parts_add_to_the_whole_exactly():
     and no way to tell which is authoritative."""
     pops = BS.populations(GEOJSON, POPCSV)
     assert all(isinstance(v, int) and v > 0 for v in pops.values())
-    assert sum(pops.values()) == 31_898_994
+    # 31,898,994 over the six-province frame, plus Sud-Ubangi's 3,682,751 when
+    # sitrep 119 widened the reports' own frame to seven. Pinned as a literal
+    # because that is the point: this constant must never move without someone
+    # changing this line and saying why.
+    assert sum(pops.values()) == 35_581_745
 
 
 def test_a_zone_with_population_but_no_geography_stops_the_build(tmp_path):
@@ -3551,16 +3559,20 @@ def test_province_occupancy_cannot_see_a_saturated_centre():
 def test_the_absconder_series_is_thin_and_the_figure_must_not_join_it():
     """An absconder is a confirmed patient who leaves care still infectious --
     the complement of the isolation census, and the two are halves of one
-    transition. The count is printed on 24 province-days in the whole archive,
-    only 5 of them after the tile's confirmed half stops, and 14 of the 24 are
-    the whole-response figure rather than a province's. One is a printed zero,
-    which is an observation and not an absence."""
+    transition. The count is printed on 26 province-days in the whole archive,
+    7 of them after the tile's confirmed half stops, and 14 of the 26 are the
+    whole-response figure rather than a province's. One is a printed zero,
+    which is an observation and not an absence.
+
+    26 rather than 24 as of the 2026-09-18 archive: sitrep 115 (Tshopo, 1) and
+    sitrep 121 (Bas-Uélé, 1) are both new province-level rows, so `n` and
+    `n_after` move by two each and `n_national`/`n_zero` do not."""
     import plot_figures as P
     care, banner = _built()
     last = P.census_agreement(care, banner)["tile_confirmed_last"]
     a = P.absconder_coverage(care, last)
-    assert a["n"] == 24
-    assert a["n_after"] == 5
+    assert a["n"] == 26
+    assert a["n_after"] == 7
     assert a["n_national"] == 14
     assert a["n_zero"] == 1
 

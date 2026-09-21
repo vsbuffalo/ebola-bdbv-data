@@ -160,7 +160,8 @@ BIN_DAYS = 7
 #: missing stream does not.
 STREAM_PROVINCES = {"Ituri": "ituri", "Nord-Kivu": "nord_kivu",
                     "Haut-Uélé": "haut_uele", "Tshopo": "tshopo",
-                    "Sud-Kivu": "sud_kivu", "Bas-Uélé": "bas_uele"}
+                    "Sud-Kivu": "sud_kivu", "Bas-Uélé": "bas_uele",
+                    "Sud-Ubangi": "sud_ubangi"}
 
 
 def daily_cumulative(panel: pl.DataFrame, province: str, col: str) -> pl.DataFrame:
