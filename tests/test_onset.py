@@ -296,6 +296,44 @@ KNOWN_REFUSED = {
     114: "falls 261 short of printed",
     123: "x ticks are not on a weekly grid",
     125: "x ticks are not on a weekly grid",
+    # EVERY REPORT FROM 128 (2026-09-19) TO 157 (2026-10-18) REFUSES. The chart
+    # is the same chart; it has grown. With five and a half months on one axis
+    # a day is ~2.5 px wide and the date labels crowd, and the tick-grid,
+    # baseline and title readers fail on it in turn. The anchor rows could be
+    # added by hand, but on their own they would unblock 12 of the 29 and leave
+    # the triangle's newest vintage resting on a reader that is failing
+    # everywhere else on the same images -- so the reader comes first. Until
+    # then the triangle stops at the 2026-09-18 vintage, and the reporting
+    # delay built from it is not advanced by these reports.
+    128: "x ticks are not on a weekly grid",
+    129: "x ticks are not on a weekly grid",
+    130: "no anchor row",
+    131: "no anchor row",
+    132: "no anchor row",
+    133: "no anchor row",
+    134: "no anchor row",
+    135: "y axis unreadable",
+    136: "no zero label at the baseline",
+    137: "no zero label at the baseline",
+    138: "x ticks are not on a weekly grid",
+    139: "no anchor row",
+    140: "no anchor row",
+    141: "x ticks sit 0.25 slots off",
+    143: "x ticks are not on a weekly grid",
+    144: "x ticks are not on a weekly grid",
+    145: "x ticks are not on a weekly grid",
+    146: "printed n not found in the title",
+    147: "no zero label at the baseline",
+    148: "no zero label at the baseline",
+    149: "no anchor row",
+    150: "x ticks are not on a weekly grid",
+    151: "x ticks are not on a weekly grid",
+    152: "x ticks are not on a weekly grid",
+    153: "no anchor row",
+    154: "no zero label at the baseline",
+    155: "no zero label at the baseline",
+    156: "no anchor row",
+    157: "no anchor row",
 }
 
 

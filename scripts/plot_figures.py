@@ -108,6 +108,9 @@ PROVINCE_COLOR = {
     # neutral dark grey: distinguishable from all six hues above without
     # claiming a place in a palette it does not belong to.
     "Sud-Ubangi": "#555555",
+    # Joined at sitrep 155 with two cases in Wapinda; a lighter neutral grey,
+    # on the same reasoning as Sud-Ubangi's.
+    "Nord-Ubangi": "#999999",
 }
 
 #: Level is ordinal: one hue, finest darkest.
@@ -1348,11 +1351,21 @@ def outcome_headline(led: pl.DataFrame) -> dict:
 #: different claims, and absence alone cannot tell them apart: a report that
 #: was never published, a report that printed no health-zone table at all, and
 #: a table that printed only its 24-hour columns.
+#: Why a report day is missing from the ledger, keyed on what the zone-table
+#: reader found that day: (status, table). Every cause is named; an unlisted
+#: combination raises rather than borrowing one of these labels.
+#:
+#: THE FOURTH CAUSE IS A TILE, NOT A TABLE. Sitreps 143-147 print a full
+#: cumulative zone table, but the front-page recovery tile the ledger also
+#: needs is refused -- a highlight bullet is drawn over the tile row -- and
+#: these days used to be labelled "no cumulative columns printed", which the
+#: pages contradict.
 OUTCOME_GAP_WHY = {
     None: "no report\npublished",
-    "no_matching_table": "no health-zone\ntable printed",
+    ("no_matching_table", None): "no health-zone\ntable printed",
+    ("ok", "zone_daily"): "no cumulative\ncolumns printed",
+    ("ok", "zone_cumulative"): "recovery tile\nnot read",
 }
-OUTCOME_GAP_DEFAULT = "no cumulative\ncolumns printed"
 
 
 def outcome_gaps(led: pl.DataFrame, status: pl.DataFrame) -> list[dict]:
@@ -1366,7 +1379,10 @@ def outcome_gaps(led: pl.DataFrame, status: pl.DataFrame) -> list[dict]:
     across them, because a cumulative band carried over a hole is an observed
     value the source never printed.
     """
-    published = {r["date"]: str(r["status"]) for r in status.iter_rows(named=True)}
+    published = {r["date"]: (str(r["status"]),
+                             None if r["status"] == "no_matching_table"
+                             else r["table"])
+                 for r in status.iter_rows(named=True)}
     have = set(led["date"].to_list())
     lo = dt.date.fromisoformat(led["date"].min())
     hi = dt.date.fromisoformat(led["date"].max())
@@ -1378,7 +1394,13 @@ def outcome_gaps(led: pl.DataFrame, status: pl.DataFrame) -> list[dict]:
         key = probe.isoformat()
         if key not in have:
             st = published.get(key)
-            why = OUTCOME_GAP_WHY.get(st, OUTCOME_GAP_DEFAULT)
+            if st not in OUTCOME_GAP_WHY:
+                raise SystemExit(
+                    f"outcome ledger misses {key} for a cause no label names "
+                    f"(zone-table status, table = {st}); add it to "
+                    "OUTCOME_GAP_WHY and to the outcomes caption in "
+                    "figures/README.md")
+            why = OUTCOME_GAP_WHY[st]
             if cur and cur["why"] == why and cur["hi"] + dt.timedelta(1) == probe:
                 cur["hi"] = probe
             else:
@@ -2390,11 +2412,26 @@ def occupancy_at_province_grain(care: pl.DataFrame) -> dict:
     reports name saturated centres in their `Défis` prose, which the care
     extraction deliberately does not read, so nothing below can be read as
     evidence that no centre in a province is full.
+
+    A CENSUS THE PAGE SAYS IS NOT THE OCCUPIED BEDS IS NOT AN OCCUPANCY. From
+    about sitrep 130 Nord-Kivu's headline census counts every patient
+    hospitalised, including those in ordinary facilities outside the CTE/CT --
+    "468 patients ... sont hospitalisés : 328 dans les CTE/CT pour 374 lits,
+    soit un taux d'occupation de 87,7 %" (sitrep 152) -- so census over beds
+    reads 125 % where the page prints 87,7 %. The numerator is therefore the
+    occupied-bed count where the page prints one (`beds_occupied`, else
+    `census_dedicated`), and the census only where it prints neither. Rows
+    whose own rate check fails are left out; rows printing no rate cannot be
+    tested and stay.
     """
+    occupied = pl.coalesce("beds_occupied", "census_dedicated", "census")
     d = (care.filter((pl.col("province") != "Ensemble")
-                     & pl.col("census").is_not_null()
-                     & pl.col("beds").is_not_null() & (pl.col("beds") > 0))
-         .with_columns((100 * pl.col("census") / pl.col("beds")).alias("occ")))
+                     & occupied.is_not_null()
+                     & pl.col("beds").is_not_null() & (pl.col("beds") > 0)
+                     & ~pl.col("checks").fill_null("")
+                     .str.contains("occupancy(?:_occupied)?=fail"))
+         .with_columns((100 * occupied / pl.col("beds")).alias("occ"),
+                       occupied.alias("census")))
     over = d.filter(pl.col("occ") > 100).sort("date")
     return {
         "n": d.height,
@@ -4538,7 +4575,7 @@ PROV_SLUG = _prov_slug()
 PROV_COLOUR = {"Ituri": "#0072B2", "Nord-Kivu": "#D55E00",
                "Haut-Uélé": "#009E73", "Tshopo": "#CC79A7",
                "Sud-Kivu": "#8C6D31", "Bas-Uélé": "#56B4E9",
-               "Sud-Ubangi": "#666666"}
+               "Sud-Ubangi": "#666666", "Nord-Ubangi": "#AAAAAA"}
 
 
 def draw_province_overview(inputs: dict[str, Path], out: Path) -> None:

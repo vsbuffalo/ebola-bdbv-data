@@ -83,6 +83,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from aggregate_provinces import carry_province
+from extract_care_prose import CLOSURES as CARE_CLOSURES
 from lib.tablespec import norm as _norm
 
 #: observed spelling -> canonical zone name, folded on both sides. Two files:
@@ -142,8 +143,8 @@ BIN_DAYS = 7
 
 #: Streams are built for these; the rest are dropped and counted in the meta.
 #: Every province the source has ever reported a confirmed case in. All
-#: seven, and it was six until Sud-Ubangi joined at sitrep 119 (2026-09-10);
-#: three until 2026-09-01.
+#: eight since Nord-Ubangi joined at sitrep 155 (2026-10-16); seven from
+#: sitrep 119 (2026-09-10, Sud-Ubangi); three until 2026-09-01.
 #:
 #: The three added carry 26 cases between them against a national 6,100, and
 #: the case for publishing them anyway is that a province's importance to a
@@ -162,7 +163,32 @@ BIN_DAYS = 7
 STREAM_PROVINCES = {"Ituri": "ituri", "Nord-Kivu": "nord_kivu",
                     "Haut-Uélé": "haut_uele", "Tshopo": "tshopo",
                     "Sud-Kivu": "sud_kivu", "Bas-Uélé": "bas_uele",
-                    "Sud-Ubangi": "sud_ubangi"}
+                    "Sud-Ubangi": "sud_ubangi", "Nord-Ubangi": "nord_ubangi"}
+
+
+def opening_levels(panel: pl.DataFrame) -> dict:
+    """Each province's first cumulative, which no row of its flow files holds.
+
+    A flow file is the cumulative differenced, so its first row is the
+    movement from the province's first reading to its second, and the first
+    reading itself -- the cases a province already had the day it entered the
+    reports -- is in no row. For Ituri that is 30 of 6,960 cases; for a
+    province that joined mid-outbreak it is its arrival (Tshopo's first 4
+    cases), and for Nord-Ubangi on 2026-10-18 its whole record. Published so a
+    consumer can add a seeding term at the right date rather than discover the
+    province files do not sum to the national one. Read from the SAME
+    cumulative the streams difference, so opening + emitted = final exactly.
+    See notes/2026-10-20-province-opening-level.md.
+    """
+    out = {}
+    for province, slug in STREAM_PROVINCES.items():
+        entry = {}
+        for name, col in (("cases", "cum_cases"), ("deaths", "cum_deaths")):
+            dc = daily_cumulative(panel, province, col).drop_nulls("cum")
+            if dc.height:
+                entry[name] = {"date": str(dc["date"][0]), "cum": int(dc["cum"][0])}
+        out[slug] = entry
+    return out
 
 
 def daily_cumulative(panel: pl.DataFrame, province: str, col: str) -> pl.DataFrame:
@@ -1106,7 +1132,8 @@ def _aside(path: Path, entry: dict[str, str], shape: str) -> list[str]:
 
 def data_dictionary(written: list[Written], register: Path, *,
                     data_date: str, revisions: Path,
-                    uganda: Path | None) -> str:
+                    uganda: Path | None,
+                    exports: list[Path] = ()) -> str:
     """The per-release reference card for the files this run published.
 
     FAIL-CLOSED, over the files THIS RUN WROTE. The set comes from the write
@@ -1134,7 +1161,8 @@ def data_dictionary(written: list[Written], register: Path, *,
     # The two files that are not observation streams are documented from the
     # same register, in their own sections, so their sentences cannot go
     # missing quietly either.
-    asides = ["revisions"] + (["uganda_exports"] if uganda is not None else [])
+    asides = (["revisions"] + (["uganda_exports"] if uganda is not None else [])
+              + (["exports"] if exports else []))
     if absent := [f for f in asides if f not in families]:
         sys.exit(f"{FAMILY_REGISTER} has no row for {absent}, and these files "
                  "are published: every section of the data dictionary is "
@@ -1274,11 +1302,13 @@ def data_dictionary(written: list[Written], register: Path, *,
         "`n_province_days`.",
         "- **`checks` is the source's own arithmetic on the passage a value "
         "came from**, on the streams read out of prose: `closes` where every "
-        "check bearing on that quantity passed, `contradicts` where one "
-        "failed — the report's numbers disagreeing with each other, kept and "
-        "flagged rather than dropped — and `unchecked` where the passage "
-        "offered nothing to check that quantity against. Unchecked is not "
-        "wrong; it is unverified.", "",
+        "check bearing on that quantity passed and at least one was exact (the "
+        "passage's numbers reproduce the value: a split that sums, a printed "
+        "rate that divides out), `contradicts` where one failed — the report's "
+        "numbers disagreeing with each other, kept and flagged rather than "
+        "dropped — and `unchecked` where nothing could verify it, including "
+        "rows whose only check was a bound such as recoveries ≤ exits, which "
+        "almost any reading passes. Unchecked is not wrong; it is unverified.", "",
     ]
 
     # A STREAM THAT STOPS EARLY LOOKS EXACTLY LIKE ONE THAT IS UP TO DATE
@@ -1398,9 +1428,21 @@ def data_dictionary(written: list[Written], register: Path, *,
             "bulletins pin, so there is no `days_covered` and no "
             "`n_report_days` — the rows accumulate over no window, and a span "
             "column would assert one that does not exist.")
+    for path in exports:
+        country = path.stem.removeprefix("exports_").replace("_", " ").title()
+        out += _aside(
+            path, {**families["exports"],
+                   "title": f"{families['exports']['title']}: {country}"},
+            "A STOCK read at the moments a primary source prints a total, one "
+            "row per source and date, `NA` wherever that source did not print "
+            "that number. The per-case table behind it, with the source's "
+            "classification of each case verbatim, is "
+            "`reference/export_cases.tsv`; the gap between the cases it "
+            "individuates and each printed total is "
+            "`reference/export_reconciliation.tsv`.")
 
     out += ["The contract these files ship under, and what a consumer must do "
-            "when it changes, is in the repository's `README.md` and "
+            "when it changes, is in the repository's `docs/data-contract.md` and "
             "`CHANGELOG.md`. `meta.json` beside them carries the build's "
             "global fields — `day0`, `bin_days`, `population`, the dropped "
             "provinces and the reconciliation record.", ""]
@@ -1658,6 +1700,15 @@ CARE_STREAMS = (
      ("census_split", "occupancy_confirmed", "confirmed_le_census")),
     ("care_census_suspect", "census_suspect",
      ("census_split", "occupancy_suspect")),
+    # The part of the census the bullet places in dedicated structures (CTE/CT,
+    # "structures normées"), printed by Nord-Kivu from sitrep 124 beside the
+    # total, which `care_census` keeps. One is a subset of the other: a model
+    # fits one of them against an isolation compartment, never both.
+    # Scoped to the rate check alone: the extraction already drops a "part"
+    # that is not smaller than its total, so the bound could never fail and
+    # would mark every row `closes` while proving nothing.
+    ("care_census_dedicated", "census_dedicated",
+     ("occupancy_occupied",)),
     ("care_admissions", "admissions",
      ("admissions_split",)),
     ("care_exits", "exits",
@@ -1677,7 +1728,8 @@ CARE_STREAMS = (
 #: for that day, which is why they carry `days_covered` of exactly 1: the
 #: source prints one 24-hour figure and this build never spreads it.
 CARE_STOCK_FAMILIES = frozenset(
-    {"care_census", "care_census_confirmed", "care_census_suspect"})
+    {"care_census", "care_census_confirmed", "care_census_suspect",
+     "care_census_dedicated"})
 
 
 #: WHAT A ROW'S VALUE COVERS, per family, published in `meta.json` so a
@@ -1713,9 +1765,10 @@ VALUE_SPAN = {
     "care_exits_absconded": "report_day", "care_exits_deaths": "report_day",
     # a reading at an instant: accumulates over no window at all
     "care_census": "stock", "care_census_confirmed": "stock",
-    "care_census_suspect": "stock", "patients_isolated": "stock",
+    "care_census_suspect": "stock", "care_census_dedicated": "stock",
+    "patients_isolated": "stock",
     "patients_isolated_confirmed": "stock", "cumul_recovered": "stock",
-    "uganda_exports": "stock",
+    "uganda_exports": "stock", "exports": "stock",
     # not an observation stream
     "revisions": "none",
 }
@@ -1740,12 +1793,22 @@ def care_state(checks: str, scope: tuple[str, ...]) -> str:
     states for the care figure, over a row dict and a precomputed licence
     boolean; the shapes differ enough that one function would take both a row
     and a scope and use one or the other.)
+
+    A BOUND PASSING IS NOT A CLOSURE. "A part is no larger than its whole"
+    passes on almost any reading -- «87 sorties, dont 14 guérisons» checks only
+    that 14 <= 87 -- so a row whose only passing checks are bounds is
+    `unchecked`, not `closes`. Before this rule, 83 of the 88 `closes` rows in
+    the recovered-exits family rested on that bound alone. A bound that FAILS
+    still makes the row `contradicts`: failing one proves a great deal.
     """
     got = [c.partition("=") for c in (checks or "").split(";") if c]
     rel = [(name, verdict) for name, _, verdict in got if name in scope]
     if not rel:
         return "unchecked"
-    return "closes" if all(v == "pass" for _, v in rel) else "contradicts"
+    if any(v != "pass" for _, v in rel):
+        return "contradicts"
+    return ("closes" if any(name in CARE_CLOSURES for name, _ in rel)
+            else "unchecked")
 
 
 def _slug(name: str) -> str:
@@ -1766,7 +1829,9 @@ def populations(geojson: Path, pop_csv: Path) -> dict[str, int]:
     affectées depuis le début de l'épidémie en RDC» -- six provinces, 151
     health zones. Sitrep 119 (2026-09-10) widens it, adding Sud-Ubangi: «...
     la RDC compte actuellement 62 zones de santé sur 167 (37,1%) affectées
-    et 7 provinces touchées». The geojson holds exactly those 167, cut from
+    et 7 provinces touchées», and sitrep 155 (2026-10-16) again, adding
+    Nord-Ubangi: «66 zones de santé sur 178 (37,1 %), réparties dans huit
+    provinces». The geojson holds exactly those 178, cut from
     the upstream nationwide file by `scripts/fetch_geography.py`. So this is
     the population the reports' own affected-zone fraction is a fraction of,
     at whichever frame the source currently states -- re-run `make
@@ -1845,6 +1910,26 @@ REFERENCE_TABLES = {
         "and cumulative share by delay in days. Convolve with this rather than "
         "shifting by a mean; meta['reporting_delay'] carries the summary and "
         "names the cohort that is settled."),
+    "export_cases.tsv": (
+        "data/build/series/export_cases.csv",
+        "Every case confirmed outside the DRC, or treated outside it, that a "
+        "source describes individually: the source's own class and its words "
+        "(`classification_verbatim`), the stated country of infection (DRC, "
+        "unstated or under_investigation, never inferred), the exit mechanism "
+        "(traveller or medical evacuation), exposure, dates, route and the "
+        "source ids. `tally_country` is the country whose count includes the "
+        "case; medical evacuations are tallied in the DRC. Build alternative "
+        "export likelihoods from these rows."),
+    "export_counts.tsv": (
+        "data/build/series/export_counts.csv",
+        "Every printed total for a country outside the DRC, one row per primary "
+        "source and as-of date, with the sentence it was read from. Empty is "
+        "not printed, never zero. The exports_<country> streams are these rows."),
+    "export_reconciliation.tsv": (
+        "data/build/series/export_reconciliation.csv",
+        "For each printed total, how many individuated cases match it by that "
+        "date and the gap. A nonzero gap is a case the sources count but do not "
+        "describe -- recorded, not resolved."),
 }
 
 
@@ -2002,6 +2087,10 @@ def main() -> None:
                     help="uganda_exports.tsv, so the data dictionary can "
                          "state its span; written by build_uganda_stream.py, "
                          "which the Makefile runs first for that reason")
+    ap.add_argument("--exports-dir", type=Path, default=None,
+                    help="where build_export_streams.py wrote the "
+                         "exports_<country>.tsv streams, so the dictionary "
+                         "documents each; the Makefile runs it first")
     args = ap.parse_args()
     args.out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -3200,6 +3289,7 @@ def main() -> None:
         "n_days": int((dt.date.fromisoformat(panel["date"].max())
                        - DAY0).days) + 1,
         "provinces": list(STREAM_PROVINCES.values()),
+        "opening": opening_levels(panel),
         "population": pops,
         # What that table is a population OF, stated rather than inferred. A
         # consumer needs a national susceptible pool and would otherwise sum
@@ -3218,12 +3308,14 @@ def main() -> None:
             "health_zones": n_zones,
             "national": sum(pops.values()),
             "definition":
-                "The response geography's current frame: 7 provinces, all "
-                "167 health zones, affected or not. This is the source's own "
-                "frame and it has moved once: sitrep 108 read «60 des 151 "
+                "The response geography's current frame: 8 provinces, all "
+                "178 health zones, affected or not. This is the source's own "
+                "frame and it has moved twice: sitrep 108 read «60 des 151 "
                 "(39,7%) zones de sante des six provinces» before sitrep 119 "
                 "(2026-09-10) added Sud-Ubangi -- «62 zones de sante sur 167 "
-                "(37,1%) affectees et 7 provinces touchees». Fixed by the "
+                "(37,1%) affectees et 7 provinces touchees» -- and sitrep 155 "
+                "(2026-10-16) added Nord-Ubangi -- «66 zones de sante sur 178 "
+                "(37,1 %), reparties dans huit provinces». Fixed by the "
                 "geography `scripts/fetch_geography.py` cuts, not by which "
                 "provinces this build publishes streams for; re-run `make "
                 "geography` if the source widens the frame again.",
@@ -3258,7 +3350,9 @@ def main() -> None:
     (args.out_dir / DICTIONARY).write_text(data_dictionary(
         written, args.families, data_date=panel["date"].max(),
         revisions=args.out_dir / "revisions.tsv",
-        uganda=args.uganda_stream))
+        uganda=args.uganda_stream,
+        exports=sorted(args.exports_dir.glob("exports_*.tsv"))
+        if args.exports_dir else []))
 
     for name, r in sorted(recon.items()):
         if r.get("kind") == "care":

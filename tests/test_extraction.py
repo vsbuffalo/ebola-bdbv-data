@@ -1558,6 +1558,26 @@ def test_suspects_in_isolation_is_not_the_ward_census(n):
 
 
 @needs_pdfs
+@pytest.mark.parametrize("n", [143, 147])
+def test_an_overlaid_bullet_is_not_read_as_a_tile(n):
+    """Sitreps 143-147 overlay a highlight bullet ending `... dont 2 décès.`
+    on the tile row, its last word above the recovery tile. Read as the death
+    label it took the recovery count (2 235 on 143, where the page prints
+    4 148); the recovery label, cut short by the bullet's prose, assembles as
+    the bare early-vintage `GUÉRIS`. Both tiles refuse rather than guess, and
+    `main` refuses the late bare recovery label so it cannot reach the gate
+    that licenses sitreps 005-018."""
+    got, why, labels = B.extract(pdf(n))
+    assert got.get("cumul_deaths") is None
+    assert any(w.startswith("cumul_deaths") for w in why)
+    assert labels["cumul_recovered"] == "GUÉRIS"
+    # ...and the next report, without the bullet, reads as every other does.
+    got, _, labels = B.extract(pdf(148))
+    assert got.get("cumul_deaths") == 4315
+    assert got.get("cumul_recovered") == 2338
+
+
+@needs_pdfs
 def test_sitrep_007_recovery_tile_is_nd():
     """A missing marker is not a zero, in either layout."""
     got, why, _ = B.extract(pdf(7))
@@ -1636,6 +1656,12 @@ def test_the_two_stock_series_never_fall():
     # Each exception is a REPORT THAT DOES NOT PRINT THE FIGURE, and is named
     # here with the reason the page gives, so a tile that starts refusing for
     # some other reason cannot hide inside the set.
+    # These DO print the death count; a highlight bullet drawn over the tile
+    # row hides its label and the reader refuses rather than guess. Their
+    # recovery tile still reads here, and is refused later, in `main`, because
+    # its label assembles as the early vintage's bare word. See
+    # `test_an_overlaid_bullet_is_not_read_as_a_tile`.
+    OVERLAID = {f"sitrep_{n}" for n in range(143, 148)}
     NO_RECOVERIES = {
         "sitrep_001",   # prints `?` -- the first report did not yet know
         "sitrep_004",   # prints `Guéris du jour`, a daily flow, not the stock
@@ -1643,7 +1669,7 @@ def test_the_two_stock_series_never_fall():
     }
     NO_DEATHS = {
         "sitrep_002",   # prints ND under `Décès confirmés`
-    }
+    } | OVERLAID
     missing = {k: sorted({p.name for p in pdfs} - {n for n, _ in v})
                for k, v in seen.items()}
     assert {n[:10] for n in missing["cumul_deaths"]} == NO_DEATHS, \
@@ -1720,7 +1746,15 @@ def _released() -> list[BS.Written]:
     return [BS.Written(p, BS.STOCK if "days_covered"
                        not in BS.read_stream(p).columns else BS.DAILY)
             for p in sorted(STREAMS.glob("*.tsv"))
-            if p.name != "revisions.tsv"]
+            if p.name != "revisions.tsv" and not _is_export(p)]
+
+
+def _is_export(p: Path) -> bool:
+    """A cases-outside-the-DRC file (`build_export_streams.py`): a hand-
+    transcribed stock with several count columns that are parts of one total,
+    documented in its own dictionary section like `uganda_exports`, and outside
+    the per-place column conventions the stream gates check."""
+    return p.name.startswith("exports_")
 
 
 def test_carry_forward_leaves_no_negative_and_moves_no_total():
@@ -2362,7 +2396,9 @@ def test_a_published_divisor_is_never_empty_or_zero(stream, column):
 STOCK_FILES = sorted(
     ["patients_isolated", "patients_isolated_confirmed", "cumul_recovered"]
     + [f"{f}_{p}" for f in sorted(BS.CARE_STOCK_FAMILIES)
-       for p in ("ituri", "nord_kivu", "haut_uele", "national")])
+       for p in ("ituri", "nord_kivu", "haut_uele", "national")
+       # only Nord-Kivu prints a dedicated-structure part of its census
+       if f != "care_census_dedicated" or p == "nord_kivu"])
 
 
 @needs_streams
@@ -2461,12 +2497,14 @@ def test_every_published_file_is_documented():
     files that are not observation streams."""
     rows = _dictionary_rows(DICTIONARY)
     text = DICTIONARY.read_text()
+    asides = 0
     for path in sorted(STREAMS.glob("*.tsv")):
-        if path.name in ("revisions.tsv", "uganda_exports.tsv"):
-            assert f"`{path.name}`" in text
+        if path.name in ("revisions.tsv", "uganda_exports.tsv") or _is_export(path):
+            assert f"`{path.name}`" in text, f"{path.name} has no section"
+            asides += 1
             continue
         assert path.name in rows, f"{path.name} shipped but is not documented"
-    assert len(rows) == len(list(STREAMS.glob("*.tsv"))) - 2
+    assert len(rows) == len(list(STREAMS.glob("*.tsv"))) - asides
 
 
 @needs_dictionary
@@ -2852,12 +2890,12 @@ def test_the_population_table_covers_the_geography_not_the_published_set(
     assert narrowed == full, (
         "the population table tracked the publication list; a province we "
         "stop publishing would silently leave the susceptible pool")
-    # Seven since sitrep 119 (2026-09-10) added Sud-Ubangi. The frame is the
-    # reports' own -- "62 zones de sante sur 167 (37,1%) affectees et 7
-    # provinces touchees" -- and `scripts/fetch_geography.py` cuts the
-    # nationwide reference to exactly it.
+    # Eight since sitrep 155 (2026-10-16) added Nord-Ubangi; seven from
+    # sitrep 119 (Sud-Ubangi). The frame is the reports' own -- "66 zones de
+    # sante sur 178 (37,1 %), reparties dans huit provinces" -- and
+    # `scripts/fetch_geography.py` cuts the nationwide reference to exactly it.
     assert set(full) == {"bas_uele", "haut_uele", "ituri", "nord_kivu",
-                         "sud_kivu", "tshopo", "sud_ubangi"}
+                         "sud_kivu", "tshopo", "sud_ubangi", "nord_ubangi"}
 
 
 def test_the_population_parts_add_to_the_whole_exactly():
@@ -2867,10 +2905,11 @@ def test_the_population_parts_add_to_the_whole_exactly():
     pops = BS.populations(GEOJSON, POPCSV)
     assert all(isinstance(v, int) and v > 0 for v in pops.values())
     # 31,898,994 over the six-province frame, plus Sud-Ubangi's 3,682,751 when
-    # sitrep 119 widened the reports' own frame to seven. Pinned as a literal
+    # sitrep 119 widened the reports' own frame to seven, plus Nord-Ubangi's
+    # 1,928,691 when sitrep 155 widened it to eight. Pinned as a literal
     # because that is the point: this constant must never move without someone
     # changing this line and saying why.
-    assert sum(pops.values()) == 35_581_745
+    assert sum(pops.values()) == 37_510_436
 
 
 def test_a_zone_with_population_but_no_geography_stops_the_build(tmp_path):
@@ -3015,6 +3054,48 @@ def test_sitrep_004_prints_sitrep_005s_dates():
     assert printed(4) == printed(5)
     assert printed(4)[0].isoformat() == "2026-05-19"    # date de rapportage
     assert printed(4)[1].isoformat() == "2026-05-20"    # date de publication
+
+
+def test_the_data_date_label_reads_in_both_wordings():
+    """Sitrep 137 renamed the label from "Date de rapportage" to "Date du
+    rapport"; a reader that knew only the first stopped the whole build."""
+    assert printed_dates("Date de rapportage : 27 septembre 2026 "
+                         "Date de publication : 28 septembre 2026") == (
+        RD.dt.date(2026, 9, 27), RD.dt.date(2026, 9, 28))
+    assert printed_dates("Date du rapport : 28 septembre 2026 "
+                         "Date de publication : 29 septembre 2026") == (
+        RD.dt.date(2026, 9, 28), RD.dt.date(2026, 9, 29))
+
+
+@needs_pdfs
+@needs_pdftotext
+def test_sitrep_137_is_filed_under_the_date_its_page_prints():
+    assert report_key(pdf(137)) == (137, "2026-09-28")
+
+
+@needs_pdfs
+@needs_pdftotext
+def test_sitrep_150_is_filed_on_the_11th_its_own_tables_name():
+    """Sitrep 150's front page prints «Date du rapport : 12 octobre 2026», the
+    same as 151; its title, both table captions and its narrative say 11
+    October. Filed on the 12th, two reports share a day and 11 October has
+    none, which the stream calendar gate stops on."""
+    import subprocess
+    t = subprocess.run(["pdftotext", "-q", "-layout", str(pdf(150)), "-"],
+                       capture_output=True, text=True).stdout
+    assert printed_dates(t)[0].isoformat() == "2026-10-12"   # the defect
+    assert "au 11 octobre 2026" in " ".join(t.split())
+    assert report_key(pdf(150)) == (150, "2026-10-11")
+    assert report_key(pdf(151)) == (151, "2026-10-12")
+
+
+def test_an_erratum_that_corrects_nothing_is_refused(tmp_path):
+    reg = (ROOT / "registers" / "printed_date_errata.tsv").read_text()
+    bad = tmp_path / "errata.tsv"
+    bad.write_text(reg.replace("\t2026-10-12\t2026-10-11\t",
+                               "\t2026-10-11\t2026-10-11\t"))
+    with pytest.raises(SystemExit, match="corrects nothing"):
+        RD.load_printed_date_errata(bad)
 
 
 @needs_pdfs
@@ -3506,10 +3587,13 @@ def test_province_bullets_do_not_sum_to_a_national_census():
     sentence is also printed the sum falls short of it on all but two days, by
     as much as 279 patients -- which would read as a collapse in the census
     rather than as missing bullets."""
+    # From about sitrep 130 the bullets cover every province holding patients
+    # -- five a day -- but the whole-response sentence they would be compared
+    # against stopped at sitrep 080, so the comparison below is unchanged.
     import plot_figures as P
     care, _ = _built()
     p = P.province_census_is_not_national(care)
-    assert p["max_provinces_per_day"] == 3
+    assert p["max_provinces_per_day"] == 5
     assert p["median_provinces_per_day"] == 1
     assert (p["n_short"], p["n_compared"]) == (15, 17)
     assert p["worst_shortfall"] == -279
@@ -3552,7 +3636,11 @@ def test_province_occupancy_cannot_see_a_saturated_centre():
         run = run + 1 if (b - a).days == 1 else 1
         longest = max(longest, run)
     assert longest >= 3
-    assert o["min"] < 20 and 50 < o["median"] < 70
+    # The median fell below 50 % with the October reports: Ituri's capacity
+    # reached 1 015 beds and its days run at 31-41 %. Rows whose census the
+    # page says is not the occupied beds are excluded upstream; see
+    # `occupancy_at_province_grain`.
+    assert o["min"] < 20 and 40 < o["median"] < 70
 
 
 @needs_build
@@ -3564,15 +3652,17 @@ def test_the_absconder_series_is_thin_and_the_figure_must_not_join_it():
     whole-response figure rather than a province's. One is a printed zero,
     which is an observation and not an absence.
 
-    26 rather than 24 as of the 2026-09-18 archive: sitrep 115 (Tshopo, 1) and
-    sitrep 121 (Bas-Uélé, 1) are both new province-level rows, so `n` and
-    `n_after` move by two each and `n_national`/`n_zero` do not."""
+    25 as of the 2026-10-18 archive. Sitrep 121 (Bas-Uélé, 1) is a real
+    province-level row. Sitrep 115's Tshopo "absconder", published in the
+    2026-09-18 release, was not one: it was the "1 évadé" in the outcome list
+    of the experimental-treatment cohort, an outbreak-to-date count, and the
+    same clause put one on sitreps 129-132 as well."""
     import plot_figures as P
     care, banner = _built()
     last = P.census_agreement(care, banner)["tile_confirmed_last"]
     a = P.absconder_coverage(care, last)
-    assert a["n"] == 26
-    assert a["n_after"] == 7
+    assert a["n"] == 25
+    assert a["n_after"] == 6
     assert a["n_national"] == 14
     assert a["n_zero"] == 1
 
@@ -3702,14 +3792,19 @@ def test_every_hole_in_the_outcome_composition_carries_a_reason():
     status = pl.read_csv(OUT_BUILD / "zone_table_status.csv",
                          infer_schema_length=None)
     gaps = P.outcome_gaps(P.outcome_ledger(zone, banner), status)
-    assert len(gaps) == 8
+    assert len(gaps) == 10
     assert all(g["why"].strip() for g in gaps)
     assert {(g["lo"].isoformat(), g["why"].replace("\n", " ")) for g in gaps} >= {
         ("2026-07-28", "no report published"),
         ("2026-08-06", "no health-zone table printed"),
         # sitrep 087 DOES print a health-zone table; it prints only the
         # 24-hour columns, so blaming the missing table would be wrong.
-        ("2026-08-09", "no cumulative columns printed")}
+        ("2026-08-09", "no cumulative columns printed"),
+        # sitrep 142 is not in INSP's listing or at any URL tried
+        ("2026-10-03", "no report published"),
+        # 143-147 print the whole table; it is the recovery tile beside it
+        # that a highlight bullet makes unreadable
+        ("2026-10-04", "recovery tile not read")}
 
 
 @needs_build
@@ -3888,7 +3983,10 @@ def test_the_confirmed_census_holds_the_observations_the_release_rests_on():
                         separator="\t", infer_schema_length=None)
         counts[slug] = (t.height,
                         t.filter(pl.col("time") > "2026-08-02").height)
-    assert counts == {"ituri": (23, 9), "nord_kivu": (17, 10)}
+    # 28/14 and 23/16 as of the 2026-10-18 archive: from sitrep 150 every
+    # province bullet prints its census split in a parenthetical, "363
+    # patients (127 confirmés et 236 suspects) sont hospitalisés".
+    assert counts == {"ituri": (28, 14), "nord_kivu": (23, 16)}
     # The national file is the whole-response summary sentence, which stopped
     # on the same report as the tile -- so nothing national survives the split.
     nat = pl.read_csv(STREAMS / "care_census_confirmed_national.tsv",
@@ -4000,6 +4098,17 @@ def test_care_state_scopes_the_verdict_to_the_quantity_it_describes():
     assert BS.care_state(row, ("exits_split",)) == "contradicts"
 
 
+def test_a_passing_bound_alone_is_not_a_closure():
+    """«87 sorties, dont 14 guérisons» offers only 14 <= 87, which almost any
+    reading passes. Marking that `closes` put 83 of 88 recovered-exit rows in
+    the class a consumer filters to for proven rows."""
+    recovered = ("exits_split", "recovered_le_exits")
+    assert BS.care_state("recovered_le_exits=pass", recovered) == "unchecked"
+    assert BS.care_state("recovered_le_exits=fail", recovered) == "contradicts"
+    assert BS.care_state("exits_split=pass;recovered_le_exits=pass",
+                         recovered) == "closes"
+
+
 # --------------------------------------------------------------------------
 # THE COVERAGE CONTRACT
 #
@@ -4101,7 +4210,10 @@ def test_every_family_in_the_dictionary_says_how_to_read_it():
     families = BS.load_families(FAMILIES)
     printed = [f for f in families if f"## {families[f]['title']}" in text]
     assert len(printed) >= 10, printed
-    assert text.count("**How to read it.**") == len(printed)
+    # The export family prints one section per destination country.
+    n_exports = sum(1 for p in STREAMS.glob("exports_*.tsv"))
+    expected = len(printed) + (n_exports - 1 if "exports" in printed else 0)
+    assert text.count("**How to read it.**") == expected
     # Compared on collapsed whitespace, because `make fmt` rewraps the
     # dictionary's prose at 80 columns and the register holds each reading on
     # one line. What this test is for is that the dictionary says what the
@@ -4682,3 +4794,77 @@ def test_the_excluding_backlog_family_covers_every_published_place():
         for stem in ("cases", "deaths"):
             f = STREAMS / f"{stem}_excluding_backlog_{slug}.tsv"
             assert f.exists(), f"{f.name} is not published"
+
+
+# --------------------------------------------------------------------------
+# NORD-KIVU PRINTS TWO CENSUS COUNTS FROM SITREP 124
+#
+# notes/2026-10-20-nord-kivu-census-two-counts.md. The total stays in
+# `census`, unchanged; the part in dedicated structures is `census_dedicated`,
+# and the occupancy rate is tested against the part.
+# --------------------------------------------------------------------------
+
+@needs_build
+def test_nord_kivu_dedicated_census_is_the_part_the_rate_is_computed_on():
+    care, _ = _built()
+    nk = {r["sitrep"]: r for r in care.filter(pl.col("province") == "Nord-Kivu")
+          .iter_rows(named=True)}
+    # «373 patients ... dont 216 dans les structures dédiées ... (94,7%)»
+    assert (nk[124]["census"], nk[124]["census_dedicated"]) == (373, 216)
+    # «328 patients ... dont 223 dans les CTE pour 354 lits ... les 105 autres»
+    assert (nk[135]["census"], nk[135]["census_dedicated"]) == (328, 223)
+    # «(325 patients aux lits des CTE/CT sur 354 lits)»
+    assert nk[147]["census_dedicated"] == 325
+    # «468 patients ... : 328 dans les CTE/CT pour 374 lits ... 87,7 %»
+    assert (nk[152]["census"], nk[152]["census_dedicated"]) == (468, 328)
+    assert "occupancy_occupied=pass" in nk[152]["checks"]
+    # Before the split the total IS the occupied count: 214/206 = 103,9 %.
+    assert nk[104]["census_dedicated"] is None
+    assert "occupancy=pass" in nk[104]["checks"]
+
+
+@needs_build
+def test_an_occupied_bed_fraction_is_not_a_claim_about_structures():
+    """Haut-Uélé prints «29,4 % (45/153)» against 68 in isolation on sitrep 149
+    and does not say where the other 23 are."""
+    care, _ = _built()
+    hu = care.filter((pl.col("province") == "Haut-Uélé")
+                     & (pl.col("sitrep") == 149)).row(0, named=True)
+    assert (hu["census"], hu["beds_occupied"]) == (68, 45)
+    assert hu["census_dedicated"] is None
+    # the part's check licenses the part, not the total
+    assert "occupancy_occupied=pass" in hu["checks"]
+    assert hu["census_licensed"] is False
+
+
+@needs_streams
+def test_every_province_ends_where_its_printed_row_ends():
+    """`vs_printed` was recorded and never asserted, and Sud-Kivu sat one case
+    over its printed row on all 131 dates for that reason: sitreps 010-011
+    filed Nord-Kivu's Kalunguta under Sud-Kivu and the forward fill carried
+    the case to the end (registers/zone_province_overrides.tsv). Interior
+    dates may disagree where the source contradicts itself; the end may not."""
+    import json
+    rec = json.loads((STREAMS / "meta.json").read_text())["reconciliation"]
+    bad = {k: v["vs_printed"]["final_gap"] for k, v in rec.items()
+           if k.startswith(("cases_", "deaths_")) and isinstance(v, dict)
+           and "vs_printed" in v and v["vs_printed"]["final_gap"] != 0}
+    assert bad == {}
+
+
+@needs_streams
+def test_each_opening_level_plus_its_flows_is_the_last_printed_row():
+    """Against an independent number: the province row the newest report
+    PRINTS, not the cumulative the streams were differenced from."""
+    import json
+    meta = json.loads((STREAMS / "meta.json").read_text())
+    zt = pl.read_csv(BUILD / "zone_table.csv", infer_schema_length=None)
+    last = zt.filter(pl.col("date") == zt["date"].max())
+    printed = {BS.STREAM_PROVINCES[n]: int(v) for n, v in
+               BS.carry_province(last).filter(pl.col("level") == "province")
+               .select("province", "cum_cases").iter_rows()
+               if n in BS.STREAM_PROVINCES and v is not None}
+    for slug, entry in meta["opening"].items():
+        t = pl.read_csv(STREAMS / f"cases_daily_{slug}.tsv", separator="\t",
+                        null_values="NA")
+        assert entry["cases"]["cum"] + t[f"cases_{slug}"].sum() == printed[slug], slug

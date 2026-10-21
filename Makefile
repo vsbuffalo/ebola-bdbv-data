@@ -2,7 +2,7 @@
 # by design: `build` and `doc` never touch the network, so a rebuild can never
 # silently change what the source says.
 
-.PHONY: geography fmt verdict figures-release figures-compare watch-data-channel release-check escape-fraction care-ledger oneoff-testing oneoff-death-split oneoff-death-flow cron-install cron-uninstall check fetch refresh manifest verify build streams compare figures onset external \
+.PHONY: site serve-site scan-update fetch-pinned fetch-exports check-exports geography fmt verdict figures-release figures-compare watch-data-channel release-check escape-fraction care-ledger oneoff-testing oneoff-death-split oneoff-death-flow cron-install cron-uninstall check fetch refresh manifest verify build streams compare figures onset external \
 	external-update scan-refresh doc serve test
 
 # WHERE A FIGURE LANDS SAYS WHICH DATA MADE IT. Every figure this repository
@@ -36,8 +36,9 @@ check:
 ##            "N zones de sante sur M" sentence counts against and therefore
 ##            the denominator every per-capita quantity divides by. Refuses
 ##            unless the cut comes out at --expect-zones, the count the
-##            reports print: 167 across 7 provinces since sitrep 119 added
-##            Sud-Ubangi, 151 across 6 before it. Rewrites the two committed
+##            reports print: 178 across 8 provinces since sitrep 155 added
+##            Nord-Ubangi, 167 across 7 from sitrep 119 (Sud-Ubangi), 151
+##            across 6 before that. Rewrites the two committed
 ##            reference files and their PROVENANCE rows; the frame itself is
 ##            declared in AFFECTED in the script, one line per province with
 ##            the report that added it.
@@ -50,6 +51,15 @@ geography:
 ##            IS is the thing that moved.
 fetch:
 	uv run python scripts/fetch_sitrep_index.py --out data/raw/insp_sitrep_index.tsv
+	uv run python scripts/fetch_sitrep_pdfs.py --index data/raw/insp_sitrep_index.tsv \
+		--out data/raw/sitrep_pdfs --manifest data/raw/sitrep_pdfs.manifest.tsv
+
+## fetch-pinned -- NETWORKED. Download exactly the PDFs the COMMITTED index
+##            names, without re-reading INSP's live listing -- so a checkout of
+##            a release tag fetches that release's reports and no newer ones.
+##            The manifest it writes is a pure function of the committed index,
+##            so at a tag it reproduces the committed manifest.
+fetch-pinned:
 	uv run python scripts/fetch_sitrep_pdfs.py --index data/raw/insp_sitrep_index.tsv \
 		--out data/raw/sitrep_pdfs --manifest data/raw/sitrep_pdfs.manifest.tsv
 
@@ -76,6 +86,20 @@ cron-uninstall:
 	launchctl bootout gui/$$(id -u)/$(CRON_LABEL) 2>/dev/null || true
 	rm -f ~/Library/LaunchAgents/$(CRON_LABEL).plist
 	@echo "removed"
+
+## fetch-exports -- NETWORKED. Snapshot every document data/raw/exports/
+##            sources.tsv cites, and rewrite snapshots.manifest.tsv with each
+##            one's sha256. Snapshots are uncommitted, like the sitrep PDFs;
+##            the manifest is committed, so a page that changed since its
+##            quotes were read shows up as a hash that moved.
+fetch-exports:
+	uv run python scripts/fetch_export_sources.py --sources data/raw/exports/sources.tsv \
+		--out-dir data/raw/exports/snapshots --manifest data/raw/exports/snapshots.manifest.tsv
+
+## check-exports -- OFFLINE, needs the snapshots. Every quote in counts.tsv
+##            and cases.tsv is on the page it cites, against the hashed bytes.
+check-exports:
+	uv run python scripts/check_export_quotes.py --exports data/raw/exports
 
 ## manifest -- OFFLINE. Rewrite data/raw/sitrep_pdfs.manifest.tsv from the
 ##            archive, reconciling it against the index and against
@@ -188,6 +212,12 @@ streams: onset
 	uv run python scripts/build_uganda_stream.py \
 		--uganda data/raw/uganda_cases.toml \
 		--out data/build/streams/uganda_exports.tsv
+	# Cases counted outside the DRC: one stock stream per destination that
+	# tallies a case as its own, and the per-case and reconciliation tables
+	# build_streams.py publishes under reference/. Hand-authored inputs; the
+	# quote check against their snapshots is `make check-exports`.
+	uv run python scripts/build_export_streams.py --exports data/raw/exports \
+		--series-dir data/build/series --streams-dir data/build/streams
 	uv run python scripts/build_streams.py \
 		--panel data/build/series/zone_table.csv \
 		--summary data/build/series/province_summary.csv \
@@ -202,6 +232,7 @@ streams: onset
 		--population data/raw/zone_population.csv \
 		--burial-alerts data/build/series/burial_alerts.csv \
 		--uganda-stream data/build/streams/uganda_exports.tsv \
+		--exports-dir data/build/streams \
 		--out-dir data/build/streams
 	# tidy the dictionary this just wrote, and every other markdown with it
 	$(MAKE) --no-print-directory fmt
@@ -283,17 +314,32 @@ external:
 external-update: external
 	git -C external/BDBV2026-Data fetch -q origin
 	git -C external/BDBV2026-Data checkout -q origin/main
-	{ grep '^#' external.lock; printf 'name\turl\tcommit\tlocked\n'; \
-	  printf '%s\t%s\t%s\t%s\n' BDBV2026-Data \
-	    "$$(git -C external/BDBV2026-Data remote get-url origin)" \
-	    "$$(git -C external/BDBV2026-Data rev-parse HEAD)" \
-	    "$$(date +%Y-%m-%d)"; } > external.lock.tmp
-	mv external.lock.tmp external.lock
+	$(call lock_row,BDBV2026-Data,$$(git -C external/BDBV2026-Data remote get-url origin),$$(git -C external/BDBV2026-Data rev-parse HEAD))
 
-## scan-refresh -- update the committed copy of the epiforecasts scan from a
-##            sibling checkout; commit the diff.
+# Replace ONE row of external.lock, keeping every other pin and the header.
+# (external-update used to rewrite the file whole, which would silently drop
+# any pin but its own.)
+define lock_row
+	awk -F'\t' -v OFS='\t' -v n='$(1)' -v u="$(2)" -v c="$(3)" -v d="$$(date +%Y-%m-%d)" \
+	  'BEGIN{done=0} $$1==n{print n,u,c,d; done=1; next} {print} END{if(!done) print n,u,c,d}' \
+	  external.lock > external.lock.tmp && mv external.lock.tmp external.lock
+endef
+
+## scan-refresh -- OFFLINE apart from one download: fetch the epiforecasts scan
+##            at EXACTLY the commit external.lock pins for BVDOutbreakSize, into
+##            the committed copy data/raw/scan/insp_sitrep_scanned.csv. The diff
+##            is the record of what their scan changed. `scan-update` moves the
+##            pin to their current head first.
+SCAN_COMMIT = $(shell awk -F'\t' '$$1=="BVDOutbreakSize"{print $$3}' external.lock)
 scan-refresh:
-	cp ../epiforecast-repro/raw/insp_sitrep_scanned.csv data/raw/scan/insp_sitrep_scanned.csv
+	@test -n "$(SCAN_COMMIT)" || { echo "external.lock has no BVDOutbreakSize pin"; exit 2; }
+	curl -sfL -o data/raw/scan/insp_sitrep_scanned.csv \
+	  "https://raw.githubusercontent.com/epiforecasts/BVDOutbreakSize/$(SCAN_COMMIT)/data/insp_sitrep_scanned.csv"
+	@echo "scan at $(SCAN_COMMIT): $$(($$(wc -l < data/raw/scan/insp_sitrep_scanned.csv) - 1)) rows"
+
+scan-update:
+	$(call lock_row,BVDOutbreakSize,https://github.com/epiforecasts/BVDOutbreakSize,$$(git ls-remote https://github.com/epiforecasts/BVDOutbreakSize.git refs/heads/main | cut -f1))
+	$(MAKE) --no-print-directory scan-refresh
 
 compare:
 	@uv run python scripts/build_verdict.py --gate
@@ -314,8 +360,8 @@ compare:
 	#              data/build/compare/banner_comparison.csv
 	#              data/build/compare/zone_comparison.csv
 	#              data/build/compare/compare_meta.json
-	# COMMITTED COPIES of the two comparison figures, so the README's
-	# validation section travels with the repository (data/build is
+	# COMMITTED COPIES of the two comparison figures, so docs/validation.md
+	# travels with the repository (data/build is
 	# gitignored). Refreshed on every compare; a diff here is a change in
 	# what the comparison shows, and belongs in the commit that caused it.
 	# These three carry captions in figures/README.md like the rest,
@@ -528,6 +574,24 @@ figures-compare:
 		elif cmp -s "$$a/$$f" "$$b/$$f"; then echo "  unchanged  $$f"; \
 		else echo "  CHANGED    $$f"; fi; \
 	 done
+
+## site    -- OFFLINE. The project website: home, every committed figure with
+##            its caption, every release with its notes and commit, and a
+##            figure gallery per release from `make figures-release DISTINCT=1`
+##            (run that first for the galleries; without it the releases are
+##            listed and marked "not rebuilt"). Generated into data/build/site/
+##            and rendered there; `make serve-site` serves it.
+site:
+	uv run python scripts/build_site.py --out data/build/site
+	cd data/build/site && quarto render
+
+serve-site:
+	@lsof -iTCP:$(SITE_PORT) -sTCP:LISTEN -n -P >/dev/null 2>&1 \
+		&& echo "port $(SITE_PORT) is already in use -- make serve-site SITE_PORT=<other>" \
+		|| (nohup python3 -m http.server $(SITE_PORT) --bind 0.0.0.0 \
+			--directory data/build/site/_site </dev/null >/tmp/ebola-bdbv-site.log 2>&1 & \
+			echo "serving: http://thuja:$(SITE_PORT)/")
+SITE_PORT ?= 8791
 
 ## fmt     -- Tidy every markdown file, including the generated ones.
 ##            Uses the REPO-LOCAL dprint.json, not whatever config the machine
