@@ -74,9 +74,11 @@ from lib.archive import held_pdfs, report_skipped  # noqa: E402
 PROVINCES = {
     "ituri": "Ituri", "nord kivu": "Nord-Kivu", "sud kivu": "Sud-Kivu",
     "haut uele": "Haut-Uélé", "bas uele": "Bas-Uélé", "tshopo": "Tshopo",
+    "sud ubangi": "Sud-Ubangi", "nord ubangi": "Nord-Ubangi",
 }
 PROV_RE = re.compile(r"\b(Ituri|Nord[-\s]Kivu|Sud[-\s]Kivu|Haut[-\s]U[ée]l[ée]"
-                     r"|Bas[-\s]U[ée]l[ée]|Tshopo)\b", re.I)
+                     r"|Bas[-\s]U[ée]l[ée]|Tshopo|Sud[-\s]Ubangi|Nord[-\s]Ubangi)\b",
+                     re.I)
 LAB_WORD = re.compile(r"[ée]chantillons?|pr[ée]l[èe]vements?", re.I)
 
 # A DEATH SPLIT HAS THE SAME ARITHMETIC SHAPE AS A POSITIVITY, so the

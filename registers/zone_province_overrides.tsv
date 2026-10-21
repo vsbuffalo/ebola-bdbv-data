@@ -48,3 +48,5 @@ sitrep	date	sha256_16	zone	province	verified_by	note
 4	2026-05-18	202dd6db65d2d3c2	Rwampara	Ituri	same reading as the sitrep 004 Mongbwalu entry	Same table, same lost label. Named in the page-3 prose as one of Ituri s four zones.
 4	2026-05-18	202dd6db65d2d3c2	Bunia	Ituri	same reading as the sitrep 004 Mongbwalu entry	Same table, same lost label. Named in the page-3 prose as one of Ituri s four zones.
 4	2026-05-18	202dd6db65d2d3c2	Nyankunde	Ituri	same reading as the sitrep 004 Mongbwalu entry	Same table, same lost label. Named in the page-3 prose as one of Ituri s four zones.
+10	2026-05-24	6f7b3a684913da7b	Kalunguta	Nord-Kivu	read against the page 2026-10-20: the front-page zone list	The front page reads «NORD-KIVU : Butembo, Goma, Oicha, Kalunguta et Katwa … SUD-KIVU : Miti-Murhesa». The carry filed the row under Sud-Kivu, the block beneath it, and the forward fill kept its one case in Sud-Kivu's stream on every later day (meta: cases_sud_kivu vs_printed final_gap 1 on all 131 dates).
+11	2026-05-25	1464a88ca562a77a	Kalunguta	Nord-Kivu	same reading as the sitrep 010 Kalunguta entry	Same front-page sentence, same table order, same misfiling.

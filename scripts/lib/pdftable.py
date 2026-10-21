@@ -228,20 +228,49 @@ class Table:
         if not band:
             return None
 
+        return self._rebucket(xs, band[0], band[-1], tuple(edges))
+
+    def within(self, xs: tuple[float, ...], tol: float) -> "Table | None":
+        """This component's rows, re-columned onto the edges `xs`.
+
+        `subgrid` for the case where the foreign ink is page furniture rather
+        than a second table. Sitreps 154 and 157 draw the zone table's first
+        page down onto the coloured footer bars, which run nearly edge to edge,
+        so the component takes the bars' extent and gains two columns of empty
+        margin. The table's own full-width rules there are only its heading's:
+        its zone rows are separated by rules spanning the first four columns,
+        so bounding the rows by full-width rules, as `subgrid` does, keeps the
+        heading and the province row and drops every zone beneath it. Every row
+        is kept instead; cells outside `xs` are dropped, and the bars, which
+        carry no number, fall to the rule that a row with no values is not a
+        row.
+
+        None when no horizontal rule spans `xs`: the component must itself draw
+        a table of that width, not merely overlap one.
+        """
+        edges = [s for s in self.rules if s.horizontal
+                 and abs(s.lo - xs[0]) <= tol and abs(s.hi - xs[-1]) <= tol]
+        if not edges:
+            return None
+        return self._rebucket(xs, 0, self.nrows - 1, tuple(edges))
+
+    def _rebucket(self, xs, first: int, last: int,
+                  edges: tuple[Segment, ...]) -> "Table | None":
+        """Rows `first..last`, cells re-bucketed into `xs` by their centre --
+        the same rule by which words were bucketed into cells originally."""
         cells: dict[tuple[int, int], str] = {}
         for (i, j), text in sorted(self.cells.items()):
-            if i < band[0] or i > band[-1] or not text.strip():
+            if i < first or i > last or not text.strip():
                 continue
             j2 = _bucket(list(xs), (self.xs[j] + self.xs[j + 1]) / 2, SNAP_X)
             if j2 is None:
                 continue
-            k = (i - band[0], j2)
+            k = (i - first, j2)
             cells[k] = f"{cells[k]} {text}".strip() if k in cells else text
         if not cells:
             return None
         return Table(self.page, tuple(xs),
-                     tuple(self.ys[band[0]:band[-1] + 2]), cells,
-                     rules=tuple(edges))
+                     tuple(self.ys[first:last + 2]), cells, rules=edges)
 
     def header_rows(self, *, max_scan: int = 8) -> int:
         """How many leading rows form the column headings.

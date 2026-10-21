@@ -140,8 +140,14 @@ TILES = {
     # confirmés" (sitreps 007-058), "DECES CONFIRMES · LETALITE" (059-083) and
     # "CUMUL DES / DÉCÈS / CONFIRMÉS" wrapped over three lines (084-096), plus
     # the "Décès confirmés" of the two opening reports.
+    #
+    # `décès.` IS PROSE, NOT A LABEL. Sitreps 143-147 overlay a highlight
+    # bullet on the tile row («Nouvelle zone de santé touchée : Alimbongo
+    # (Nord-Kivu), avec 4 cas confirmés dont 2 décès.»), whose last word sits
+    # above the recovery tile; read as the death label it took the recovery
+    # count, 2 235 where the page prints 4 148. A label never ends a sentence.
     "cumul_deaths": re.compile(
-        r"^cumul\s+(?:des\s+)?d[ée]c[èe]s|^d[ée]c[èe]s\b", re.I),
+        r"^cumul\s+(?:des\s+)?d[ée]c[èe]s|^d[ée]c[èe]s\b(?!\.)", re.I),
 }
 
 #: TILES WE DELIBERATELY DO NOT READ. The suspected-case tile is a different
@@ -637,6 +643,31 @@ def main() -> None:
 
     # THE DEFINITIONAL GATE, run over the whole archive because that is the
     # only place the evidence lives. See `_bare_label_is_cumulative`.
+    # A BARE LABEL AFTER THE CUMULATIVE WORDING IS A BROKEN STACK, not the
+    # early vintage. Sitreps 143-147 print `CUMUL DES / GUÉRIS`, but the
+    # overlaid bullet's prose stops the label walk before `CUMUL DES`, so the
+    # tile assembles as bare `GUÉRIS` -- and the gate below, which judges the
+    # 005-018 vintage by its last bare tile, then compared sitrep 147 against
+    # 019 and dropped the whole early series. Those late tiles are refused on
+    # their own, and the gate judges only the vintage it was written for.
+    named_from = d.filter(~pl.col("_recovery_label_is_bare")
+                          & pl.col("cumul_recovered").is_not_null())["sitrep"].min()
+    if named_from is not None:
+        late = (pl.col("_recovery_label_is_bare")
+                & (pl.col("sitrep") > named_from))
+        late_bare = set(d.filter(late & pl.col("cumul_recovered").is_not_null())
+                        ["sitrep"].to_list())
+        d = d.with_columns(
+            pl.when(late).then(None).otherwise(pl.col("cumul_recovered"))
+            .alias("cumul_recovered"),
+            pl.when(late).then(False).otherwise(pl.col("_recovery_label_is_bare"))
+            .alias("_recovery_label_is_bare"))
+        status = [s | {"refused": "; ".join(filter(None, [
+            s["refused"], f"cumul_recovered refused: the label assembles as "
+            f"bare `{s['recovery_label']}` on a report after sitrep "
+            f"{named_from} established the cumulative wording, so the label "
+            f"stack was cut short and the page's own label is unread"]))}
+            if s["sitrep"] in late_bare else s for s in status]
     ok, verdict = _bare_label_is_cumulative(d)
     n_bare = int((d["_recovery_label_is_bare"]
                   & d["cumul_recovered"].is_not_null()).sum())

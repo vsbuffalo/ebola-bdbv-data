@@ -73,7 +73,11 @@ MONTHS = {
 
 # `1er juin` is standard French for the first of the month.
 _DATE = r"(\d{1,2})(?:er)?\s+([A-Za-zÀ-ÿ]+)\.?\s+(\d{4})"
-RAPPORTAGE = re.compile(rf"date\s+de\s+rapportage\s*:?\s*{_DATE}", re.I)
+# The label changed wording on sitrep 137 (28 September): "Date de rapportage"
+# through 136, "Date du rapport" from 137 on, the same field in the same place
+# beside the same "Date de publication". Both are the data date.
+RAPPORTAGE = re.compile(
+    rf"date\s+(?:de\s+rapportage|du\s+rapport)\s*:?\s*{_DATE}", re.I)
 PUBLICATION = re.compile(rf"date\s+de\s+publication\s*:?\s*{_DATE}", re.I)
 
 
@@ -204,6 +208,58 @@ def verify_external(pdf: Path, reg: ExternalReport) -> None:
             f"archive, that is the cause: these three must be real files.")
 
 
+@dataclass(frozen=True)
+class DateErratum:
+    """One row of `registers/printed_date_errata.tsv`: a report INSP serves
+    whose front-page data date contradicts the rest of the same document."""
+
+    sitrep: int
+    filename: str
+    sha256: str
+    printed_data_date: str
+    data_date: str
+    evidence: str
+
+
+ERRATA_FIELDS = ("sitrep", "filename", "sha256", "printed_data_date",
+                 "data_date", "evidence")
+
+
+def load_printed_date_errata(
+        path: Path | None = None) -> dict[str, DateErratum]:
+    """The errata register, keyed on archive filename like `external_sitreps`.
+
+    A missing register stops the caller for the same reason that one does:
+    applying nothing silently files sitrep 150 onto 151's day.
+    """
+    path = path or (REGISTERS / "printed_date_errata.tsv")
+    if not path.exists():
+        sys.exit(f"register not found: {path} -- applying nothing silently "
+                 "re-dates sitrep 150 onto 151")
+    out: dict[str, DateErratum] = {}
+    with path.open() as fh:
+        rows = [ln for ln in fh if not ln.startswith("#")]
+    for e in csv.DictReader(rows, delimiter="\t"):
+        missing = [f for f in ERRATA_FIELDS if not (e.get(f) or "").strip()]
+        if missing:
+            sys.exit(f"{path}: row for sitrep {e.get('sitrep')!r} leaves "
+                     f"{', '.join(missing)} blank")
+        r = DateErratum(sitrep=int(e["sitrep"]), filename=e["filename"],
+                        sha256=e["sha256"],
+                        printed_data_date=e["printed_data_date"],
+                        data_date=e["data_date"], evidence=e["evidence"])
+        if r.printed_data_date == r.data_date:
+            sys.exit(f"{path}: sitrep {r.sitrep} files the date the page "
+                     "already prints; the row corrects nothing")
+        out[r.filename] = r
+    return out
+
+
+@lru_cache(maxsize=1)
+def _errata() -> dict[str, DateErratum]:
+    return load_printed_date_errata()
+
+
 def report_key(pdf: Path, text: str | None = None) -> tuple[int, str]:
     """(report number, data date) for one PDF.
 
@@ -236,6 +292,30 @@ def report_key(pdf: Path, text: str | None = None) -> tuple[int, str]:
             f"is a fact on the page; the filename is not a substitute for it "
             f"(it carries the PUBLICATION date on six reports). Read the front "
             f"page and extend `report_date.MONTHS` or the pattern.")
+
+    # A PRINTED DATE THE REST OF THE DOCUMENT CONTRADICTS, declared one
+    # document at a time in `registers/printed_date_errata.tsv`. Applied on the
+    # same terms as the external register below: these bytes, and a page that
+    # still prints the date the row says it prints.
+    err = _errata().get(pdf.name)
+    if err is not None:
+        got = hashlib.sha256(pdf.read_bytes()).hexdigest()
+        if got != err.sha256:
+            sys.exit(
+                f"PRINTED-DATE ERRATUM IS STALE for {pdf.name}: the register "
+                f"was written about {err.sha256} and the archive holds {got}. "
+                f"INSP has revised the document; re-read its front page and "
+                f"rewrite or delete the row in registers/printed_date_errata.tsv.")
+        if rapportage.isoformat() != err.printed_data_date:
+            sys.exit(
+                f"PRINTED-DATE ERRATUM IS STALE for {pdf.name}: the register "
+                f"records the page as printing `{err.printed_data_date}`, and "
+                f"it prints `{rapportage.isoformat()}`. Delete the row if the "
+                f"page is now right.")
+        if int(m.group(1)) != err.sitrep:
+            sys.exit(f"{pdf.name} carries report number {int(m.group(1))}, "
+                     f"and registers/printed_date_errata.tsv records {err.sitrep}")
+        return err.sitrep, err.data_date
 
     reg = _external().get(pdf.name)
     if reg is None:

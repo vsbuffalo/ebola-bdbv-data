@@ -1,0 +1,21 @@
+# Reports INSP serves whose FRONT-PAGE data date is wrong, and the date each is
+# filed under instead.
+#
+# The data date is read from the front page's `Date de rapportage` / `Date du
+# rapport` field and never from the filename (see scripts/lib/report_date.py).
+# That rule is right because the field is right almost everywhere. A row here
+# records one document where it is not: where the field disagrees with the
+# same report's own title line, its table captions and its narrative, and with
+# the position its cumulative counts take between its neighbours.
+#
+# Each row licenses ONE substitution on ONE document. It is keyed on the
+# SHA-256, so a revised upload voids it, and the page must still print
+# `printed_data_date` -- if INSP corrects the field in place, the build stops
+# and the row is deleted rather than left to override a page that no longer
+# needs it. The filed date must also not collide with another report.
+#
+# Columns: sitrep, filename (as archived), sha256, printed_data_date (what the
+# field says), data_date (what this project files it under), evidence (quoted
+# from the page, enough for a reader to overturn the judgement on the page).
+sitrep	filename	sha256	printed_data_date	data_date	evidence
+150	sitrep_150_2026-10-11.pdf	24000145be4bef1e2fbaad23cb65c0db7f519280ee6cd2d4a284ce74afd16464	2026-10-12	2026-10-11	The field reads «Date du rapport : 12 octobre 2026», the same as sitrep 151. Everything else on the document says 11 October: the title «SitRep N°150 /MVE-BDBV/11/10/2026»; «En terme du 11 octobre 2026, 88 nouveaux cas confirmés»; «Tableau 1. Répartition des cas et décès confirmés par province touchée, au 11 octobre 2026»; «Tableau 2. ... par province et zone au 11 octobre 2026»; «En date du 11 octobre 2026, 2 503 alertes». Its national cumulative, 9 066 cases / 4 381 deaths, lies between sitrep 149 (10 Oct, 8 978 / 4 336) and sitrep 151 (12 Oct, 9 144 / 4 410). Read 2026-10-20.

@@ -508,6 +508,7 @@ PROVINCIAL_SUMMARY = TableSpec(
     row_vocabulary=frozenset({
         "ituri", "nord-kivu", "nord kivu", "sud-kivu", "sud kivu",
         "haut-uele", "haut uele", "tshopo", "bas-uele", "bas uele",
+        "sud-ubangi", "sud ubangi", "nord-ubangi", "nord ubangi",
         "kinshasa", "maniema"}),
     # `21 sur 36 (58,3 %)` is the same zones-touched cell in words -- the 033
     # vintage spells the slash out.
@@ -867,13 +868,30 @@ def select(tables: Iterable, spec: TableSpec) -> Resolved | None:
     # drew it; everything after that -- headless, adjacent, no other table
     # between -- is tested on the recovered rows exactly as before, so a
     # component holding no rule of the anchor's width contributes nothing.
-    for chain in chains:
+    #
+    # AND THE FUSED PIECE CAN BE THE HEAD. Sitreps 154 and 157 draw the zone
+    # table's first page far enough down to touch the coloured footer bars at
+    # y=776, which run from x=16.9 to 599.3; the head's component takes their
+    # extent, the continuation (72.5 to 533.2) no longer matches it, and page
+    # three -- every province after Ituri -- was orphaned. The printed totals
+    # then had nothing to check against, so it surfaced only as a row count.
+    # The same reading of the rules applies in the other direction: if the
+    # head draws rules spanning the continuation's edges, its rows re-columned
+    # onto those edges are the table, and they replace the head (`within`, not
+    # `subgrid`: the zone rows' own rules do not span the table's width).
+    for k, chain in enumerate(chains):
         anchor = chain[0]
         pos = max((t.page, t.ys[0]) for t in chain)
         for t in tabs:
             if (t.page, t.ys[0]) <= pos:
                 continue
             got = t if spans_same(t, anchor) else t.subgrid(anchor.xs, SPAN_TOL)
+            if (got is None and len(chain) == 1 and t.header_rows() == 0
+                    and t.page - pos[0] == 1):
+                head = anchor.within(t.xs, SPAN_TOL)
+                if head is not None and head.header_rows() > 0:
+                    anchor = chain[0] = head
+                    got = t
             if got is None:
                 continue
             if got.header_rows() != 0 or got.page - pos[0] > 1:

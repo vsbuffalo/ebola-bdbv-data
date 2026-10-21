@@ -145,9 +145,14 @@ from lib.archive import held_pdfs, report_skipped  # noqa: E402
 PROVINCES = {
     "ituri": "Ituri", "nordkivu": "Nord-Kivu", "sudkivu": "Sud-Kivu",
     "hautuele": "Haut-Uélé", "basuele": "Bas-Uélé", "tshopo": "Tshopo",
+    # Joined at sitreps 119 and 155. A province missing here is not merely
+    # unread: its bullet is not a passage boundary, so its numbers run on into
+    # the province before it.
+    "sudubangi": "Sud-Ubangi", "nordubangi": "Nord-Ubangi",
 }
 PROV_RE = re.compile(r"\b(Ituri|Nord[-\s]?Kivu|Sud[-\s]?Kivu"
-                     r"|Haut[-\s]?U[ée]l[ée]|Bas[-\s]?U[ée]l[ée]|Tshopo)\b", re.I)
+                     r"|Haut[-\s]?U[ée]l[ée]|Bas[-\s]?U[ée]l[ée]|Tshopo"
+                     r"|Sud[-\s]?Ubangi|Nord[-\s]?Ubangi)\b", re.I)
 
 #: The care pillar's heading, across the three vintages that carry one.
 SECTION = re.compile(r"Continuit[ée]\s+des\s+soins"
@@ -186,7 +191,8 @@ OPENER = re.compile(r"(?:^|[→➔•●▪.;:!?])\s*$")
 #: wrong number, so both are refused.
 JOINED = re.compile(r"^\s*(?:et|/|,)\s*(?:l[ae]\s+)?"
                     r"(?:Ituri|Nord[-\s]?Kivu|Sud[-\s]?Kivu|Haut[-\s]?U[ée]l[ée]"
-                    r"|Bas[-\s]?U[ée]l[ée]|Tshopo)\b", re.I)
+                    r"|Bas[-\s]?U[ée]l[ée]|Tshopo|Sud[-\s]?Ubangi|Nord[-\s]?Ubangi)\b",
+                    re.I)
 
 
 def opens_passage(block: str, at: int) -> bool:
@@ -248,8 +254,17 @@ CUMUL_PAREN = re.compile(r"\([^()]*cumul\w*[^()]*\)", re.I)
 #: "Au total de 392 décès sont enregistré". The last two are outbreak-to-date
 #: figures for a subpopulation, and read as the day's they put 392 deaths in a
 #: Nord-Kivu row for 3 July.
+#:
+#: EXCEPT THE END-OF-DAY CENSUS. From about sitrep 135 every province bullet
+#: states its census as "Au total, 398 patients demeuraient en isolement à la
+#: fin de la journée" -- a stock read at an instant, not an outbreak-to-date
+#: count -- and stripping it emptied the per-province census for three weeks.
+#: Exempted only where patients or malades are followed by a census verb, so
+#: "Au total, 102 PPLs sont confirmés" and "Au total de 392 décès" still go.
 STOCK_TAIL = re.compile(
-    r"(?:le\s+|un\s+|du\s+)?\b(?:cumul\w*|au\s+total|depuis\s+le\s+d[ée]but)"
+    r"(?:le\s+|un\s+|du\s+)?\b(?:cumul\w*|depuis\s+le\s+d[ée]but"
+    r"|au\s+total(?!,?\s*\d[\d\s]*\s+(?:patients?|malades?)\s+"
+    r"(?:demeur|sont\b|restent\b|[ée]taient\b)))"
     r"\b[^;.]*", re.I)
 #: A clause reporting the in-facility case fatality is cumulative even when it
 #: does not say so. Sitrep 079 writes "→ Nord-Kivu : 155 cas confirmés admis en
@@ -258,6 +273,18 @@ STOCK_TAIL = re.compile(
 #: for 1 August -- a day on which the same bullet reports four. The ratio is
 #: the tell: a deaths-over-admissions percentage is a stock over a stock.
 MORTALITY_CLAUSE = re.compile(r"[^;.]*mortalit[ée]\s+intra[^;.]*", re.I)
+#: The experimental-treatment cohort is outbreak-to-date too, and its outcome
+#: list reads exactly like a day's exits: "190 cas ont reçu le traitement
+#: expérimental, dont 28 confirmés (3 sous MBP134 et 26 sous Remdesivir : 10
+#: guéris, 7 décédés, 1 évadé et 8 en cours de traitement)" (Tshopo, sitreps
+#: 129-132) put an absconder and ten recoveries in the day's columns on four
+#: consecutive days, one of which says «aucune nouvelle admission ni sortie»;
+#: sitrep 115's published absconder was the same cohort. What is removed is the
+#: outcome PARENTHETICAL after "traitement", not the clause: sitrep 090 states
+#: its census in the same unpunctuated sentence ("portent à 5 le nombre de
+#: patients en isolement ..., 17 personnes ayant bénéficié du traitement
+#: expérimental en cumul"), and 131 writes "29 confirmés sous traitement (...)".
+TREATMENT_CLAUSE = re.compile(r"\btraitement\b[^()]{0,80}\([^()]*\)", re.I)
 
 #: French thousands separators: ASCII space, no-break, narrow no-break.
 _TH = "[    ]"
@@ -284,6 +311,7 @@ def pool(seg: str) -> str:
     """
     p = CUMUL_PAREN.sub(" ", seg)
     p = MORTALITY_CLAUSE.sub(" ", p)
+    p = TREATMENT_CLAUSE.sub(" ", p)
     p = STOCK_TAIL.sub(" ", p)
     p = WORD_THEN_DIGITS.sub(lambda m: " " + m.group(1) + " ", p)
     return WORD_RE.sub(lambda m: str(WORDS[m.group(1).lower()]), p)
@@ -307,10 +335,23 @@ CENSUS = [
     # the census; the second number is the capacity.
     rf"occupation[^.;]{{0,60}}?atteint\s+({NUM})\s+lits\s+sur\s+{NUM}",
     # "528 patients sont hospitalisés", "167 malades sont hospitalisés",
-    # "196 malades en isolement en fin de journée", "471 patients en isolement"
-    rf"({NUM})\s+(?:patients?|malades?)\s+(?:y\s+)?(?:sont|est|restent|reste"
-    rf"|[ée]taient|sortis)?\s*(?:en\s+)?(?:hospitalis[ée]s?|hospitalisation"
-    rf"|isolement|isol[ée]s?|pris\s+en\s+charge)",
+    # "196 malades en isolement en fin de journée", "471 patients en isolement",
+    # and from about sitrep 135 "398 patients demeuraient en isolement à la fin
+    # de la journée", the wording every province bullet then uses.
+    #
+    # NOT "149 patients sont pris en charge dans des ESS qui ne sont pas des
+    # CTE/CT" (sitrep 147, Nord-Kivu), nor "114 patients (31,2 %) restent pris
+    # en charge dans les centres non normés" (sitrep 133): patients held
+    # OUTSIDE the isolation census the same bullet states (523, 365).
+    #
+    # From sitrep 150 the split sits between the noun and the verb -- "Ainsi,
+    # 363 patients (127 confirmés et 236 suspects) sont hospitalisés" -- so one
+    # parenthetical is allowed there; SPLIT_CS reads the split out of it.
+    rf"({NUM})\s+(?:patients?|malades?)\s+(?:\([^()]{{0,80}}\)\s*)?"
+    rf"(?:y\s+)?(?:sont|est|restent|reste"
+    rf"|[ée]taient|sortis|demeur(?:aient|ent|e))?\s*(?:en\s+)?"
+    rf"(?:hospitalis[ée]s?|hospitalisation|isolement|isol[ée]s?"
+    rf"|pris\s+en\s+charge(?!\s+dans\s+(?:des|les)\s+(?:ESS|centres\s+non)))",
     # "portent à 4 le nombre de patients isolés", "porte à 5 le nombre de
     # patients isolés", "portant à 8 le nombre de patients en isolement"
     rf"port(?:ent|e|ant)\s+[àa]\s+({NUM})[,\s]+le\s+nombre\s+de\s+patients?",
@@ -350,6 +391,36 @@ CENSUS_CONFIRMED_ONLY = [
     rf"({NUM})\s+(?:cas\s+)?confirm[ée]s?\s+(?:sont\s+)?"
     rf"(?:hospitalis[ée]s?|isol[ée]s?|en\s+isolement|en\s+hospitalisation)",
 ]
+
+#: THE PATIENTS IN DEDICATED STRUCTURES, where a bullet prints them as a part
+#: of its total. From sitrep 124 Nord-Kivu states two counts, «373 patients
+#: sont pris en charge en hospitalisation dont 216 dans les structures
+#: dédiées», and computes its occupancy rate on the second: the remainder are
+#: in ordinary health facilities (ESS) that are not CTE/CT. Every wording is a
+#: SUBSET clause; a value is kept only if it is smaller than the total, so a
+#: province printing its whole census over its beds -- Haut-Uélé's «(71/138)»
+#: -- does not acquire a second census identical to its first.
+#: See notes/2026-10-20-nord-kivu-census-two-counts.md.
+DEDICATED = [
+    # "dont 216 dans les structures dédiées", "dont 221 dans les structures
+    # normées", "dont 250 dans les structures de prise en charge normées",
+    # "dont 223 dans les CTE pour 354 lits"
+    rf"dont\s+({NUM})\s+dans\s+(?:les|des)\s+(?:structures(?:\s+de\s+prise"
+    rf"\s+en\s+charge)?\s+(?:norm[ée]es|d[ée]di[ée]es)|CTE(?:/CT)?\b)",
+    # "sont hospitalisés : 328 dans les CTE/CT pour 374 lits"
+    rf"[:,]\s*({NUM})\s+dans\s+les\s+CTE(?:/CT)?\b",
+    # "(325 patients aux lits des CTE/CT sur 354 lits)"
+    rf"\(({NUM})\s+patients?\s+aux\s+lits\s+des\s+CTE(?:/CT)?\s+sur\s+{NUM}\s+lits\)",
+]
+#: The occupancy fraction printed beside the rate, "84,2 % (315/374)" or
+#: "87,2 % : (326/374)": occupied beds over beds, published as `beds_occupied`
+#: and used for the occupancy check. It is a DEDICATED-structure count only
+#: where the rate names the CTE/CT ("taux d'occupation des lits des CTE/CT de
+#: 87,2 % : (326/374)"). Haut-Uélé prints "29,4 % (45/153)" against 68 patients
+#: in isolation on sitrep 149 and does not say where the other 23 are, so its
+#: numerator is an occupied-bed count and not a claim about structures.
+OCC_FRACTION = re.compile(rf"(\d{{1,3}}(?:[.,]\d{{1,2}})?)\s*%\s*:?\s*\(({NUM})\s*/\s*({NUM})\)")
+OCC_NAMES_CTE = re.compile(r"occupation[^%]{0,40}?CTE", re.I)
 
 BEDS = [
     # "pour 965 lits", "sur 833 lits", "pour 78 lits montés"
@@ -467,8 +538,8 @@ FIELDS = ("admissions", "admissions_confirmed", "admissions_suspect",
           "admissions_readmitted",
           "exits", "exits_recovered", "exits_noncase", "exits_absconded",
           "exits_deaths", "exits_deaths_confirmed", "exits_transferred",
-          "census", "census_confirmed", "census_suspect",
-          "beds", "beds_confirmed", "beds_suspect",
+          "census", "census_confirmed", "census_suspect", "census_dedicated",
+          "beds", "beds_occupied", "beds_confirmed", "beds_suspect",
           "printed_occupancy_pct", "printed_occupancy_confirmed_pct",
           "printed_occupancy_suspect_pct")
 
@@ -548,8 +619,18 @@ def harvest(seg: str) -> dict:
         # 17 décès parmi les sorties dont 12 confirmés" (sitreps 066 and 067)
         # otherwise reads the twelve confirmed DEATHS as a confirmed census of
         # twelve, on a day the province held 553 patients.
-        tail = p[census[2]:census[2] + 160]
-        cut = re.search(r"d[ée]c[èe]s|sorties?\b|admissions?\b|gu[ée]ri", tail, re.I)
+        # From the census's own START: from sitrep 150 the split sits inside
+        # the census phrase itself -- "363 patients (127 confirmés et 236
+        # suspects) sont hospitalisés" -- so the text after the match no
+        # longer holds it.
+        tail = p[census[1]:census[1] + 160]
+        # And at the end of the census's own clause: "Seize (16) patients (8
+        # confirmés dont 6 PPL et 8 suspects) sont en isolement ... ; 8
+        # confirmés, 5 suspects et 3 accompagnants ont bénéficié d'un repas
+        # chaud" (sitrep 132) gave a suspect census of 5 where the page
+        # states 8 -- the meal clause, after the semicolon.
+        cut = re.search(r"d[ée]c[èe]s|sorties?\b|admissions?\b|gu[ée]ri"
+                        r"|;|repas|b[ée]n[ée]fici", tail, re.I)
         if cut:
             tail = tail[:cut.start()]
         mc, ms = SPLIT_CS.search(tail), SPLIT_SC.search(tail)
@@ -609,6 +690,21 @@ def harvest(seg: str) -> dict:
     if m:
         r["beds_confirmed"] = r["beds_confirmed"] or _int(m.group(1))
         r["beds_suspect"] = r["beds_suspect"] or _int(m.group(2))
+
+    frac = OCC_FRACTION.search(p)
+    if frac:
+        r["beds_occupied"] = _int(frac.group(2))
+        r["beds"] = r["beds"] or _int(frac.group(3))
+        r["printed_occupancy_pct"] = (r["printed_occupancy_pct"]
+                                      or float(frac.group(1).replace(",", ".")))
+    ded = _first(DEDICATED, p)
+    if ded is not None:
+        r["census_dedicated"] = ded[0]
+    elif frac and OCC_NAMES_CTE.search(p[max(0, frac.start() - 60):frac.end()]):
+        r["census_dedicated"] = r["beds_occupied"]
+    if r["census_dedicated"] is not None and (
+            r["census"] is None or r["census_dedicated"] >= r["census"]):
+        r["census_dedicated"] = None      # not a part of a larger total
     return r
 
 
@@ -634,7 +730,19 @@ def checks(r: dict) -> list[tuple[str, bool]]:
     if r["beds"] is not None and None not in (r["beds_confirmed"], r["beds_suspect"]):
         out.append(("beds_split",
                     r["beds_confirmed"] + r["beds_suspect"] == r["beds"]))
-    if None not in (r["census"], r["beds"], r["printed_occupancy_pct"]):
+    # Where the bullet prints the occupied or dedicated-structure part of its
+    # total, the source computes its rate on that part. Testing the total
+    # against it read every Nord-Kivu row from sitrep 124 as a contradiction;
+    # testing the part under the same name would license a total it never
+    # tested. So the part's check has its own name, licenses the part, and is
+    # not a census closure.
+    part = next((r[k] for k in ("beds_occupied", "census_dedicated")
+                 if r[k] is not None), None)
+    if part is not None and part != r["census"]:
+        if None not in (r["beds"], r["printed_occupancy_pct"]):
+            out.append(("occupancy_occupied",
+                        pct_ok(part, r["beds"], r["printed_occupancy_pct"])))
+    elif None not in (r["census"], r["beds"], r["printed_occupancy_pct"]):
         out.append(("occupancy",
                     pct_ok(r["census"], r["beds"], r["printed_occupancy_pct"])))
     if None not in (r["census_confirmed"], r["beds_confirmed"],
@@ -675,6 +783,7 @@ def checks(r: dict) -> list[tuple[str, bool]]:
     # deaths among sixteen is not a reading of anything, and this is the only
     # check that passage offers.
     for part, whole, name in (("census_confirmed", "census", "confirmed_le_census"),
+                              ("census_dedicated", "census", "dedicated_le_census"),
                               ("exits_deaths_confirmed", "exits_deaths",
                                "deaths_conf_le_deaths"),
                               ("exits_recovered", "exits", "recovered_le_exits")):
@@ -689,6 +798,7 @@ def checks(r: dict) -> list[tuple[str, bool]]:
 #: are worth recording because they catch the source contradicting itself, but
 #: which pass on almost any reading and license nothing.
 CLOSURES = frozenset({"census_split", "beds_split", "occupancy",
+                      "occupancy_occupied",
                       "occupancy_confirmed", "occupancy_suspect",
                       "exits_split", "admissions_split", "contacts_rate"})
 
@@ -761,6 +871,20 @@ def summary_rows(flat: str) -> list[dict]:
     sentence names a province as its subject."""
     out = []
     for m in SUMMARY.finditer(flat):
+        # "AU TOTAL" INSIDE A PROVINCE'S BULLET IS THAT PROVINCE'S CENSUS. The
+        # whole-response sentence follows the occupancy table (sitreps 077-
+        # 080); from about sitrep 135 every province bullet closes its own
+        # census with the same words -- "• Au Haut-Uélé, 11 nouvelles
+        # admissions ... Au total, 69 patients sont en isolement" -- and read
+        # here each became a national census of 26 to 149 against a tile
+        # printing ~900. The province reader already holds that clause.
+        if not m.group(1):
+            bullet = max(flat.rfind(b, 0, m.start()) for b in "•●▪→➔")
+            if bullet >= 0 and m.start() - bullet < SUMMARY_CAP:
+                lead = flat[bullet + 1:bullet + 40]
+                pm = PROV_RE.search(lead)
+                if pm and opens_passage(lead, pm.start()):
+                    continue
         seg = flat[m.end():m.end() + SUMMARY_CAP]
         stop = re.search(r"\.\s", seg)
         if stop:
@@ -913,10 +1037,18 @@ def offer(best: dict[str, dict], refused: list[dict], prov: str, r: dict,
                       keep["sentence"] + (" | " + drop["sentence"] if filled else ""))
 
 
+#: THE PAGE NUMBER AT A PAGE BREAK, which pdftotext emits as a line of its own
+#: just before the form feed. Flattened, it lands inside whatever sentence the
+#: page cut: sitrep 153 reads "Ainsi, 6 453 patients (158 confirmés et 295
+#: suspects ...)", which the thousands separator joins into a census of 6 453
+#: on a day Nord-Kivu held 453; sitrep 149 reads "demeuraient en 6 isolement".
+PAGE_NUMBER = re.compile(r"\n[ \t]*\d{1,3}[ \t]*\n\s*\f")
+
+
 def extract(pdf: Path) -> tuple[list[dict], list[dict]]:
     text = subprocess.run(["pdftotext", "-q", str(pdf), "-"],
                           capture_output=True, text=True).stdout
-    flat = re.sub(r"\s+", " ", text)
+    flat = re.sub(r"\s+", " ", PAGE_NUMBER.sub("\n\f", text))
     refused: list[dict] = []
 
     best: dict[str, dict] = {}
@@ -1017,7 +1149,8 @@ SCHEMA = {"sitrep": pl.Int64, "date": pl.Utf8, "province": pl.Utf8,
           "exits_absconded": pl.Int64, "exits_deaths": pl.Int64,
           "exits_deaths_confirmed": pl.Int64, "exits_transferred": pl.Int64,
           "census": pl.Int64, "census_confirmed": pl.Int64,
-          "census_suspect": pl.Int64, "beds": pl.Int64,
+          "census_suspect": pl.Int64, "census_dedicated": pl.Int64,
+          "beds": pl.Int64, "beds_occupied": pl.Int64,
           "beds_confirmed": pl.Int64, "beds_suspect": pl.Int64,
           "printed_occupancy_pct": pl.Float64,
           "printed_occupancy_confirmed_pct": pl.Float64,
