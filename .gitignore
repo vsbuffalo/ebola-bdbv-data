@@ -63,3 +63,7 @@ pdfs/akilimali_et_al_2026_supp.pdf
 # ignored with the rest of data/build. They are reconstructible from the
 # manifests on demand, and a set is 2.5 MB against thirty published releases.)
 data/build/releases/
+
+# Snapshots of the documents the export tables cite (`make fetch-exports`).
+# Pinned by sha256 in data/raw/exports/snapshots.manifest.tsv, which is committed.
+data/raw/exports/snapshots/

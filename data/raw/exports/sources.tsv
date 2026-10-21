@@ -1,0 +1,50 @@
+# Every document the export tables cite. Hand-authored. `kind` says whether a
+# value may be taken from it (primary) or only checked against it (secondary).
+# `text_layer` says how a quote can be verified: html and pdf are checked
+# mechanically against the fetched snapshot by `make check-exports`; scanned
+# documents have no text layer, so their quotes are transcriptions and say so.
+# `published` is the date the document prints, not the fetch date, which
+# lives in data/raw/exports/snapshots.manifest.tsv. All read 2026-10-20.
+source_id	publisher	title	url	published	kind	text_layer
+who_don602	WHO	Disease Outbreak News 2026-DON602	https://www.who.int/emergencies/disease-outbreak-news/item/2026-DON602	2026-05-16	primary	html
+who_don603	WHO	Disease Outbreak News 2026-DON603	https://www.who.int/emergencies/disease-outbreak-news/item/2026-DON603	2026-05-21	primary	html
+who_don605	WHO	Disease Outbreak News 2026-DON605	https://www.who.int/emergencies/disease-outbreak-news/item/2026-DON605	2026-05-29	primary	html
+who_don606	WHO	Disease Outbreak News 2026-DON606	https://www.who.int/emergencies/disease-outbreak-news/item/2026-DON606	2026-06-08	primary	html
+who_don607	WHO	Disease Outbreak News 2026-DON607	https://www.who.int/emergencies/disease-outbreak-news/item/2026-DON607	2026-06-13	primary	html
+who_don608	WHO	Disease Outbreak News 2026-DON608	https://www.who.int/emergencies/disease-outbreak-news/item/2026-DON608	2026-06-19	primary	html
+who_don612	WHO	Disease Outbreak News 2026-DON612	https://www.who.int/emergencies/disease-outbreak-news/item/2026-DON612	2026-07-03	primary	html
+who_don613	WHO	Disease Outbreak News 2026-DON613	https://www.who.int/emergencies/disease-outbreak-news/item/2026-DON613	2026-07-17	primary	html
+who_don614	WHO	Disease Outbreak News 2026-DON614	https://www.who.int/emergencies/disease-outbreak-news/item/2026-DON614	2026-08-01	primary	html
+who_don616	WHO	Disease Outbreak News 2026-DON616	https://www.who.int/emergencies/disease-outbreak-news/item/2026-DON616	2026-08-28	primary	html
+who_don619	WHO	Disease Outbreak News 2026-DON619	https://www.who.int/emergencies/disease-outbreak-news/item/2026-DON619	2026-10-08	primary	html
+who_alert_table	WHO	Emergencies alert and response table (15 May-18 October 2026)	https://www.who.int/emergencies/alert-and-response		primary	html
+afro_sr01	WHO AFRO	Weekly external situation report 01 (data as of 18 May 2026)	https://iris.who.int/server/api/core/bitstreams/bb1d4668-04e0-4563-b7c4-d1bdefbc9f05/content	2026-05-18	primary	pdf
+afro_sr02	WHO AFRO	Weekly external situation report 02 (data as of 24 May 2026)	https://iris.who.int/server/api/core/bitstreams/4a06bc4f-6c0b-4c0d-925a-8a7b5a13299f/content	2026-05-24	primary	pdf
+afro_sr03	WHO AFRO	Weekly external situation report 03 (data as of 31 May 2026)	https://iris.who.int/server/api/core/bitstreams/2f969fbf-de50-4154-880b-ccf471b21356/content	2026-05-31	primary	pdf
+afro_sr06	WHO AFRO	Weekly external situation report 06 (data as of 21 June 2026)	https://iris.who.int/server/api/core/bitstreams/9f709b11-f8ab-4d3b-aba9-9fe7fa743395/content	2026-06-21	primary	pdf
+afro_sr07	WHO AFRO	Weekly external situation report 07 (data as of 28 June 2026)	https://iris.who.int/server/api/core/bitstreams/6eda0efa-73d3-42dd-900b-b75f92b6b301/content	2026-06-28	primary	pdf
+afro_uganda_end	WHO AFRO	Uganda ends Ebola outbreak following completion of 42-day countdown	https://www.afro.who.int/countries/uganda/news/uganda-ends-ebola-outbreak-following-completion-42-day-countdown	2026-08-27	primary	html
+afro_kenya_first	WHO AFRO	Kenya confirms first imported Bundibugyo virus disease case; WHO supports control efforts	https://www.afro.who.int/countries/kenya/news/kenya-confirms-first-imported-bundibugyo-virus-disease-case-who-supports-control-efforts	2026-10-06	primary	html
+afro_kenya_supplies	WHO AFRO	WHO supports Kenya's Ebola response with essential medical supplies	https://afro.who.int/countries/kenya/news/who-supports-kenyas-ebola-response-essential-medical-supplies	2026-10-12	primary	html
+afro_kenya_third	WHO AFRO	WHO supports Kenya's Ebola response as third case is found early in quarantine	https://www.afro.who.int/countries/kenya/news/who-supports-kenyas-ebola-response-third-case-found-early-quarantine	2026-10-16	primary	html
+afro_nigeria	WHO AFRO	Nigeria confirms imported case of Ebola Bundibugyo virus disease	https://www.afro.who.int/countries/nigeria/news/nigeria-confirms-imported-case-ebola-bundibugyo-virus-disease	2026-10-20	primary	html
+ug_moh_15may	Uganda Ministry of Health	Uganda confirms Ebola Bundibugyo virus disease outbreak	https://health.go.ug/download/press-statement-ebola-bundibugyo-virus-disease-outbreak-2026?download=1	2026-05-15	primary	scanned
+ug_moh_21may	Uganda Ministry of Health	Update on the EVD outbreak as of 21st May 2026	https://health.go.ug/download/press-statement-update-on-the-evd-outbreak-as-of-21st-may-2026?download=1	2026-05-21	primary	scanned
+ug_moh_23may	Uganda Ministry of Health	Press release, 23 May 2026	https://health.go.ug/download/press-release-ebola-23rd-may-2026?download=1	2026-05-23	primary	scanned
+ug_moh_25may	Uganda Ministry of Health	Press release, 25 May 2026	https://health.go.ug/download/press-release-ebola-25th-may-2026?download=1	2026-05-25	primary	scanned
+ug_moh_27may	Uganda Ministry of Health	Press statement on EVD update, 27 May 2026	https://health.go.ug/download/press-statement-on-evd-update-27th-may-2026?download=1	2026-05-27	primary	scanned
+ug_moh_29may	Uganda Ministry of Health	Press release, 29 May 2026	https://health.go.ug/download/press-release-ebola-29th-may-2026?download=1	2026-05-29	primary	scanned
+ug_moh_28jul	Uganda Ministry of Health	Uganda declares the end of the 2026 Ebola disease outbreak	https://health.go.ug/download/press-statement-uganda-declared-ebola-free-28th-july-2026?download=1	2026-07-28	primary	scanned
+ke_moh_cs_6oct	Kenya Ministry of Health	Cabinet Secretary press release, first Ebola case	https://www.health.go.ke/sites/default/files/2026-10/CS%20PRESS%20RELEASE-%201ST%20EBOLA%20CASE.pdf	2026-10-06	primary	scanned
+ke_moh_6oct	Kenya Ministry of Health	Kenya confirms first imported case of Bundibugyo Ebola virus disease	https://www.health.go.ke/kenya-confirms-first-imported-case-bundibugyo-ebola-virus-disease	2026-10-06	primary	html
+ke_moh_7oct	Kenya Ministry of Health	Kenya strengthens Ebola preparedness and contact tracing	https://www.health.go.ke/index.php/node/2689	2026-10-07	primary	html
+ke_moh_dg_14oct	Kenya Ministry of Health	Second Ebola case detected early: contact tracing and quarantine working	https://www.health.go.ke/sites/default/files/2026-10/Press%20statement_Ebola_13%20October%202026.pdf	2026-10-14	primary	scanned
+ng_fmoh_20oct	Nigeria Federal Ministry of Health and Social Welfare	FG confirms Ebola disease case in FCT, activates public health response	https://health.gov.ng/fg-confirms-ebola-disease-case-in-fct-activates-public-health-response/	2026-10-20	primary	html
+ng_von_20oct	Voice of Nigeria	Ebola: Nigeria confirms imported case in Abuja, tracks 44 contacts	https://von.gov.ng/ebola-nigeria-confirms-imported-case-in-abuja-tracks-44-contacts/	2026-10-20	secondary	html
+fr_eurosurv	Eurosurveillance (Mailhe et al., French national authorities)	An imported case of Bundibugyo virus infection, France, June 2026	https://pmc.ncbi.nlm.nih.gov/articles/PMC13451861/	2026-08-06	primary	html
+de_charite_22may	Charité Universitätsmedizin Berlin	Statement on the condition of the Ebola patient	https://www.charite.de/en/service/press_reports/artikel/detail/charite_stellungnahme_zum_gesundheitszustand_des_an_ebola_erkrankten_patienten	2026-05-22	primary	html
+de_charite_6jun	Charité Universitätsmedizin Berlin	Patient discharged from Charité's special isolation unit	https://www.charite.de/en/service/press_reports/artikel/detail/patient_discharged_from_charites_special_isolation_unit	2026-06-06	primary	html
+de_bmg_faq	German Federal Ministry of Health	Ebola (FAQ, Stand 20. Juli 2026)	https://www.bundesgesundheitsministerium.de/service/begriffe-von-a-z/e/ebola.html	2026-07-20	primary	html
+ecdc_1oct	ECDC	News item on the healthcare worker evacuated to the Netherlands	https://www.ecdc.europa.eu/en/node/42231	2026-10-01	primary	html
+ecdc_outbreak	ECDC	Ebola outbreak in the Democratic Republic of the Congo and Uganda	https://www.ecdc.europa.eu/en/ebola-outbreak-democratic-republic-congo-and-uganda	2026-10-20	primary	html
+nl_rivm	RIVM	Actuele informatie ebola	https://www.rivm.nl/ebola/actuele-informatie	2026-10-19	primary	html

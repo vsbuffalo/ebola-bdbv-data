@@ -1,10 +1,12 @@
 # Uganda arm of the 2026 Bundibugyo virus outbreak.
 #
 # Uganda's outbreak is CLOSED: last case identified 21 June 2026, last patient
-# discharged 16 July, end declared by the Ministry of Health on 28 July after
-# the standard 42-day countdown. That makes it a complete epidemic curve rather
-# than a censored one -- unusually informative, because nothing here is
-# right-truncated by reporting lag.
+# discharged 16 July. The Ministry of Health declared the end on 28 July,
+# counting from the last Ugandan patient; WHO declared it on 27 August, counting
+# from the last imported patient. Re-checked against WHO on 2026-10-20: no
+# Ugandan case since. That makes it a complete epidemic curve rather than a
+# censored one -- unusually informative, because nothing here is right-truncated
+# by reporting lag.
 #
 # Recorded by hand from the WHO Disease Outbreak News. This is a small, closed
 # series stated in prose rather than a published table, so there is nothing to
@@ -47,8 +49,8 @@ value = "2026-06-21"
 source = "WHO DON 2026-DON613 -- identification date of the final confirmed case. Discharged 16 July after two negative tests."
 
 [outbreak_declared_over]
-value = "2026-07-28"
-source = "Uganda Ministry of Health, 28 July 2026, twelve days after the last patient was discharged."
+value = "2026-08-27"
+source = "Two declarations, both correct on their own terms. The Uganda Ministry of Health declared the end on 28 July 2026 ('UGANDA DECLARES THE END OF THE 2026 EBOLA DISEASE OUTBREAK'), counting 42 days from the discharge of 'the last Ugandan national, a locally transmitted patient on 16th June 2026'. WHO AFRO (27 August 2026, 'Uganda ends Ebola outbreak following completion of 42-day countdown') counts 42 days from the last imported patient's discharge on 16 July, and calls 28 July the date 'Uganda announced the interruption of local transmission'. This field carries the later, WHO date; the export tables (data/raw/exports/) cite both documents."
 
 [affected_districts]
 value = ["Kampala"]

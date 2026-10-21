@@ -20,8 +20,9 @@ the undated ones while still carrying the timing.
 
 WHY THE SERIES STOPS
 --------------------
-Uganda's last case was identified 21 June and the outbreak was declared over on
-28 July after the 42-day countdown, so the absence of later cases is real rather
+Uganda's last case was identified 21 June, local transmission was declared
+interrupted on 28 July and the outbreak over on 27 August after the 42-day
+countdown, so the absence of later cases is real rather
 than a lapse in surveillance. But over the same period Ituri's prevalence roughly
 tripled, and a model fitted without any Uganda data puts most of its export flow
 AFTER 21 June. Exports stopped while the source epidemic accelerated.

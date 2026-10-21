@@ -1,0 +1,33 @@
+# Every printed case total for a country outside the DRC, one row per source
+# and as-of date. Hand-authored from data/raw/exports/sources.tsv.
+#
+# AN EMPTY CELL IS 'NOT PRINTED', NEVER ZERO. `imported` is the destination's
+# own classification; `imported_from_drc` is filled only where the source
+# says the import came from the DRC, so a case imported from somewhere the
+# source does not name stays visibly apart. `imported_basis` says what the
+# imported count is a count OF (confirmed, or confirmed and probable).
+# `quote` must appear in the snapshot when `quote_check` is `snapshot`
+# (`make check-exports`); `transcribed` quotes are read off scanned images.
+country	as_of	source_id	confirmed	probable	deaths	imported	imported_basis	imported_from_drc	linked	under_investigation	quote	quote_check	note
+Uganda	2026-05-15	ug_moh_15may	1			1	confirmed	1			This is an imported case from DRC	transcribed	
+Uganda	2026-05-20	who_don603	2		1	2	confirmed	2	0		Both cases were imported from the DRC	snapshot	Confirmed and deaths: «a total of two confirmed cases including one death».
+Uganda	2026-05-23	ug_moh_23may	5								bringing the total number of confirmed cases to five (5)	transcribed	Two of the three new cases are described as contacts of the first case; the third, a Congolese woman, is not classified.
+Uganda	2026-05-27	ug_moh_27may	7		1						The total number of cases stand at seven (7) with one death	transcribed	
+Uganda	2026-05-29	who_don605	9		1						a total of nine confirmed cases including one death	snapshot	Districts: «Kampala (n=8) and Wakiso (n=1)».
+Uganda	2026-05-30	afro_sr03	11	1							Uganda has reported 12 cases (11 confirmed and one probable)	snapshot	
+Uganda	2026-06-06	who_don606	19	1	2	14	confirmed		5		14 cases are imported and five are Ugandans	snapshot	The source states the five local cases as a nationality, not a route of infection.
+Uganda	2026-06-10	who_don607	19	1	2	14	confirmed		5		14 cases are imported and five are secondary transmission	snapshot	
+Uganda	2026-06-18	who_don608	19	1	2	14	confirmed		5		14 cases are imported and five are secondary transmission	snapshot	
+Uganda	2026-07-02	who_don612	20	1	2	15	confirmed		5		15 are imported cases, while five are secondary cases	snapshot	
+Uganda	2026-07-14	who_don613	20		2	15	confirmed		5		15 were imported cases and five were secondary cases	snapshot	«All cases were reported in Kampala District», against Kampala and Wakiso in DON605-612.
+Uganda	2026-07-21	who_alert_table	20	1	2	15	confirmed_and_probable	15			15 confirmed and probable cases were imported	snapshot	Row «uganda** - 20 2 1 1 10% 18»: 20 confirmed, 2 deaths, 1 probable, 1 probable death. The footnote counts the 15 imports out of confirmed AND probable cases; every other source counts them out of the 20 confirmed.
+Uganda	2026-07-28	ug_moh_28jul	20		2	15	confirmed	15	5		Of these cases, 15 were imported from the Democratic Republic of Congo (DRC), while 5 were Ugandan nationals who acquired the infection as care workers of the imported cases	transcribed	The MoH's end-of-outbreak declaration. Does not mention the probable case.
+Uganda	2026-08-27	afro_uganda_end	20		2	15	confirmed	15	5		Fifteen cases were imported from the Democratic Republic of the Congo, while five were locally acquired	snapshot	End of the 42-day countdown from the last imported patient's discharge on 16 July.
+Kenya	2026-10-06	afro_kenya_first	1		1	1	confirmed	1			first imported case	snapshot	«fell ill in the Democratic Republic of the Congo»; the MoH, 7 Oct: «one imported case from the Democratic Republic of Congo».
+Kenya	2026-10-14	ke_moh_dg_14oct	2		1						Kenya has now recorded two confirmed cases and one death.	transcribed	«Both cases are linked».
+Kenya	2026-10-16	afro_kenya_third	3		1	1	confirmed		2		Kenya has now confirmed three cases, including one death	snapshot	Imported and linked from «linked to the first, imported case».
+Kenya	2026-10-18	who_alert_table	8		1						data as of 18 october 2026 kenya # - 8 1	snapshot	Cases 4-8 are not individuated in any primary source read. The footnote («# Imported case from the Democratic Republic of the Congo.») is singular against a row of 8.
+Kenya	2026-10-20	afro_nigeria	9								Kenya has reported nine cases linked to an imported case	snapshot	Whether the nine include the imported case is not stated.
+Nigeria	2026-10-20	ng_fmoh_20oct	1								following laboratory confirmation today, 20 October 2026	snapshot	The written release says «one case of Ebola disease» and does not use «imported».
+Nigeria	2026-10-20	afro_nigeria	1			1	confirmed			1	Nigeria confirms imported case of Ebola Bundibugyo virus disease	snapshot	Imported into Nigeria, but «Investigations are ongoing to establish the likely source of her infection»: the country of infection is under investigation.
+France	2026-07-06	who_alert_table	1		0	1	confirmed	1			france *** - 1 0 0 0 - 1	snapshot	Footnote: «Imported case from the Democratic Republic of the Congo. In France, the confirmed case was discharged on 4 July 2026.»
