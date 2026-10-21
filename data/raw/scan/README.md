@@ -1,21 +1,19 @@
 # The epiforecasts scan, pinned
 
-`insp_sitrep_scanned.csv` is a committed copy of
-`epiforecast-repro/raw/insp_sitrep_scanned.csv` — national headline values read
-from the INSP situation-report PDFs by an LLM agent and re-scanned by a second,
-with a notes column recording revisions and misprints.
+`insp_sitrep_scanned.csv` is a committed copy of `data/insp_sitrep_scanned.csv`
+from [epiforecasts/BVDOutbreakSize](https://github.com/epiforecasts/BVDOutbreakSize)
+— national headline values read from the INSP situation-report PDFs, with a
+notes column recording revisions, misprints and which of two printed numbers
+the scan chose.
 
-It is a **check, never a trunk**: the comparison in `make compare` sets our
-extraction against it, and this copy exists so that comparison is reproducible
-from this repository alone. Before it was committed, the comparison read a
-sibling checkout by relative path — a file a fresh clone could not obtain and
-whose silent change would have moved our headline numbers.
+It is a **check, never an input**: `make compare` sets our extraction against
+it, and nothing in `make build` or `make streams` reads it. The copy is
+committed so the comparison is reproducible from this repository alone.
 
-- Source file: `../epiforecast-repro/raw/insp_sitrep_scanned.csv` (local
-  checkout of the epiforecasts reproduction; not a git remote)
-- Copied: 2026-08-17
-- SHA-256 (first 16): `8082de3df68077e2`
-- Rows: 72 + header (through sitrep 093)
+- Pinned commit: the `BVDOutbreakSize` row of `external.lock`
+- SHA-256 (first 16): `fb9cc78ae1882770`
+- Rows: 135 + header (through sitrep 149)
 
-To refresh against a newer sibling checkout: `make scan-refresh`, then commit
-the diff — the diff **is** the record of what their scan changed.
+`make scan-refresh` downloads the file at exactly the pinned commit, and
+`make scan-update` moves the pin to their current head first. Commit the diff:
+it is the record of what their scan changed.

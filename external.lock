@@ -1,6 +1,13 @@
-# Pins for the comparison sources cloned into external/ (which is gitignored).
-# `make external` clones and checks out exactly these commits and FAILS if it
-# cannot; `make external-update` moves a pin to the remote head and rewrites
-# this file, and the diff is the record of what upstream changed.
+# Pins for the two comparison sources -- renderings of the same INSP reports
+# that we check our extraction AGAINST, never build FROM.
+#   BDBV2026-Data    INRB-UMIE's transcription, cloned into external/ (gitignored)
+#                    by `make external` at exactly this commit; `make
+#                    external-update` moves the pin to their head.
+#   BVDOutbreakSize  the epiforecasts scan; `make scan-refresh` downloads
+#                    data/insp_sitrep_scanned.csv at exactly this commit into the
+#                    committed copy data/raw/scan/; `make scan-update` moves the pin.
+# Each update rewrites only its own row, and the diff is the record of what
+# upstream changed.
 name	url	commit	locked
-BDBV2026-Data	https://github.com/INRB-UMIE/BDBV2026-Data	df7d1c58840427c25b9cdaaa4a5ee878ba6e089e	2026-08-17
+BDBV2026-Data	https://github.com/INRB-UMIE/BDBV2026-Data	db4aee16686f423976366cac00522164523a86e6	2026-10-20
+BVDOutbreakSize	https://github.com/epiforecasts/BVDOutbreakSize	924c0aa387b8bd1dd5824df3e64bccb93a99c5c2	2026-10-20
