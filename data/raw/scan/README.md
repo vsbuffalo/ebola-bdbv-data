@@ -1,10 +1,11 @@
 # The epiforecasts scan, pinned
 
 `insp_sitrep_scanned.csv` is a committed copy of `data/insp_sitrep_scanned.csv`
-from [epiforecasts/BVDOutbreakSize](https://github.com/epiforecasts/BVDOutbreakSize)
+from
+[epiforecasts/BVDOutbreakSize](https://github.com/epiforecasts/BVDOutbreakSize)
 — national headline values read from the INSP situation-report PDFs, with a
-notes column recording revisions, misprints and which of two printed numbers
-the scan chose.
+notes column recording revisions, misprints and which of two printed numbers the
+scan chose.
 
 It is a **check, never an input**: `make compare` sets our extraction against
 it, and nothing in `make build` or `make streams` reads it. The copy is

@@ -86,8 +86,8 @@ data date 2026-09-18 → 2026-10-18.
   in the experimental-treatment cohort's outcome list, an outbreak-to-date
   count. Removed, along with the same clause on sitreps 129–132.
 - **`checks` means what it says.** `closes` now requires an exact check (a split
-  that sums, a printed rate that divides out). 112 rows whose only passing
-  check was a bound such as recoveries ≤ exits are now `unchecked`: 83 in
+  that sums, a printed rate that divides out). 112 rows whose only passing check
+  was a bound such as recoveries ≤ exits are now `unchecked`: 83 in
   `care_exits_recovered`, 19 in `care_exits_deaths`, 10 in
   `care_census_confirmed`. Nord-Kivu's post-124 care rows no longer read as
   `contradicts`. No count changes.
@@ -97,8 +97,8 @@ renamed from «Date de rapportage» to «Date du rapport» (sitrep 137); sitrep
 150's front page printing 12 October for an 11 October report
 (`registers/printed_date_errata.tsv`); the zone table touching the page footer
 on 154 and 157 and orphaning every province after Ituri; a highlight bullet
-drawn over the front-page tiles on 143–147; the care prose's per-province
-census wording, which had silently emptied the province census for three weeks.
+drawn over the front-page tiles on 143–147; the care prose's per-province census
+wording, which had silently emptied the province census for three weeks.
 
 **Not advanced.** The onset digitiser refuses every chart from sitrep 128, so
 the reporting delay rests on the 2026-09-18 vintage.
@@ -108,11 +108,10 @@ INRB-UMIE's transcription to `db4aee1`, the epiforecasts scan to `924c0aa`, now
 both pinned in `external.lock`. Five new disagreements, none ours
 ([note](notes/2026-10-20-comparison-refresh-disagreements.md)).
 
-**Migration.** Re-vendor at this tag. Add the Nord-Ubangi files to any
-province list, and re-read `population` (or the frame size) from `meta.json`.
-If you fit `checks == "closes"` rows only, expect fewer recovery and care-death
-rows. If you fit a Nord-Kivu isolation compartment, choose which census file it
-observes.
+**Migration.** Re-vendor at this tag. Add the Nord-Ubangi files to any province
+list, and re-read `population` (or the frame size) from `meta.json`. If you fit
+`checks == "closes"` rows only, expect fewer recovery and care-death rows. If
+you fit a Nord-Kivu isolation compartment, choose which census file it observes.
 
 ---
 

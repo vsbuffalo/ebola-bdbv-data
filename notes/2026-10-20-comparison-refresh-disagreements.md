@@ -1,30 +1,28 @@
 # Refreshing the comparison sources: five disagreements, none ours
 
-Date: 2026-10-20
-Project: ebola-bdbv-data
-Tags: validation, inrb-umie, epiforecasts-scan, source-defects
+Date: 2026-10-20 Project: ebola-bdbv-data Tags: validation, inrb-umie,
+epiforecasts-scan, source-defects
 
 ## Context / question
 
 The two renderings this pipeline is only *checked against* — INRB-UMIE's manual
 transcription and the epiforecasts scan — had been pinned since mid-August, so
 four fifths of our zone-days had nothing to be compared with. Both pins were
-moved to their current heads, and the comparison re-run. Every new
-disagreement was then settled against the page: for each, which reading does
-the PDF print?
+moved to their current heads, and the comparison re-run. Every new disagreement
+was then settled against the page: for each, which reading does the PDF print?
 
 ## Setup
 
-- INRB-UMIE BDBV2026-Data: `df7d1c5` (13 Aug, ends 11 Aug) → `db4aee1`
-  (20 Oct, through SitRep 157). The comparison reads
+- INRB-UMIE BDBV2026-Data: `df7d1c5` (13 Aug, ends 11 Aug) → `db4aee1` (20 Oct,
+  through SitRep 157). The comparison reads
   `data/insp_sitrep/processed/insp_sitrep__cumulative_confirmed_{cases,deaths}__daily.csv`,
   joined on data date.
 - epiforecasts/BVDOutbreakSize scan: a local-copy snapshot of 72 reports →
   `924c0aa`, 135 reports, now pinned in `external.lock` and fetched by
   `make scan-refresh` at that commit.
 - Each disagreement read against the zone table (Tableau 2), the printed
-  province subtotals, the narrative sentence and the neighbouring reports, by two
-  read-only agents, with page text quoted.
+  province subtotals, the narrative sentence and the neighbouring reports, by
+  two read-only agents, with page text quoted.
 
 ## Measurements
 
@@ -42,21 +40,21 @@ the comparison functions against the old pin reproduces it.
 
 ## Observations, item by item
 
-| #   | Report, field                               | Ours  | Theirs | What the page prints                                                                                                                                                                                                            | Verdict                                                     |
-| --- | ------------------------------------------- | ----- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| 1   | 095 (17 Aug), 8 zones, cases/deaths         | e.g. Isiro 47/22 | 42/19 | «Isiro 47 22 46,8%»; every province subtotal closes on our rows (Haut-Uélé 145, Tshopo 14), and INRB's values would break them (140, 13)                                                                                        | INRB transcription: values carried forward from 15 August   |
-| 2   | 102 (24 Aug), Boga deaths                   | 2     | 1      | «Boga 2 2 100,0% 1 1 … 1»: 2 cases, 2 deaths, one new death that day; the Ituri subtotal closes only with 2                                                                                                                      | INRB transcription: the new death applied a day late        |
-| 3   | 070 (23 Jul), Rimba cases                   | 8     | 7      | «Rimba 8 4 50,0% 1 0 0 0», and the narrative lists «Rimba (1)» among the day's new cases; 069 prints 7, 071 prints 8                                                                                                             | INRB transcription: the day's increment missed              |
-| 4   | 089 (11 Aug), national cases                | 4,566 | 4,567  | The banner, the prose and the Total row all print 4 566; the five province rows sum to 4 567, as does 4 449 (088) + 118 new                                                                                                     | Source self-disagreement; the scan chose the sum, by design |
-| 5   | 136 (27 Sep), patients in isolation (tile)  | 817   | 803    | The page-1 tile prints 817; the care prose prints «Ainsi, 803 patients demeuraient en isolement», and its five province censuses sum to 803                                                                                     | Source self-disagreement; the scan used the prose census    |
+| # | Report, field                              | Ours             | Theirs | What the page prints                                                                                                                        | Verdict                                                     |
+| - | ------------------------------------------ | ---------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| 1 | 095 (17 Aug), 8 zones, cases/deaths        | e.g. Isiro 47/22 | 42/19  | «Isiro 47 22 46,8%»; every province subtotal closes on our rows (Haut-Uélé 145, Tshopo 14), and INRB's values would break them (140, 13)    | INRB transcription: values carried forward from 15 August   |
+| 2 | 102 (24 Aug), Boga deaths                  | 2                | 1      | «Boga 2 2 100,0% 1 1 … 1»: 2 cases, 2 deaths, one new death that day; the Ituri subtotal closes only with 2                                 | INRB transcription: the new death applied a day late        |
+| 3 | 070 (23 Jul), Rimba cases                  | 8                | 7      | «Rimba 8 4 50,0% 1 0 0 0», and the narrative lists «Rimba (1)» among the day's new cases; 069 prints 7, 071 prints 8                        | INRB transcription: the day's increment missed              |
+| 4 | 089 (11 Aug), national cases               | 4,566            | 4,567  | The banner, the prose and the Total row all print 4 566; the five province rows sum to 4 567, as does 4 449 (088) + 118 new                 | Source self-disagreement; the scan chose the sum, by design |
+| 5 | 136 (27 Sep), patients in isolation (tile) | 817              | 803    | The page-1 tile prints 817; the care prose prints «Ainsi, 803 patients demeuraient en isolement», and its five province censuses sum to 803 | Source self-disagreement; the scan used the prose census    |
 
 ## Interpretation
 
 **No extraction bug of ours.** In all five, our value is the number the page
 prints in the place our reader reads.
 
-**Items 1–3 are INRB-UMIE transcription errors**, and the mechanism of item 1
-is worth recording because it is general. The copy of the 17 August report
+**Items 1–3 are INRB-UMIE transcription errors**, and the mechanism of item 1 is
+worth recording because it is general. The copy of the 17 August report
 INRB-UMIE holds is a different printing from ours: headed «SitRep N°094 … 17
 août», where ours is N°095, and its zone table lists only the zones with new
 cases in the past 24 hours. Their protocol carries forward the last value for a
@@ -75,8 +73,8 @@ one. Our index lists one upload each for those numbers, and the alternate
 printings do not appear in it; whether INSP ever posted them or sent them to
 INRB-UMIE directly is not known.
 
-**Items 4–5 are the source printing two different numbers**, and the scan's
-own notes say it chose the other one deliberately. They are not transcription
+**Items 4–5 are the source printing two different numbers**, and the scan's own
+notes say it chose the other one deliberately. They are not transcription
 differences, and the comparison currently counts them as if they were.
 
 ## Next
