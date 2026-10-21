@@ -120,14 +120,17 @@ them, and neither the figure nor this caption asserts which it is.
 
 Three things the figure draws that the legend can only name:
 
-- **The pale vertical spans are report days with no national cumulative, and
-  they have three distinct causes** that absence alone cannot tell apart: INSP
-  published no report that day; a report appeared but printed no health-zone
-  table; or a health-zone table appeared but printed only its 24-hour columns.
-  The composition is drawn segment by segment between these spans rather than
-  across them, because a cumulative band carried over a hole is an observed
-  value the source never printed. `outcome_gaps` computes the cause of each, and
-  a test requires every span to carry one.
+- **The pale vertical spans are report days with no national cumulative or no
+  recovery count, and they have four distinct causes** that absence alone cannot
+  tell apart: INSP published no report that day; a report appeared but printed
+  no health-zone table; a health-zone table appeared but printed only its
+  24-hour columns; or the table is complete and the front-page recovery tile
+  could not be read — on sitreps 143–147 a highlight bullet is drawn over the
+  tile row, and the tile is refused rather than guessed. The composition is
+  drawn segment by segment between these spans rather than across them, because
+  a cumulative band carried over a hole is an observed value the source never
+  printed. `outcome_gaps` computes the cause of each, and a test requires every
+  span to carry one.
 - **The hatching, and the dashed rule at the census's last day.** The national
   census of confirmed patients in isolation is published for the last time on
   the report of 2 August 2026; both routes this repository reads it by — the
