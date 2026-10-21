@@ -1,519 +1,200 @@
 # ebola-bdbv-data
 
-A reproducible, automated extraction layer for the 2026 DRC Bundibugyo virus
-outbreak. This pipeline processes the raw INSP situation-report PDFs to
-analysis-ready, per-health-zone case series. Every step a build (`make`) target,
-every number checked against the page that printed it.
+Analysis-ready case data for the 2026 Bundibugyo virus outbreak in the
+Democratic Republic of the Congo (DRC), extracted from the national public
+health institute's (INSP) daily situation reports — down to the health zone,
+with every number checked against the page that printed it.
 
-The companion modelling repository consumes the stream TSVs of
-`data/build/streams/`. Everything else here exists to make those files
-trustworthy, and to show the work.
+## About this repository
 
-## Releases
+**This is independent work.** It was built by me, Vince Buffalo, guiding
+Anthropic's Claude Code agents, which wrote most of the code, extraction rules
+and documentation under his direction and review. It began as work at the
+Institute for Disease Modeling (IDM) and is now released publicly. It is not an
+official product of IDM, of the DRC's Institut National de Santé Publique
+(INSP), of WHO, or of any ministry of health, and none of them has reviewed it.
 
-Data ships as **git tags**, `data/<date>-r<n>`, where the date is the newest
-report's data date and `<n>` is the revision. **The first release of a day is
-`-r0`**, from 2026-09-01 onward. A tag is a claim with a gate behind it — it is
-cut only when every accounting identity holds, the full test suite passes, the
-comparison figures render, and the upstream check reports us current. A
-re-release whose newest data date is unchanged (a mid-series report the source
-listed late, a revised register judgement) increments the revision.
-`git tag -l
-'data/*'` lists what exists; each tag's message records the gate
-results it shipped under.
+**What it reads.** The primary source is INSP's situation reports on the 2026
+Bundibugyo virus outbreak, fetched from insp.cd and pinned by SHA-256. Two
+independent machine-readable renderings of the same reports serve only as
+checks: INRB-UMIE's BDBV2026-Data transcription and the epiforecasts scan.
+Health-zone geography and WorldPop populations come from the INRB-UMIE
+repository. Case counts outside the DRC are transcribed by hand from WHO Disease
+Outbreak News and national health authorities, each quote checked against a
+hashed snapshot of the page it came from. The inputs are pinned by hash: the PDF
+archive in `data/raw/sitrep_pdfs.manifest.tsv`, the downloaded geography and
+populations in `data/raw/PROVENANCE.tsv`, and the pages behind the counts
+outside the DRC in `data/raw/exports/snapshots.manifest.tsv`. The two renderings
+we only compare against are pinned separately: INRB-UMIE's transcription at the
+commit in `external.lock`, and the epiforecasts scan as a committed copy in
+`data/raw/scan/`.
 
-Tags published before 2026-09-01 use a bare `data/<date>` for the first release
-of a day, and that form was read inconsistently even here — `data/2026-08-15` is
-followed by `-r2` with no `-r1`, so that day's bare tag stands for revision one
-while every other day's stands for revision zero. That ambiguity is why the
-explicit `-r0` exists. Historical tags are **not** renamed.
+**Why it is built this way.** Errors in other groups' extraction and processing
+of these reports have already been found, and they have moved published
+estimates in this outbreak. One group's digitisation of the reports'
+symptom-onset figure read below each figure's own printed total, by 4–9% in
+August and 10–23% from SitRep 108. Estimates released through mid-September
+rested on it, and when the reader was fixed, that group's own audit attributed a
+27% fall in its headline outbreak-size estimate to the re-read
+([epiforecasts/BVDOutbreakSize#875](https://github.com/epiforecasts/BVDOutbreakSize/pull/875),
+[#886](https://github.com/epiforecasts/BVDOutbreakSize/issues/886)). They found,
+fixed and documented the problem in public, which is an open and admirable way
+to handle it.
 
-**Published tags are immutable.** A tag never moves to a different commit and is
-never deleted; consumers pin one per fit, so a tag that moves takes a fit's
-provenance with it. Every tag published is recorded in
-`registers/released_tags.tsv` with the commit it names, and a test fails if one
-is deleted or moved.
+I had measured the August under-reads on 28 August
+([notes](notes/2026-08-28-onset-digitiser-requirements.md)) while at IDM, and
+built our own reader to check every figure against its printed total and refuse
+any that does not close. A similar error had happened in this data processing
+pipeline before any release: an early version read the share of confirmed deaths
+found in the community as 1.00 where the pages print 0.55, because a table
+broken across a page had slid one column into its neighbour. Neither this error
+nor the digitisation error above looks wrong from the outside, but both can be
+caught the same way: by checking an extraction against the totals the same page
+prints. That "bookkeeping" or "accounting" approach is the design of this
+pipeline. Numbers are read from the cells the situation reports draw, and are
+accepted only when the page's own totals balance around them; when they do not,
+they are refused rather than guessed. Every place the source disagrees with
+itself is recorded, and every value is compared with the two other renderings.
 
-Because everything under `data/build/` rebuilds byte-identically from the
-committed inputs, a tag pins the *data* even though the data files are not
-themselves committed: check out the tag, run `make build streams`, and you hold
-the release, verifiable file by file against the consumer's recorded hashes. The
-modelling repository vendors the streams exactly this way — pinned to a tag,
-verified by per-file sha256.
+**What that does and does not buy.** These checks make reading errors loud; they
+cannot make the source's own counts true, and refusing costs coverage. The onset
+reader currently refuses every chart since 19 September. Read
+`data/build/streams/README.md` and `registers/` before fitting anything.
 
-## The approach
+## Getting the data
+
+You won't find the data files in this repository — `data/build/` is gitignored,
+on purpose. Everything in it rebuilds byte-identically from the committed
+inputs, so a release is a git tag rather than a pile of files, and committing
+the outputs would create a second copy free to drift from the code that makes
+them. To get the files, check out a release and build it:
+
+```sh
+git checkout data/2026-10-18-r0     # or any tag: git tag -l 'data/*'
+make fetch-pinned                   # network: exactly the PDFs that tag read (~200 MB)
+make build streams                  # offline from here on
+```
+
+`make fetch-pinned` downloads the reports the tag's committed index names and
+nothing newer, so you rebuild that release rather than today's data. For the
+latest reports instead, stay on `main` and run `make refresh`.
+
+You'll need [uv](https://docs.astral.sh/uv/) and `pdftotext` (poppler); Quarto
+only if you want the rendered documents (`make doc`). The files downstream
+models fit land in `data/build/streams/`, and the first thing to read there is
+the generated [`data/build/streams/README.md`](data/build/streams/README.md):
+one entry per file, saying what it measures, its span, and how it misleads.
+
+## How it works
 
 The situation reports are, at heart, ledgers: almost every table prints its
 totals beside the parts they summarise — health-zone rows beneath a province
-row, province rows above a national total. This pipeline takes an
-**accounting-based approach**: no number is accepted merely because it parsed; a
-number is accepted because the books balance around it, and a number the books
-reject is investigated, not repaired. The pipeline's approach is roughly:
+row, province rows above a national total. So this pipeline takes an accounting
+approach. A number is accepted because the books balance around it, not because
+it parsed, and a number the books reject gets investigated, not repaired.
 
 - **Read the drawn geometry, not the text.** Word draws every table cell as a
-  vector rule; cells are read from those rules, so a wrapped name stays one row
-  and a blank cell stays blank instead of shifting its neighbours.
-- **Balance every page's books.** Health zones plus the source's unassigned pool
-  must equal the printed province row; provinces must equal the printed national
-  total; the same check runs over the daily death-split columns. A page that
-  fails is a build failure, not a warning.
-- **A discrepancy is a finding, never noise.** Where a page genuinely does not
-  add up — the source disagreeing with itself — a human reads it and the
-  judgement is recorded in a register, keyed to the document's SHA-256 and
-  licensing exactly one residual. A revised document, or a gap that moves, voids
-  its own excuse.
-- **Check against independent readings.** Every zone-day is compared against
-  INRB-UMIE's manual transcription and every national total against the
-  epiforecasts scan, with disagreements recorded rather than resolved.
+  vector rule, and cells are read from those rules, so a wrapped name stays one
+  row and a blank cell stays blank instead of shifting its neighbours.
+- **Balance every page's books.** Health zones plus the unassigned pool must
+  equal the printed province row, and provinces the printed national total. A
+  page that fails is a build failure, not a warning.
+- **A discrepancy is a finding.** Where a page genuinely doesn't add up — the
+  source disagreeing with itself — a human reads it and records the judgement in
+  `registers/`, keyed to the document's SHA-256, so a revised document comes
+  back for a fresh look.
+- **Check against independent readings.** Every value is compared with
+  INRB-UMIE's transcription and the epiforecasts scan, and disagreements are
+  recorded rather than resolved.
 - **Reproducible and current.** The archive is fetched same-day and pinned by a
-  hash manifest; every build artefact has a rule; a rebuild is byte-identical;
-  the rendered documents refuse to embed anything the pipeline did not produce.
+  hash manifest; every build artefact has a `make` rule; a rebuild is
+  byte-identical.
 
-And what these files carry that no other machine-readable rendering of the
-reports does (the full lineage-by-lineage table is below):
+The details live in three pages: [how the extraction works](docs/extraction.md),
+[how it is validated](docs/validation.md), and
+[the data contract](docs/data-contract.md) — what the stream files guarantee to
+downstream models, and the traps (three readings of one case count, `NA` versus
+zero, half-open windows) worth knowing before you fit anything.
 
-- **The ascertainment split** — each day's confirmed deaths divided into
-  community versus treatment-centre, the series the ascertainment models fit.
-  Absent from every other lineage.
-- **Province-level series that are *derived*, not transcribed** — built from the
-  zone rows and checked against every printed province row, so a missed row is a
-  loud failure instead of a quiet undercount.
-- **The source's own caveats as data** — the harmonisation footnotes declaring
-  the early cumulative an undercount, per report, in three kinds.
-- **Model-ready weekly streams** — observation times and counts shaped for an
-  accumulate-between-observations likelihood, every stream ending at an
-  exactly-zero gap against the source's cumulative movement.
+## What's in the data
 
-## Why this much care
+What these files carry that no other machine-readable rendering of the reports
+does:
 
-The quantity the models most need from these reports is not the case count, it
-is the *fraction of confirmed deaths found in the community rather than in a
-treatment centre*, the closest thing the source prints to a measurement of how
-much transmission the surveillance system is missing.
-
-In mid-August, a plausible-looking extraction of that fraction read **1.00** for
-the most recent week — every death found in the community, isolation effectively
-over. But a closer inspection of the pages shows they print **0.55**. The
-mechanism of this disagreement was small, subtle, entirely silent: on four
-consecutive reports the zone table breaks across a page, the first page carries
-too few rows for a column-detection heuristic, and one column's values slid into
-their neighbour. Every surviving row then had community deaths equal to total
-deaths *by construction*. Nothing looked wrong from outside — the values were
-plausible integers, every cumulative total still balanced, and the emitted
-series didn't jump but *climbed*, over six weeks, exactly the way a real signal
-of collapsing isolation would. The error was caught one way only: by summing
-each page's daily columns against the totals the same page prints. An
-epidemiological conclusion of the first order — *isolation has collapsed* —
-would have been a parsing artifact, at maximum leverage on the most recent data.
-
-That is the failure class this repository is built against. The stream files are
-small; the claim that they say what the source said is the product.
+- **The treatment center vs community ascertainment split.** Each day's
+  confirmed deaths divided into those found in the community and those in a
+  treatment centre — the closest thing the source prints to a measure of how
+  much transmission surveillance is missing, and the quantity downstream models
+  most need.
+- **Province series that are derived, not transcribed.** Built from the zone
+  rows and checked against every printed province row, so a missed row is a loud
+  failure instead of a quiet undercount.
+- **The care ledger, testing and burial alerts**, read out of the reports' prose
+  and kept only where each passage's own arithmetic checks.
+- **Cases counted outside the DRC** (Uganda, Kenya, Nigeria, France), from WHO
+  and national ministries, with each source's classification kept verbatim:
+  imported, linked, or origin still under investigation.
+- **The source's own caveats as data**, so a model can down-weight the days the
+  source itself called provisional.
 
 ## Running it
 
 ```sh
 make check      # is the archive current, and does the source still look the same?
-make fetch      # (requires network): fetch the index and any new PDFs
+make refresh    # network: fetch new reports, then rebuild everything offline
 make build      # PDFs -> zone extraction -> province aggregation
-make streams    # the weekly observation series the models fit
-make figures    # the EDA figures
-make compare    # ours vs the two other extraction lineages (see `make external`)
-make doc        # render analysis/data.html + explore.html, fail-closed
-make serve      # serve both pages (default port 8790; PORT=n to override)
+make streams    # the observation streams downstream models fit
+make figures    # the figures, into data/build/figures/<release>/
+make compare    # ours against the two other lineages (needs `make external`)
+make doc        # render analysis/data.html and explore.html
 make test       # the tests, each pinned to a named report
 ```
 
-Two rendered pages, both self-contained single files:
+**Run `make check` first.** It's the only step that looks *outward*: every other
+check asks whether the reports we hold are internally consistent, and none of
+them can ask whether we hold the reports that *exist*. It exits 0 when we're
+current, 1 when new reports are out (`make refresh`), 2 when the source has
+changed under us (look before fetching), 3 when the site doesn't answer, and 4
+when we're current but the source has gone quiet.
 
-- **`data.html`** — the document of record: what exists, what reconciles, and
-  every number read from an artefact at render time.
-- **`explore.html`** — the interactive companion: shared province/log/caveat
-  controls, per-report hover provenance on every mark, the per-stream flow grid,
-  reporting-noise diagnostics, and a searchable report index.
+`data.html` is the document of record — what exists, what reconciles, every
+number read from a build artefact at render time. `explore.html` is its
+interactive companion. `make serve` serves both (port 8790 by default).
 
-`make serve` starts a detached `http.server` on port 8790 (it checks the port
-first and tells you if something else holds it). After a re-render the pages
-update in place — refresh the browser, no restart needed.
+## Releases
 
-**Run `make check` first.** It is the only step that looks *outward* — every
-other check asks whether the reports we hold are internally consistent, and none
-of them can ask whether we hold the reports that *exist*. The reference project
-once sat eleven days behind the source with every internal check green, because
-the site renamed the series and the query silently stopped matching.
-
-| exit | meaning                                                                      | what to do                      |
-| ---- | ---------------------------------------------------------------------------- | ------------------------------- |
-| 0    | `CURRENT` — we hold everything the source lists                              | nothing                         |
-| 1    | `BEHIND` — new reports published                                             | `make refresh`                  |
-| 2    | `CHANGED` — the source moved under us                                        | **look first**                  |
-| 3    | `UNREACHABLE` — the API did not answer                                       | retry                           |
-| 4    | `STALE` — current, but the source has published no situation report for days | worth knowing; nothing to fetch |
-
-`make build` touches no network, so a rebuild can never silently acquire
-different inputs. Everything under `data/build/` is regenerable from the
-committed inputs; delete it and `make build` returns it byte-identically.
-
-### The modelling contract
-
-The stream files of `data/build/streams/` — weekly TSVs, a **daily companion for
-each** (one row per report day), the stock readings, the care ledger the reports
-state in words, and `meta.json` (whose `population` and `day0` fields are read
-too) — are vendored by the modelling repository, pinned to a commit of this one
-and verified by per-file sha256 against a byte-identical rebuild. The national
-streams are built from the printed national rows, never by summing the province
-streams; the per-bin identity *national = emitted provinces + dropped
-provinces + orphan pool + unattributed* is recorded in `meta.json`, and a
-nonzero unattributed term is a finding. That makes their shape a **contract, not
-an implementation detail**: file renames, column changes, and the
-`uganda_exports` convention (cumulative counts at bulletin dates, deliberately
-unlike the weekly-incidence streams beside it) are coordinated changes,
-announced across both repositories — never refactors.
-
-**Three readings of a case count, and only one may be fitted.** The differenced
-families (`cases_*`, `deaths_*`) are the movement of the source's printed
-cumulative, so a row spans the interval since the previous row. The notified
-families (`cases_notified_*`, `deaths_notified_*`) are the count the front-page
-banner states *for the report day itself*, which the source printed only for
-sitreps 059–083 — the stretch it was reconciling, when its cumulative stopped
-being safe to difference. The excluding-backlog families
-(`cases_excluding_backlog_*`, `deaths_excluding_backlog_*`) are the differenced
-series with the days the source *says* hold records from earlier days replaced
-by its own same-day count; which days those are is
-`registers/retrospective_batches.tsv`, quoting the source. They measure the same
-events three ways: fit one.
-
-The same caution applies to recoveries, where three readings exist in three
-different places in the report and one of them ends early. See the
-`care_exits_recovered` and `cumul_recovered` entries in the generated
-dictionary.
-
-**The generated dictionary is authoritative, not this file.**
-`data/build/streams/README.md` is written by `build_streams.py` on every build:
-one section per family saying what it measures and how it misleads, with spans
-and row counts read back off the files themselves. Counts stated here rot on the
-next fetch; counts stated there cannot.
-
-**Two resolutions, one construction.** `cases_ituri.tsv` is weekly;
-`cases_daily_ituri.tsv` is the same quantity per report day. Both come from the
-same panel, the same registers and the same gate — a stream's total equals what
-the source's cumulative moved, exactly — so the two resolutions cannot disagree
-about what a report said. Every flow file states the interval each row covers,
-because report days are irregular: a row carries `window_start` and
-`window_stop`, the half-open interval `[window_start, window_stop)` its count
-accumulated over, and nothing is spread across it. Days with no report are
-absent, never zero. A `flags` column carries the source's own words about that
-day (`consolidating`, `harmonisation`, `harmonisation_undercount`,
-`stale_distribution`, `-` for none), so a consumer can down-weight batch
-consolidation rather than absorb it in dispersion.
-
-**A stream states how much of its population it saw.** This is part of the
-contract, not a house style. Where a row's value is a total over provinces or
-over report days, the file publishes the coverage in a column beside the count:
-`n_provinces` and `n_province_days` for a national total assembled from a
-paragraph that does not always write out every province, and
-`n_report_days_silent` for the report days that fell in a row's window and said
-nothing of that quantity for that place. The reason is a real failure
-downstream. Read without `n_provinces`, the national laboratory stream carries
-about 23% fewer positives than the case series, and that shortfall was very
-nearly fitted as a probability of publication — but split by coverage, report
-days whose paragraph covers three or four provinces agree with the case series
-to within about a percent, and the deficit is entirely the provinces that went
-unwritten. Every stream carries `n_report_days`; the ones whose window can
-contain a report day that passed the quantity over carry `n_report_days_silent`
-beside it, and the ones read out of **prose** also carry `checks`, the source's
-own arithmetic on the passage a value came from (`closes`, `contradicts`,
-`unchecked`).
-
-**Every flow file states the window each row covers, and the build fails if one
-does not.**
-
-```
-window_stop > window_start                        (positive width)
-window_stop - window_start == days_covered        (no drift)
-window_start == the previous row's window_stop    (tiles exactly)
-```
-
-The window is **half-open**: `[window_start, window_stop)` covers every calendar
-day from `window_start` up to but not including `window_stop`, so its width is
-exactly `window_stop - window_start` and two adjacent rows share a boundary
-value without overlapping. This is the BED convention for genomic intervals, and
-for the same reasons. Note that `window_stop` is therefore **one day after the
-day the source spoke** — a report stating figures for 13 July closes a window at
-14 July — so anything dating an observation should read `window_start`, or
-`window_stop` minus a day; `scripts/lib/streams.py` does this in one place for
-every consumer in this repository.
-
-Before these columns existed a row's window was inferred from the gap to the row
-before it, which meant deleting an interior row silently widened its neighbour:
-the model accumulated over one interval, compared the result against a count
-covering another, and nothing in the file said so. Four published streams sat 11
-to 48 days apart while claiming one day. Stating both ends removes that failure
-mode and leaves two the gate catches — an **overlap**, where two rows both claim
-a day and its count is scored twice, and a **gap**, where a day belongs to no
-row at all.
-
-The families the source states as a single 24-hour figure per report — the care
-ledger's admissions and exits, the daily laboratory files, the daily
-community-death split — carry **a row on every calendar day they span**, holding
-`NA` where the source said nothing. The grid is calendar days rather than report
-days because a 24-hour figure covers one day however wide the silence behind it:
-a row must exist on every day the value does not cover, and a row carrying `NA`
-asserts only that the day existed and nobody reported this quantity, which the
-source does license. An `NA` contributes no likelihood term and is **not an
-observed zero**: a report that does not mention absconders is silent about them,
-not reporting none. Read these files with the token declared (in polars,
-`null_values="NA"`), because `NA` is not a null token by default and one hole
-otherwise turns a count column into a string column. Stocks are outside all of
-this: `care_census_*`, `patients_isolated*` and `cumul_recovered` are readings
-at an instant, keep a plain `time` column, carry no `days_covered`, accumulate
-over no window, and a 46-day gap in one of them is a reading taken 46 days
-later.
-
-**No published count is negative, and no case is lost making it so.** INSP
-revises its own cumulative downward — Nord-Kivu goes 44 cases / 26 deaths on 10
-June to 40 / 24 on 11 June — and differencing turns that into a negative
-increment, which Poisson and negative binomial are both undefined on. The
-deficit is therefore **carried forward**: the row emits 0 and the remainder
-comes out of subsequent rows until it discharges, so every emitted value is a
-non-negative integer and every stream still totals exactly what the source's
-cumulative moved. Clipping to zero would do neither — it would keep the cases
-the source withdrew and break that identity by the size of the revision. The
-correction is applied to the rows a consumer fits, so a week whose net is
-already non-negative is untouched even when one of its days was a revision; the
-daily and weekly files can therefore attribute one revision to different rows,
-and both still total the source's movement. `data/build/streams/revisions.tsv`
-is the generated record — one row per published row a deficit was open at, keyed
-on `(stream, column, time)` so it joins straight onto the stream file, with the
-raw increment, the value emitted, the carry outstanding after that row and the
-source's flag for that day. Eight revisions exist so far, the largest being
-Ituri's -39 cases and -23 deaths on 12 July. A carry still outstanding at the
-end of a series stops the build, because it would mean part of a revision was
-dropped.
-
-**Which file is which:
-[`data/build/streams/README.md`](data/build/streams/README.md).** The contract
-above says what the files guarantee; that one says what each of them *is* — one
-row per published file, giving what it measures in a sentence, its resolution,
-its place, how many observations it holds and the span it covers, with the two
-files that are not observation streams (`revisions.tsv` and
-`uganda_exports.tsv`) treated separately. **It also says how each family is to
-be read** — the construction its rows come from, what the quantity is not, and
-what a consumer must condition on — because none of that is visible in a span or
-a column name, and every caution it carries has already cost someone here real
-time. It is generated by the same run that writes the streams, so it ships with
-the vendored data and describes that vintage rather than some other one, and its
-spans are measured from the files themselves rather than copied from
-`meta.json`. The sentences come from `registers/stream_families.tsv`, keyed on
-the observation family; a stream whose family has no `measures` sentence, or no
-`interpretation` sentence, stops the build — a new stream cannot ship either
-undocumented or unqualified.
-
-Contract changes ship through the release tags described at the top, with the
-change named in the tag message.
-
-## How the extraction works
-
-The situation reports are Microsoft Word exports, and Word draws every table
-cell border as a vector rule. This pipeline reads those **drawn rules** rather
-than a text rendering of the page: a cell's row and column are given by the
-document, not inferred from character offsets, so a health-zone name too wide
-for its column stays one row and an empty cell stays empty instead of shifting
-its neighbours left.
-
-One design decision carries the rest: **a heading identifies a table; it cannot
-index the table's columns.** Word centres heading text over merged spans, so
-`Cas (n)` routinely sits above the wrong data column — trusting it once read
-every zone's death count as its case count. So headings (declared per layout in
-`scripts/lib/tablespec.py`) decide *which table this is*, and columns are
-indexed from the **data**: the numeric columns, left to right, zipped against a
-declared order. Order is stable within a layout even when the column count is
-not.
-
-Three code layers, strictly separated:
-
-| Layer      | File                                                                                          | Knows                                                  | Does not know      |
-| ---------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------ | ------------------ |
-| Geometry   | `scripts/lib/pdftable.py`                                                                     | rects, lines, dot-stippled borders → a cell grid       | French, Ebola      |
-| Vocabulary | `scripts/lib/tablespec.py`                                                                    | French headings; each layout's column order            | PDFs, epidemiology |
-| Domain     | `scripts/extract_zone_table.py`, `scripts/aggregate_provinces.py`, `scripts/build_streams.py` | provinces, subtotals, unassigned pools, the identities | geometry           |
-
-### The routes
-
-Not every report prints the same thing, so there are four extraction routes, and
-every held report is covered by the finest one its pages print:
-
-| Route                               | Reports | What it reads                                                                                                                                                                                                                                                                                         |
-| ----------------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| zone table (three declared layouts) | 74      | cumulative cases & deaths per health zone; from 13 July the daily ascertainment split                                                                                                                                                                                                                 |
-| zone daily table                    | 1       | sitrep 087 prints only the day's flows per zone, no cumulative anywhere — a fourth layout with its own declared column order                                                                                                                                                                          |
-| provincial summary                  | 70      | one row per province — the only tabular data on the reports whose vintage dropped the zone table                                                                                                                                                                                                      |
-| prose sentence                      | 3       | `"121 cas dont 110 en Ituri, 10 au Nord-Kivu et 1 au Sud-Kivu"` — read only because the sentence checks itself                                                                                                                                                                                        |
-| national dashboard (page-1 tiles)   | 87      | the isolation census, cumulative recoveries and cumulative confirmed deaths, in both layouts the source draws (values above the labels, or beneath). The suspected-case tile is deliberately not read: it is a running total, a stock and a daily flow in three vintages under near-identical wording |
-
-The source's own caveats are read too: the first six weeks' reports footnote
-their headline cumulative as undergoing harmonisation — from 9 June stating
-outright that it omits confirmed cases still in the community and escapees, i.e.
-is an undercount — and sitrep 011 footnotes the deaths as underestimated. One
-row per statement in `provisional_caveat.csv`.
-
-### What each lineage carries
-
-Three machine-readable renderings of the INSP reports exist; this table is what
-each one holds, and it is why the comparison below can only run where coverage
-overlaps. The bold row is the series no other lineage has — and the one the
-ascertainment models fit.
-
-| Series                                              | this repository                                                                                                                                                                                                   | INRB-UMIE transcription                                                                                 | epiforecasts scan                                    |
-| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| cumulative confirmed cases                          | health zone; all 83 held reports, same-day (15 Aug)                                                                                                                                                               | health zone; ends 11 Aug                                                                                | national only                                        |
-| cumulative confirmed deaths                         | health zone, from 29 May                                                                                                                                                                                          | health zone                                                                                             | —                                                    |
-| daily new confirmed cases (24 h)                    | zone table + provincial summary column                                                                                                                                                                            | zone, sparse                                                                                            | —                                                    |
-| **daily community vs treatment-centre death split** | **province rows + zone breakdown, from 13 Jul — the ascertainment streams**                                                                                                                                       | **absent**                                                                                              | —                                                    |
-| suspected cases & deaths (early vintage)            | zone; stock and flow kept as distinct roles                                                                                                                                                                       | zone, sparse                                                                                            | —                                                    |
-| contact-tracing indicators (early vintage)          | zone                                                                                                                                                                                                              | zone, sparse                                                                                            | —                                                    |
-| province-level series                               | built from zone rows, checked against every printed province row                                                                                                                                                  | none — zone or national only                                                                            | —                                                    |
-| national cumulative                                 | via zone, summary and prose routes                                                                                                                                                                                | separate national files, **including sitreps 001–004** (14–18 May; no other lineage has the first week) | cases for the reports it covers, with revision notes |
-| the source's own caveats                            | per report, three kinds                                                                                                                                                                                           | —                                                                                                       | partly, in free-text notes                           |
-| **daily testing volume & positives**                | **licensed province-days from the laboratory prose** — each row's counts reproduce the sentence's own printed positivity, else refused                                                                            | free-text transcription only, no numbers                                                                | —                                                    |
-| hospitalisation & point-of-entry blocks             | not yet ported                                                                                                                                                                                                    | zone, sparse (6–8 facility zones)                                                                       | —                                                    |
-| weekly model-ready streams, accounting-checked      | one TSV per quantity x place x resolution, for Ituri, Nord-Kivu, **Haut-Uélé and national**, + Uganda exports — the count moves every release, so `data/build/streams/README.md` states it rather than this table | —                                                                                                       | —                                                    |
-
-## How it is validated
-
-Layered, from the page outward. Each check catches what the previous one cannot.
-
-**1. The page's own arithmetic.** Every report prints totals beside its parts:
-zone rows plus unassigned rows must equal the printed province row, provinces
-the printed national `Total`. The extraction is accepted only where this closes.
-Currently 256 province-reports reconcile exactly, 9 carry a hand-verified
-exception (below), and none remain open; the same identity now runs over the
-four daily-flow columns too, where 7 province-days disagree with their printed
-row — reported loudly, page reads pending. These counts are as of the current
-build; the rendered document reads them live and is the authoritative statement.
-
-**2. What the identity cannot see, tests pin.** A table read one concept to the
-left — suspected cases as confirmed — closes perfectly, because both sides shift
-together. Failures of that kind were each caught once, then pinned to the report
-that produced them: `tests/test_extraction.py` names sitreps 005, 015, 020, 048,
-073, 080, 088, 092 in its docstrings, one behaviour each.
-
-**3. The assembled series against every printed total.** The weekly streams
-carry two gates: the emitted total must equal what the cumulative moved,
-*exactly*, and the forward-filled grid is compared against every printed
-province row — the check that caught duplicate zone spellings inflating both
-sides of gate one at once. Every stream ends at a final gap of **zero**;
-`cases_ituri` now agrees with the printed row on 65 of 67 dates, and the two
-that differ are the source's own registered self-disagreement (sitrep 059's
-note). Each bin's window closes on its **last report day** — `window_stop` is
-the day after it — so an engine scores every window against exactly the days its
-count covers, the trailing partial week included. The unassigned pool is summed
-within a report and zeroed when a report stops printing it; the ascertainment
-streams read the printed province rows and carry a per-date check against the
-zone breakdown. Per-date tallies live in `data/build/streams/meta.json`.
-
-**4. The registers.** When a page itself does not add up, that is a finding
-about the document, and it is recorded — not silenced — in `registers/`: one row
-per judgement, made after reading the rendered page, quoting what the page says.
-Every entry is keyed on the PDF's **SHA-256**, so a revised report fails the
-check and returns for a fresh judgement instead of inheriting one made about its
-predecessor; every entry licenses **one exact value**, so a reading that changes
-un-excuses itself. An unverifiable register (no archive to hash against) is
-refused outright.
-
-**5. The other lineages.** Two independent readings of the same PDFs exist:
-INRB-UMIE's transcription (cloned by `make external` at exactly the commit in
-the committed `external.lock`) and the epiforecasts scan (a pinned copy under
-`data/raw/scan/`). `make compare` sets ours against both — currently **2,130 of
-2,139** zone-day case values agree with INRB exactly and **70 of 70** national
-cumulatives agree with the scan — and every disagreement lands in a CSV with
-both values. Two disclosures travel with those numbers, in `compare_meta.json`:
-the denominator is the inner join, and 584 of our zone-day rows (the newest
-reports — INRB's series currently ends four days before ours) have no
-counterpart and sit outside every agreement figure; and zones the lineages spell
-differently are mapped onto one key precisely so a spelling divergence can
-*disagree* instead of vanishing. Agreement here is evidence about
-*transcription*, never corroboration of the counts (all three lineages read the
-same pages); a disagreement is always a finding. The largest one is upstream's:
-sitrep 032 prints Rwampara at 159 in both its table and its narrative, and the
-INRB file carries 192.
-
-![The three lineages as series: our summed zone rows (line), INSP's own
-printed totals (rings), and INRB-UMIE's transcription (dashed). The bottom
-row is the differences — ours − INRB mixes value disagreements with
-row-coverage gaps in their file; ours − printed is pure arithmetic against
-the page, zero except the registered source
-self-disagreements.](figures/comparison_series.png)
-
-![Every zone-day on the identity line against INRB-UMIE, and the
-disagreements, signed, over time.](figures/comparison.png)
-
-These figures are committed copies (`figures/`), refreshed by `make compare` so
-they always show the current build's comparison; a diff in them is a change in
-what the comparison shows. Every committed figure carries a caption in
-[`figures/README.md`](figures/README.md) — what it shows, and the caveats that
-belong with it wherever it is used. That is where to look before putting one of
-these on a slide; a test fails if a committed figure has no section there.
-
-**6. The archive itself.** The PDFs are not committed (~145 MB); what pins them
-is a committed SHA-256 manifest, and `make verify` proves the copy on disk is
-the copy the manifest describes — distinguishing *missing* from *stray* from
-*corrupt*, because a hash mismatch can mean a damaged file or a report the
-source revised in place, and the second is worth knowing about. **Three of the
-ninety-four are committed**, because INSP serves neither them nor any URL they
-could be fetched from: SitReps 001, 002 and 004, the outbreak's first three
-reports, held from a secondary archive and declared in
-`registers/external_sitreps.tsv`. A report is *accounted for* if an index row
-picks it **or** that register names it; a PDF declared by neither still stops
-the build, because a stray file in that directory is globbed straight into the
-trunk. Revision is watched for in both directions the source can produce it: the
-fetcher re-checks every held report's pick URL against the held byte count (a
-re-picked correction usually shares the data date, so it maps to a name we
-already hold and a name-based skip would never fetch it), and `make check`
-spot-checks committed URLs across the whole archive comparing Content-Length
-against the manifest — a revision in place at an unchanged URL. Either finding
-stops the fetch and asks for adjudication, because every hash-keyed register
-judgement is about one version of a document.
-
-**7. The document.** `make doc` renders `analysis/data.html`, and every number
-in its prose and every figure it embeds is read from a pipeline artefact at
-render time through `analysis/_guard.py`. An artefact no rule produces, or one
-not yet built, stops the render. There are no typed numbers to go stale.
+Data ships as git tags, `data/<date>-r<n>`: the date is the newest report's data
+date and `<n>` the revision, from `-r0`. A tag is cut only when every accounting
+identity holds, the test suite passes, the committed figures rebuild
+byte-identically from a fresh clone (`make release-check`), and the upstream
+check reports us current. Published tags never move and are never deleted —
+downstream models pin one per fit — and each is recorded in
+`registers/released_tags.tsv`. What changed in each release, and whether it
+breaks anything, is in the [CHANGELOG](CHANGELOG.md).
 
 ## Layout
 
-| Path          | What                                                                                                                                                                                                                 |
-| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `data/raw/`   | fetched inputs: the PDF archive (manifest-pinned; uncommitted except the three reports INSP does not serve), the INSP index, shapefile, populations, the hand-recorded Uganda series                                 |
-| `data/build/` | derived, regenerable, **never committed and always safe to delete**: per-report series, the province panel, weekly streams, comparisons, and figures under `figures/<release>/` named for the release that drew them |
-| `figures/`    | the images documents outside the pipeline link to — the only derived artefacts committed, gated by a byte-identical rebuild. See `figures/README.md`                                                                 |
-| `registers/`  | **hand-authored judgements** — the only unregenerable content. See `registers/README.md`                                                                                                                             |
-| `scripts/`    | everything the Makefile calls; `scripts/lib/` is the geometry and vocabulary substrate                                                                                                                               |
-| `analysis/`   | the data document and its fail-closed guard                                                                                                                                                                          |
-| `external/`   | comparison sources, cloned by `make external`, gitignored, pinned by `.commit` files                                                                                                                                 |
-| `notes/`      | dated lab notes: the architecture, the measured dead ends, the port rationale                                                                                                                                        |
-
-**One rule decides what is committed.** A release is a git tag, and everything
-under `data/build/` is reproducible from that tag — `data/raw/` pins the inputs
-and its manifest pins which of them a release read, so a consumer clones at a
-tag and rebuilds rather than receiving files. Committing a derived artefact
-would create a second source of truth able to drift from the rule that makes it,
-so it needs a reason, and there is exactly one: an image that must render for
-someone who is not running the pipeline. That is `figures/`, and it is checked
-against a fresh rebuild on every release.
+| Path          | What                                                                                                                          |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `data/raw/`   | fetched and hand-recorded inputs: the PDF archive (pinned by manifest), the INSP index, geography, populations, export tables |
+| `data/build/` | everything derived — gitignored, always safe to delete, rebuilt by `make`                                                     |
+| `figures/`    | the only derived files committed, so documents outside the pipeline can link them; captions in `figures/README.md`            |
+| `registers/`  | **hand-authored judgements** about specific pages, the only content no rule can regenerate; see `registers/README.md`         |
+| `docs/`       | the extraction, validation and data-contract pages                                                                            |
+| `notes/`      | dated lab notes: the design decisions, the measured dead ends, the findings                                                   |
+| `scripts/`    | everything the Makefile calls; `scripts/lib/` is the geometry and vocabulary layer                                            |
+| `analysis/`   | the rendered documents and their fail-closed guard                                                                            |
 
 ## Conventions
 
 - **polars, not pandas; `uv` for packages.** No absolute paths in anything
   committed.
-- **Every artefact has a rule.** A file under `data/build/` with no Makefile
-  rule that regenerates it is a bug, and the document guard enforces the
-  contrapositive.
+- **Every artefact has a rule.** A file under `data/build/` with no `make` rule
+  that regenerates it is a bug.
 - **A sum of nothing is null, not zero.** polars sums an all-null group to 0,
-  which fabricates observations; every aggregation here guards it, after it bit
-  this project a fourth time (the reference counts three).
-- **Data dates come from each page's `Date de rapportage`, never the filename.**
+  which fabricates observations; every aggregation here guards against it.
+- **Data dates come from each page's printed report date, never the filename.**
   Upload filenames carry the publication date, no date, or (once) a timestamp
-  that parses as the year 2022; the fetcher recognises documents by content hash
-  so a renamed upload is never downloaded twice.
+  that parses as the year 2022.
 - **Flows and stocks never share a column.** The same French word heads both, in
-  different vintages; the roles are distinct and tested.
+  different vintages.

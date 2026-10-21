@@ -38,7 +38,102 @@ same as withdrawn: the older tag stays exactly where it is.
 
 ---
 
-## Unreleased — flow files state their accumulation window in two columns
+## `data/2026-10-18-r0` — 2026-10-20 — sitreps 128–157, an eighth province, cases outside the DRC, and four corrections to published history
+
+**Breaking.** A new province, a population denominator that moves, new files,
+and changed values in rows downstream models have already fitted. What to do is
+at the end.
+
+**New data.** Twenty-nine reports, sitreps 128–157 (142 was never published),
+data date 2026-09-18 → 2026-10-18.
+
+- **Nord-Ubangi joins at sitrep 155 (2026-10-16)**, two cases and one death in
+  Wapinda — «qui devient la huitième province touchée». The reports' own frame
+  widens to 178 health zones in eight provinces, so the national population in
+  `meta.json` moves **35,581,745 → 37,510,436**. New `*_nord_ubangi` files.
+- **Cases counted outside the DRC.** `exports_uganda.tsv`, `exports_kenya.tsv`,
+  `exports_nigeria.tsv`, `exports_france.tsv`: cumulative totals at the dates a
+  primary source prints them, keeping apart what each source calls imported,
+  imported *from the DRC*, linked, and of origin still under investigation
+  (Nigeria's case, which flew in from Uganda). The per-case table, the printed
+  totals and the gap between them are in `reference/export_cases.tsv`,
+  `export_counts.tsv` and `export_reconciliation.tsv`. Every quote is checked
+  against a hashed snapshot of its page (`make fetch-exports`,
+  `make check-exports`). `uganda_exports.tsv` is unchanged; see
+  vsbuffalo/ebola-bdbv-data#1 for why its two pins need replacing.
+- **`care_census_dedicated_nord_kivu.tsv`.** From sitrep 124 Nord-Kivu prints a
+  total and the part of it in dedicated treatment structures, and computes its
+  occupancy on the part. `care_census_nord_kivu` keeps the total; the new file
+  is the part. Fit one, never both
+  ([note](notes/2026-10-20-nord-kivu-census-two-counts.md)).
+- **`meta.json` gains `opening`**: each province's first case and death
+  cumulative, which no row of its flow files holds because a flow is the
+  cumulative differenced ([note](notes/2026-10-20-province-opening-level.md)).
+
+**Corrections to published values.**
+
+- **Sud-Kivu loses one case it never had.** Sitreps 010–011 filed Nord-Kivu's
+  Kalunguta under Sud-Kivu, and the forward fill kept the case in Sud-Kivu's
+  stream on every later day — 1 over its printed row on all 131 dates. Two rows
+  in `registers/zone_province_overrides.tsv` now apply what the front pages
+  state; Nord-Kivu counts that case from 24 May rather than 27 May. A test now
+  requires every province to end at a zero gap against its printed row.
+- **Care splits read from the meal clause.** Tshopo (sitreps 125–131) and
+  Haut-Uélé (127–128) published confirmed/suspected care counts that were counts
+  of patients fed («4 confirmés et 2 suspects ont bénéficié d'un repas chaud»).
+  Removed.
+- **A false absconder.** Tshopo's on 2026-09-06 (sitrep 115) was the «1 évadé»
+  in the experimental-treatment cohort's outcome list, an outbreak-to-date
+  count. Removed, along with the same clause on sitreps 129–132.
+- **`checks` means what it says.** `closes` now requires an exact check (a split
+  that sums, a printed rate that divides out). 112 rows whose only passing
+  check was a bound such as recoveries ≤ exits are now `unchecked`: 83 in
+  `care_exits_recovered`, 19 in `care_exits_deaths`, 10 in
+  `care_census_confirmed`. Nord-Kivu's post-124 care rows no longer read as
+  `contradicts`. No count changes.
+
+**Source defects found and handled**, each pinned by a test: the date label
+renamed from «Date de rapportage» to «Date du rapport» (sitrep 137); sitrep
+150's front page printing 12 October for an 11 October report
+(`registers/printed_date_errata.tsv`); the zone table touching the page footer
+on 154 and 157 and orphaning every province after Ituri; a highlight bullet
+drawn over the front-page tiles on 143–147; the care prose's per-province
+census wording, which had silently emptied the province census for three weeks.
+
+**Not advanced.** The onset digitiser refuses every chart from sitrep 128, so
+the reporting delay rests on the 2026-09-18 vintage.
+
+**Comparison sources refreshed** (they check the data and never feed it):
+INRB-UMIE's transcription to `db4aee1`, the epiforecasts scan to `924c0aa`, now
+both pinned in `external.lock`. Five new disagreements, none ours
+([note](notes/2026-10-20-comparison-refresh-disagreements.md)).
+
+**Migration.** Re-vendor at this tag. Add the Nord-Ubangi files to any
+province list, and re-read `population` (or the frame size) from `meta.json`.
+If you fit `checks == "closes"` rows only, expect fewer recovery and care-death
+rows. If you fit a Nord-Kivu isolation compartment, choose which census file it
+observes.
+
+---
+
+## `data/2026-09-18-r0` — 2026-09-21 — sitreps 114–127, and Sud-Ubangi, a seventh province
+
+**Breaking.** Sud-Ubangi joins at sitrep 119 (2026-09-10), one case and one
+death in Bulu, and the reports widen their own frame from 151 zones in six
+provinces to 167 in seven, so the national population in `meta.json` moves
+31,898,994 → 35,581,745. New `*_sud_ubangi` files. Fourteen new reports, data
+date 2026-09-04 → 2026-09-18. `scripts/fetch_geography.py` now regenerates the
+geography and population references from a declared list of affected provinces,
+checked against the zone count the reports print. Two defects in our own readers
+fixed: the upstream check failed on non-ASCII filenames, and an infodemic
+bulletin was being classified as a situation report.
+
+**Migration.** Re-vendor at this tag; add the Sud-Ubangi files; re-read
+`population`.
+
+---
+
+## `data/2026-09-04-r0` — 2026-09-07 — sitreps 109–113, and flow files state their accumulation window in two columns
 
 **Breaking for every consumer of a flow stream.** A flow file no longer carries
 `time`. It carries `window_start` and `window_stop`, the half-open interval
