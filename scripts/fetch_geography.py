@@ -6,7 +6,9 @@ as a DENOMINATOR, and the reports state their own: sitrep 108 reads «60 des
 151 (39,7%) zones de santé *des six provinces* restent affectées», and sitrep
 119 widens it -- «Avec l'ajout de la zone de santé de Bulu dans la province de
 Sud Ubangi nouvellement touchée, la RDC compte actuellement 62 zones de santé
-sur 167 (37,1%) affectées et 7 provinces touchées». So the affected-zone
+sur 167 (37,1%) affectées et 7 provinces touchées», and sitrep 155 widens it
+again, adding Nord-Ubangi -- «66 zones de santé sur 178 (37,1 %), réparties
+dans huit provinces, ont été touchées». So the affected-zone
 fraction those sentences quote is a fraction of THIS set, and taking all 519
 zones in the upstream file instead would silently re-scale every per-capita
 quantity to the whole country.
@@ -64,6 +66,9 @@ AFFECTED = {
     # «la province de Sud Ubangi nouvellement touchée ... 62 zones de sante
     # sur 167 (37,1%) affectees et 7 provinces touchees»
     "Sud-Ubangi": "sitrep 119 (2026-09-10), one case in Bulu",
+    # «le Nord-Ubangi (2 cas), qui devient la huitième province touchée par
+    # l'épidémie avec la ZS de Wapinda ... 66 zones de santé sur 178»
+    "Nord-Ubangi": "sitrep 155 (2026-10-16), two cases in Wapinda",
 }
 
 
@@ -74,7 +79,7 @@ def main() -> None:
                     default=REPO_ROOT / "data/raw/health_zones.geojson")
     ap.add_argument("--population-out", type=Path,
                     default=REPO_ROOT / "data/raw/zone_population.csv")
-    ap.add_argument("--expect-zones", type=int, default=167,
+    ap.add_argument("--expect-zones", type=int, default=178,
                     help="the health-zone count the reports themselves print "
                          "for the affected frame; the run fails if the cut "
                          "does not come out at it.")

@@ -169,6 +169,10 @@ PROVINCE_ALIASES = {
     # not reopen this.
     "sud-ubangi": "Sud-Ubangi",
     "sud ubangi": "Sud-Ubangi",
+    # Joined at sitrep 155 (2026-10-16): two confirmed cases and one death in
+    # Wapinda health zone, «qui devient la huitième province touchée».
+    "nord-ubangi": "Nord-Ubangi",
+    "nord ubangi": "Nord-Ubangi",
 }
 
 
