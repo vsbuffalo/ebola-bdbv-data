@@ -11,8 +11,10 @@ The outbreak's national public health institute (INSP) publishes a situation
 report, or "sitrep", most days: a PDF of French tables giving cases and deaths
 for every health zone (the DRC's district-level unit of health administration).
 I started this pipeline on 16 August. If I'd worked alone, I could have done
-one of two things in that time. I could have transcribed the tables by hand,
-or written a quick scraper and spot-checked it. Both are how most outbreak
+one of two things in that time. I could have transcribed the tables by hand
+(though realistically not all of them, since I was also building the models
+these data feed, among other things), or written a quick scraper and
+spot-checked it. Both are how most outbreak
 datasets get made, and both fail quietly. A hand transcription has typos that
 nobody checks for, and a scraper's errors look like perfectly good numbers.
 
