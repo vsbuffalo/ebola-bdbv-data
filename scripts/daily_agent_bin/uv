@@ -1,0 +1,15 @@
+#!/bin/sh
+# Stand-in for uv, on PATH only for the daily fixing agent.
+#
+# uv panics under the macOS sandbox the agent runs in (it reads the system
+# proxy configuration through a service the sandbox denies), and the agent
+# has no network to sync with anyway. The runner syncs .venv before starting
+# the agent, so `uv run <tool> ...` is `.venv/bin/<tool> ...`. Anything else
+# uv would do needs a person.
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+if [ "$1" = run ]; then
+  shift
+  exec "$ROOT/.venv/bin/$@"
+fi
+echo "uv $1: not available to the daily agent (no network, no sandboxed uv)" >&2
+exit 2

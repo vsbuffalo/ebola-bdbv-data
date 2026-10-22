@@ -1,0 +1,30 @@
+{
+  "sandbox": {
+    "enabled": true,
+    "failIfUnavailable": true,
+    "allowUnsandboxedCommands": false,
+    "autoAllowBashIfSandboxed": false,
+    "network": {
+      "allowedDomains": [],
+      "strictAllowlist": true
+    },
+    "filesystem": {
+      "denyRead": [
+        "~/Library/Keychains",
+        "~/.ssh",
+        "~/.gnupg",
+        "~/.config/gh"
+      ]
+    }
+  },
+  "permissions": {
+    "deny": [
+      "WebFetch",
+      "WebSearch",
+      "Read(~/Library/Keychains/**)",
+      "Read(~/.ssh/**)",
+      "Read(~/.gnupg/**)",
+      "Read(~/.config/gh/**)"
+    ]
+  }
+}

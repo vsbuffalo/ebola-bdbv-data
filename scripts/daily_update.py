@@ -78,6 +78,33 @@ LABELS = {"gate-failure": ("b60205", "The daily update stopped on a gate"),
           "daily-release": ("0e8a16", "The daily release log")}
 
 
+def agent_command(prompt: str) -> list[str]:
+    """Headless Claude Code, in the macOS sandbox with no network.
+
+    `scripts/daily_agent_settings.json` turns the sandbox on with an empty
+    network allowlist, refuses the unsandboxed retry, and denies reads of the
+    keychain and the gh login; the user's own settings are not loaded, so
+    nothing there can widen it. The prompt's rules are instructions; this is
+    the boundary."""
+    return ["claude", "-p", prompt,
+            "--setting-sources", "project,local",
+            "--settings", str(ROOT / "scripts/daily_agent_settings.json"),
+            "--strict-mcp-config",
+            "--tools", "Read,Edit,Write,Glob,Grep,Bash",
+            "--allowedTools", ",".join(AGENT_TOOLS),
+            "--permission-mode", "acceptEdits",
+            "--max-budget-usd", AGENT_BUDGET_USD,
+            "--output-format", "text"]
+
+
+def agent_env() -> dict[str, str]:
+    """The runner's environment without the GitHub token, and with the uv
+    stand-in first on PATH (uv itself panics inside the sandbox)."""
+    env = {k: v for k, v in os.environ.items() if k not in ("GH_TOKEN", "GITHUB_TOKEN")}
+    env["PATH"] = f"{ROOT / 'scripts/daily_agent_bin'}:{env.get('PATH', '')}"
+    return env
+
+
 class Run:
     def __init__(self, dry: bool, log: Path):
         self.dry, self.log = dry, log
@@ -88,11 +115,11 @@ class Run:
         with self.log.open("a") as fh:
             fh.write(line + "\n")
 
-    def sh(self, cmd: list[str], *, check: bool = False,
-           timeout: int | None = None) -> subprocess.CompletedProcess:
-        self.say("$ " + " ".join(cmd))
+    def sh(self, cmd: list[str], *, check: bool = False, timeout: int | None = None,
+           env: dict[str, str] | None = None) -> subprocess.CompletedProcess:
+        self.say("$ " + " ".join(cmd[:2] + ["..."] if cmd[:2] == ["claude", "-p"] else cmd))
         p = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True,
-                           timeout=timeout)
+                           timeout=timeout, env=env)
         with self.log.open("a") as fh:
             fh.write(p.stdout + p.stderr)
         if check and p.returncode:
@@ -299,12 +326,8 @@ def fix(run: Run, branch: str, failure: GateFailed, reports: list[str],
         pr_body=pr_body.relative_to(ROOT))
     run.say(f"starting the fixing agent on {branch}")
     try:
-        agent = run.sh(["claude", "-p", prompt,
-                        "--allowedTools", ",".join(AGENT_TOOLS),
-                        "--permission-mode", "acceptEdits",
-                        "--max-budget-usd", AGENT_BUDGET_USD,
-                        "--output-format", "text"],
-                       timeout=AGENT_TIMEOUT_S)
+        agent = run.sh(agent_command(prompt), timeout=AGENT_TIMEOUT_S,
+                       env=agent_env())
         agent_ok = agent.returncode == 0
     except subprocess.TimeoutExpired:
         agent_ok = False
