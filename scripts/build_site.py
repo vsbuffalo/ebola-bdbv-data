@@ -62,6 +62,8 @@ def changelog_sections() -> dict[str, str]:
         m = re.match(r"`(data/[^`]+)`\s*—\s*[0-9-]+\s*—\s*(.*)", head)
         if m:
             body = re.sub(r"(?m)^(#{3,5}) ", r"#\1 ", body.strip().rstrip("-").strip())
+            # Repo-relative links (`notes/...`) resolve on GitHub, not on the site.
+            body = re.sub(r"\]\((?!https?:|#)([^)]+)\)", rf"]({REPO_URL}/blob/main/\1)", body)
             out[m.group(1)] = f"**{m.group(2).strip()}**\n\n{body}"
     return out
 
@@ -114,6 +116,8 @@ website:
         text: Figures
       - href: releases.qmd
         text: Releases
+      - href: engineering.qmd
+        text: How it's built
       - href: data.html
         text: Data document
       - href: explore.html
@@ -216,6 +220,11 @@ format:
             home += [f"![](figures/{h}.png){{width=100%}}", "",
                      f"[Caption and caveats](figures.qmd#{h})", ""]
     (out / "index.qmd").write_text("\n".join(home))
+
+    # --- how it's built: docs/engineering.md, readable on GitHub and here
+    eng = (ROOT / "docs" / "engineering.md").read_text().split("\n", 1)
+    (out / "engineering.qmd").write_text(
+        "---\ntitle: \"" + eng[0].lstrip("# ") + "\"\n---\n" + eng[1])
 
     for doc in ("data.html", "explore.html"):
         p = ROOT / "analysis" / doc

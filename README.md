@@ -118,7 +118,8 @@ it parsed, and a number the books reject gets investigated, not repaired.
   hash manifest; every build artefact has a `make` rule; a rebuild is
   byte-identical.
 
-The details live in three pages: [how the extraction works](docs/extraction.md),
+For the short, non-technical version of why this was built the way it was,
+see [how this was built](docs/engineering.md). The details live in three pages: [how the extraction works](docs/extraction.md),
 [how it is validated](docs/validation.md), and
 [the data contract](docs/data-contract.md) — what the stream files guarantee to
 downstream models, and the traps (three readings of one case count, `NA` versus
