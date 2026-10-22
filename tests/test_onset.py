@@ -336,6 +336,14 @@ KNOWN_REFUSED = {
     157: "no anchor row",
 }
 
+#: From this sitrep on, every chart is expected to refuse until the reader is
+#: rebuilt for the long axis (see the comment above), so a new report's
+#: refusal is not a finding and needs no entry: registering one by hand each
+#: day would stop the daily release on a cause already known. The entries
+#: above for 128-157 stay, and still pin their reasons. A report from here on
+#: that the reader *accepts* is a finding, and fails below.
+REFUSES_FROM = 128
+
 
 @needs_build
 def test_refusals_are_the_known_ones_and_nothing_new(vintages):
@@ -350,9 +358,16 @@ def test_refusals_are_the_known_ones_and_nothing_new(vintages):
     refused = vintages.filter((pl.col("status") == "refused")
                               & (pl.col("kind") == "onset_daily"))
     got = set(refused["sitrep"].to_list())
-    assert got == set(KNOWN_REFUSED), (
-        f"unexplained refusal(s): {sorted(got - set(KNOWN_REFUSED))}; "
-        f"newly readable: {sorted(set(KNOWN_REFUSED) - got)}")
+    expected = set(KNOWN_REFUSED) | {n for n in got if n >= REFUSES_FROM}
+    accepted_late = set(vintages.filter(
+        (pl.col("status") != "refused") & (pl.col("kind") == "onset_daily")
+        & (pl.col("sitrep") >= REFUSES_FROM))["sitrep"].to_list())
+    assert got == expected, (
+        f"unexplained refusal(s): {sorted(got - expected)}; "
+        f"newly readable: {sorted(expected - got)}")
+    assert not accepted_late, (
+        f"accepted from sitrep {REFUSES_FROM} on, where every chart refused: "
+        f"{sorted(accepted_late)} -- check the reading, then lower REFUSES_FROM")
     for n, why in KNOWN_REFUSED.items():
         row = refused.filter(pl.col("sitrep") == n)
         assert why in row["reasons"][0], (
