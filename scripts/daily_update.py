@@ -151,12 +151,13 @@ def new_reports(run: Run, since: str) -> list[str]:
 
 
 def window_total(stream: str, column: str, since: str) -> int:
-    """Sum of a national daily stream over windows starting after `since`."""
+    """Sum of a national daily stream over windows starting after `since`,
+    the previous data date, whose own window the previous release held."""
     lines = (ROOT / f"data/build/streams/{stream}").read_text().splitlines()
     head = lines[0].split("\t")
     i, j = head.index("window_start"), head.index(column)
     return sum(int(r[j]) for r in (ln.split("\t") for ln in lines[1:])
-               if r[i] >= since and r[j] != "NA")
+               if r[i] > since and r[j] != "NA")
 
 
 # --------------------------------------------------------------------------
