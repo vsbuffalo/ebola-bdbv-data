@@ -1,0 +1,33 @@
+# The daily update's status, and the notification for its failures.
+#
+# scripts/daily_update.py files a `gate-failure` issue under the owner's own
+# login, and GitHub does not notify anyone of their own actions -- so this
+# workflow @-mentions the owner from the bot account, which does. It also
+# fails while any gate failure is open, so the README badge is red exactly
+# while releases are paused.
+name: daily-status
+on:
+  issues:
+    types: [opened, closed, reopened, labeled, unlabeled]
+  workflow_dispatch:
+permissions:
+  issues: write
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+    steps:
+      - name: Mention the owner on a new gate failure
+        if: >-
+          github.event_name == 'issues' && github.event.action == 'opened' &&
+          contains(github.event.issue.labels.*.name, 'gate-failure')
+        run: >-
+          gh issue comment "${{ github.event.issue.number }}" --repo "$REPO"
+          --body "@${{ github.repository_owner }} the daily update stopped on a gate; releases are paused until this closes."
+      - name: Fail while any gate failure is open
+        run: |
+          n=$(gh issue list --repo "$REPO" --label gate-failure --state open --json number --jq length)
+          echo "open gate failures: $n"
+          test "$n" -eq 0

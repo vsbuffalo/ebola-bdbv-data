@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Template for `make daily-install`: @REPO@ is substituted with the
+     repository's absolute path at install time, so no absolute path is
+     committed. Runs scripts/cron_daily.sh at 14:00 and 22:00; a run missed
+     while the machine slept fires on wake. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.vsb.ebola-bdbv-daily</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>-lc</string>
+    <string>@REPO@/scripts/cron_daily.sh</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Hour</key><integer>14</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>22</integer><key>Minute</key><integer>0</integer></dict>
+  </array>
+  <key>StandardOutPath</key>
+  <string>@REPO@/logs/launchd_daily.log</string>
+  <key>StandardErrorPath</key>
+  <string>@REPO@/logs/launchd_daily.log</string>
+</dict>
+</plist>

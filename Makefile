@@ -2,7 +2,7 @@
 # by design: `build` and `doc` never touch the network, so a rebuild can never
 # silently change what the source says.
 
-.PHONY: site serve-site scan-update fetch-pinned fetch-exports check-exports geography fmt verdict figures-release figures-compare watch-data-channel release-check escape-fraction care-ledger oneoff-testing oneoff-death-split oneoff-death-flow cron-install cron-uninstall check fetch refresh manifest verify build streams compare figures onset external \
+.PHONY: site serve-site scan-update fetch-pinned fetch-exports check-exports geography fmt verdict figures-release figures-compare watch-data-channel release-check escape-fraction care-ledger oneoff-testing oneoff-death-split oneoff-death-flow cron-install cron-uninstall daily daily-dry-run daily-install daily-uninstall check fetch refresh manifest verify build streams compare figures onset external \
 	external-update scan-refresh doc serve test
 
 # WHERE A FIGURE LANDS SAYS WHICH DATA MADE IT. Every figure this repository
@@ -85,6 +85,33 @@ cron-install:
 cron-uninstall:
 	launchctl bootout gui/$$(id -u)/$(CRON_LABEL) 2>/dev/null || true
 	rm -f ~/Library/LaunchAgents/$(CRON_LABEL).plist
+	@echo "removed"
+
+## daily   -- NETWORKED, and it pushes. The scheduled update: check, refresh,
+##            every release gate, then either cut and push the next tag or
+##            file a `gate-failure` issue and start the fixing agent on a
+##            branch. See scripts/daily_update.py. `daily-dry-run` does the
+##            same locally and pushes, tags and files nothing.
+daily:
+	scripts/cron_daily.sh
+
+daily-dry-run:
+	scripts/cron_daily.sh --dry-run --no-agent
+
+## daily-install -- schedule `make daily` at 14:00 and 22:00 via launchd,
+##            the same way `cron-install` schedules the check.
+DAILY_LABEL = com.vsb.ebola-bdbv-daily
+daily-install:
+	mkdir -p logs
+	sed "s|@REPO@|$$(pwd)|g" scripts/launchd/$(DAILY_LABEL).plist.in \
+		> ~/Library/LaunchAgents/$(DAILY_LABEL).plist
+	launchctl bootout gui/$$(id -u)/$(DAILY_LABEL) 2>/dev/null || true
+	launchctl bootstrap gui/$$(id -u) ~/Library/LaunchAgents/$(DAILY_LABEL).plist
+	@echo "installed; runs at 14:00 and 22:00. Logs: logs/daily_<date>.log"
+
+daily-uninstall:
+	launchctl bootout gui/$$(id -u)/$(DAILY_LABEL) 2>/dev/null || true
+	rm -f ~/Library/LaunchAgents/$(DAILY_LABEL).plist
 	@echo "removed"
 
 ## fetch-exports -- NETWORKED. Snapshot every document data/raw/exports/
