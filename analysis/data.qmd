@@ -21,16 +21,20 @@ from IPython.display import Markdown
 from _guard import figure, load, load_json, source, stat
 ```
 
-::: {.callout-note appearance="minimal"}
-Written and built by Anthropic's Claude Code agents under Vince Buffalo's direction and review, on the outbreak's daily schedule. The prose is AI-drafted; every number is computed by the pipeline, not written.
-:::
+{{< include _ai_notice.md >}}
 
-## Summary — what exists
+## What's here
 
-Every number and figure in this document is read from a pipeline artefact at
-render time; a figure no rule produces, or an artefact not yet built, stops the
-render. The pipeline is `make build`, `make streams`, `make figures`,
-`make compare`.
+The data on this page come from the situation reports ("sitreps") that INSP,
+the DRC's national public health institute, publishes on the outbreak. The
+reports count cases by health zone, the district-sized unit the country's
+health system is organised into, and health zones roll up into provinces.
+
+Every number and every figure on this page is read from a file the pipeline
+builds, at the moment the page renders. If a figure has no build rule behind
+it, or a file hasn't been built yet, the render stops with an error, so nothing
+here can be typed in by hand or left over from an old build. To rebuild it all
+yourself, run `make build`, `make streams`, `make figures` and `make compare`.
 
 ```{python}
 zt = load("data/build/series/zone_table.csv")
@@ -66,25 +70,35 @@ print.
 ```{python}
 figure("data/build/figures/latest/availability.png")
 ```
-![What each report states, at what geographic level, and the route it was read
+![What each report states, at what geographic level (country, province or
+health zone), and which table layout I read it
 through.](../data/build/figures/latest/availability.png)
 
-The structure to keep in mind: the suspected and contact streams stop at the
-start of June; confirmed deaths begin then; the daily ascertainment split —
-community deaths by post-mortem swab against deaths in treatment centres —
-begins 13 July; and the 084–086 vintage prints no per-zone table at all, so
-those reports carry province totals only.
+A few dates are worth keeping in your head as you read that figure. The
+suspected-case and contact-tracing series stop at the start of June, which is
+also when counts of confirmed deaths begin. On 13 July the reports start
+splitting each day's deaths by how they were found: community deaths,
+confirmed by a post-mortem swab, and deaths in treatment centres. And sitreps
+084 to 086 use a layout that prints no per-zone table at all, so for those
+three reports I only have province totals.
 
-The source annotates its own early numbers, and those annotations are data:
-nearly every report from 005 through 033 footnotes its headline cumulative as
-undergoing harmonisation, and from sitrep 026 (9 June) the footnote is
-**directional** — the count is stated to omit confirmed cases still in the
-community and escapees from care, i.e. to be an undercount. Sitrep 011
-footnotes the death count itself as underestimated. Each such statement is a
-row in `provisional_caveat.csv` (kinds `harmonisation_pending`,
-`harmonisation_undercount`, `deaths_underestimated`), flagged per report in
-the index below: anyone fitting the first four weeks is fitting numbers the
-source itself declared provisional, and from 9 June declared biased low.
+The reports annotate their own early numbers, and I treat those annotations as
+data. Nearly every report from 004 through 033 carries a footnote saying its
+headline cumulative count is still being harmonised, that is, reconciled
+across the levels of the health system. From sitrep 026 (9 June) the footnote
+also says which way the error runs. The count leaves out confirmed cases who
+are still in the community and patients who escaped from care, so it is too
+low. Sitreps 011 and 012 have a footnote saying the death count itself is
+underestimated. Later, from sitrep 060 to 083, the reports warn that the last
+few days' changes should be read with caution, because notifications arrive
+late and the data are still being consolidated. Each of these statements is a row in `provisional_caveat.csv`,
+whose `kind` column says which sort of caveat it is: `harmonisation_pending`
+(still being harmonised), `harmonisation_undercount` (being harmonised, and
+stated to be too low), `deaths_underestimated`, or `recent_data_provisional`
+(the warning about recent days, flagged "caveat" in the index). The index below flags them
+report by report. This matters if you fit the first four weeks of the
+outbreak, because you'd be fitting numbers the source itself called
+provisional, and from 9 June called too low.
 
 ## Index of situation reports
 
@@ -129,17 +143,21 @@ Markdown(
     ": Index of situation reports {#tbl-sitreps}")
 ```
 
-## Sources, and what independence means here
+## One primary source, and two readings I only check against
 
-The **primary source** is the INSP (Institut National de Santé Publique, DRC)
-situation-report PDFs, fetched from `insp.cd`, pinned by a committed index and
-a SHA-256 manifest, and read from the table geometry the documents draw. Two
-other readings of the same documents exist: the INRB-UMIE transcription (the
-national laboratory's own), and the epiforecasts scan. Both are **checks,
-never trunks** — all three lineages read the same pages, so agreement between
-them is evidence about transcription, not corroboration of the counts. A
-disagreement, though, is always a finding: one of the readings is wrong, or
-two versions of a revised report were read.
+The primary source is the set of situation-report PDFs that INSP (Institut
+National de Santé Publique) posts at `insp.cd`. I download them and pin each
+one with a committed index and a manifest of SHA-256 hashes, so I can tell if
+a file ever changes. Then I read the numbers from the table geometry drawn in
+the PDF itself.
+
+Two other groups have read the same documents. INRB-UMIE, the national
+laboratory, keeps its own transcription, and epiforecasts has a scan. I use
+both only as checks; nothing on this page is built from them. Since all three
+of us read the same pages, agreement between us tells you the transcription is
+right. It tells you nothing about whether the counts themselves are right. A
+disagreement, on the other hand, always means something: either one of the
+readings has an error, or two versions of a revised report were read.
 
 ```{python}
 dis = load("data/build/compare/inrb_disagreements.csv")
@@ -163,30 +181,35 @@ Rwampara at 159 twice over — in its table and its narrative — where the INRB
 file carries 192.
 """)
 ```
-![Ours against INRB-UMIE on the identity line; the disagreements, signed, over
-time.](../data/build/figures/latest/comparison.png)
+![Our values plotted against INRB-UMIE's, with the line where the two would be
+equal, and each disagreement over time with its
+sign.](../data/build/figures/latest/comparison.png)
 
 ```{python}
 figure("data/build/figures/latest/comparison_series.png")
 ```
-![The three lineages as series: our summed zone rows, INSP's own printed
-totals (rings), and INRB-UMIE's transcription summed through the same
-zone-to-province mapping. The bottom row is where they differ: ours − INRB
-mixes value disagreements with row-coverage gaps in their file; ours − printed
-is pure arithmetic against the page, zero except the registered source
-self-disagreements. INRB's national file agrees with ours exactly wherever
-both exist, and carries five days from sitreps 001–004 that no other lineage
-has.](../data/build/figures/latest/comparison_series.png)
+![The three readings as time series: our health-zone rows summed up, INSP's
+own printed totals (rings), and INRB-UMIE's transcription summed through the
+same mapping from zones to provinces. The bottom row shows where they differ.
+Ours minus INRB mixes two things, values we disagree on and rows missing from
+their file. Ours minus printed is plain arithmetic against the page, and it is
+zero except where the source disagrees with itself, each case of which is
+recorded in a register (see below). INRB's national file agrees with ours
+exactly wherever both have a value, and it starts a few days before our
+zone-level series does.](../data/build/figures/latest/comparison_series.png)
 
-## The identity method
+## Every table is checked against the page's own arithmetic
 
-Every extracted table is checked against the page's own arithmetic: a
-province's health-zone rows, plus any rows the source counts but has not
-assigned to a zone, must equal the printed province total; the provinces must
-equal the printed national total. A residual is treated as ours until a page
-read shows otherwise — and when the page itself does not close, that judgement
-is recorded in a **register**, hash-keyed to the exact document, licensing one
-residual and no other.
+Every table I extract has to add up the way the page says it does. A
+province's health-zone rows, plus any rows the source counts but hasn't
+assigned to a zone yet, must equal the province total printed on the page, and
+the provinces must add up to the printed national total. When they don't, I
+assume the mistake is mine until reading the page shows otherwise.
+
+Sometimes the page really doesn't add up. When that happens the judgement goes
+into a register, a hand-kept file with one row per judgement. Each row is tied
+to the SHA-256 hash of that exact PDF, and it excuses that one gap on that one
+document and nothing else.
 
 ```{python}
 rec = load("data/build/series/province_series_reconciliation.csv")
@@ -200,41 +223,49 @@ check against.
 """)
 ```
 
-What the identity cannot see, it cannot catch: a table read one concept to the
-left — suspected cases as confirmed — closes perfectly. Those failures are
-caught instead by tests that pin named reports, and by the printed-total check
-on the assembled series below.
+This check has a blind spot. It only catches errors that break the
+arithmetic. If I read the neighbouring column of a table by mistake, say
+suspected cases instead of confirmed, that column adds up just as well, and
+the check passes. Mistakes like that get caught another way: by tests that pin
+the values of specific named reports, and by comparing the assembled series
+against the printed totals, further down.
 
 ## The series
 
 ```{python}
 figure("data/build/figures/latest/province_series.png")
 ```
-![Cumulative confirmed cases and deaths by province: the line is the sum of
-the printed health-zone rows; rings are the printed provincial-summary values,
-a check. Squares are the self-checking prose
-sentences.](../data/build/figures/latest/province_series.png)
+![Cumulative confirmed cases and deaths by province. The line is the sum of
+the health-zone rows the reports print. Rings are the values in the printed
+provincial summary, shown as a check. Squares are values read from sentences
+in the report text, which carry their own internal
+check.](../data/build/figures/latest/province_series.png)
 
 ```{python}
 figure("data/build/figures/latest/streams_detail.png")
 ```
-![Every extracted daily flow by province, with the source's own consolidation
-caveat as the pink
-rug.](../data/build/figures/latest/streams_detail.png)
+![Every daily flow I extract, by province. The reports that carried the
+source's warning that recent data were still being consolidated aren't marked
+here, but every daily stream file has a `consolidating` column that says
+which they are.](../data/build/figures/latest/streams_detail.png)
 
 ```{python}
 figure("data/build/figures/latest/national_detail.png")
 ```
-![The four series the source prints for the country and nowhere else. Two are
-stocks — a reading at an instant, not a flow over a day — so they are drawn as
-levels and never smoothed. Same calendar as the panel
+![The four series the source prints only for the whole country, never by
+province. Two of them are stocks: each value is a reading taken at one moment,
+like the number of patients in isolation that day, rather than a count
+accumulated over a day. So they're drawn as levels and never smoothed. The
+calendar matches the panel
 above.](../data/build/figures/latest/national_detail.png)
 
-The fitted streams are weekly incidence per province, differenced from the
-forward-filled cumulative and binned from day 0
-(`{python} meta["day0"]`). Two gates hold: the emitted total must equal what
-the cumulative moved, exactly; and the assembled grid is compared against
-every printed province row.
+The streams that downstream models fit are weekly incidence per province. To
+build them I take the cumulative count, carry the last known value forward
+over days with no report, difference it, and bin the differences into weeks
+counted from day 0 (`{python} meta["day0"]`). Two checks have to pass. The
+total a stream emits has to equal exactly how far the cumulative count moved,
+and the assembled grid is compared against every province row the reports
+print.
 
 ```{python}
 lines = []
@@ -298,13 +329,14 @@ Markdown(
     "on the last report — zero for every stream. {#tbl-streams}")
 ```
 
-## The registers
+## The registers hold the judgements I made by reading a page
 
-Everything else in this repository is fetched or derived; the registers are
-judgements, one row each, made after reading a page. Each entry is keyed on
-the document's SHA-256 — a revised report fails the check and returns for a
-fresh judgement — and licenses exactly one value, so a reading that changes
-un-excuses itself.
+Everything else in this repository is either downloaded or computed. The
+registers are different. Each row is a judgement I made after reading a page.
+Every row is keyed on the SHA-256 hash of the document it's about, so if INSP
+revises a report, the hash stops matching and the row has to be judged again.
+And each row excuses exactly one value, so if the value we read changes, the
+excuse no longer covers it.
 
 ```{python}
 zpo = source("registers/zone_province_overrides.tsv")
@@ -323,38 +355,43 @@ Markdown(f"""
 """)
 ```
 
-## The care ledger, which is extracted but not published
+## The care ledger
 
-The reports state a treatment-centre ledger in words, per province, in the
-care pillar's prose: admissions, exits and the four ways out of a centre, the
-end-of-day census with its confirmed and suspected halves, and the installed
-beds. `extract_care_prose.py` reads it into `data/build/series/care_prose.csv`.
-Nothing here is published as an observation stream — that is a contract change
-and a separate decision — but the confirmed census is the quantity a fit would
-want, because it reads a state where every fitted stream reads a flow.
+The reports also keep a ledger of the treatment centres, written out in words
+for each province in the section on patient care. It gives admissions; exits,
+and the four ways a patient can leave a centre; the census at the end of each
+day, split into confirmed and suspected patients; and the number of beds
+installed. `extract_care_prose.py` reads all of it into
+`data/build/series/care_prose.csv`, and the release publishes it as the
+`care_*` stream files, which the streams README lists. The confirmed census is
+worth a look if you're fitting: it measures a state (how many confirmed
+patients are in care at one moment), while the case and death streams measure
+flows.
 
 ```{python}
 figure("data/build/figures/latest/care_ledger.png")
 ```
-![The care ledger the reports state in words. Panel A is the argument: the
-front-page tile and the care pillar's whole-response sentence are two readings
-of the same page by two different readers here, and where both print a
-confirmed isolation census they agree exactly. Panel B is occupancy against
-capacity per province — a ratio of sums, which cannot see a full centre inside
-a half-full province. Panel C is the ledger itself, faceted by the passage that
-printed it and never summed across facets. Panel D is every absconder count the
-reports print, drawn as isolated marks because that is what the data
-are.](../data/build/figures/latest/care_ledger.png)
+![The care ledger, as the reports write it out in words. Panel A is why I
+trust it. The front-page tile and the care section's sentence about the whole
+response are two readings of the same page, made by two different extractors
+in this repository, and wherever both print a census of confirmed patients in
+isolation, they agree exactly. Panel B is occupancy against capacity for each
+province. It's a ratio of sums, so it can't see one full centre inside a
+half-full province. Panel C is the ledger itself, split into panels by the
+passage that printed each value, and never summed across panels. Panel D is
+every count of absconders (patients who left a centre without being
+discharged) that the reports print, drawn as separate marks because that's
+what the data are.](../data/build/figures/latest/care_ledger.png)
 
-## What is not here
+## What isn't here
 
-The laboratory, alerts and contact-tracing tables are not yet extracted; the
-reference pipeline reads them and this one will. The care ledger is read from
-prose only: the patient-movement TABLE the reports also print carries the same
-quantities per province, including absconders, and reading it would roughly
-triple the absconder coverage panel D shows. The front-page
-national dashboard (daily suspected inflow after 12 July) is unread, so the
-national suspected series ends where the early layout stops printing it. The
-{stat(dis.height)} INRB disagreements await adjudication — page reads, then a
-decision per case whether to flag upstream. And no fit consumes these streams
-yet; that is the modelling repository's side of the seam.
+I don't extract the laboratory, alerts or contact-tracing tables yet. The
+reference pipeline reads them, and this one will. The care ledger comes from
+the report text only. The reports also print a patient-movement table with the
+same quantities per province, absconders included, and reading it would
+roughly triple the absconder coverage you see in panel D. I also don't read
+the daily suspected inflow from the front-page dashboard after 12 July, so the national suspected series ends where the early layout stops
+printing it. The `{python} stat(dis.height)` disagreements with INRB are waiting to be
+settled: I'll read each page, then decide case by case whether to report it
+upstream. Finally, no fit uses these streams yet. That work belongs to the
+modelling repository.

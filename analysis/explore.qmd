@@ -41,6 +41,8 @@ h2 { margin-top: 2.2rem; border-bottom: none; }
 </style>
 ```
 
+{{< include _ai_notice.md >}}
+
 ```{python}
 #| output: false
 import sys
@@ -209,16 +211,30 @@ viewof showCaveat = Inputs.toggle({label: "show consolidation caveat", value: tr
 ```
 :::
 
-Every value on this page is read from a pipeline artefact at render time,
-through the same fail-closed guard as the data document. Faint pink verticals
-mark the reports whose source cautions its recent figures are still
-consolidating. Hover anything for its provenance.
+This page is the interactive companion to the data document. Everything you
+see here is read from the pipeline's built files at the moment the page is
+rendered, and every read goes through the same guard the data document uses:
+if a file isn't one the pipeline declares and actually produces, the render
+stops rather than quietly showing you something stale.
 
-## Cumulative by province
+The data come from INSP's daily situation reports (sitreps), the numbered
+bulletins the national public health institute publishes during the outbreak.
+Some of those reports warn that their most recent figures are still being
+consolidated and may change. I mark each of those reports with a faint pink
+vertical line; the "show consolidation caveat" toggle above turns them off.
+Hover over any point to see which report it came from.
 
-The line is the sum of the printed health-zone rows — the trunk. Open rings
-are the printed provincial-summary row, a within-document check: a ring off
-its line is a finding.
+## Cumulative confirmed cases by province
+
+A health zone is the DRC's basic unit of health administration, smaller than a
+province, and most reports print a table with one row per zone. The line here
+is what you get when I add up those zone rows for each province. That sum is
+the series everything else on this site is built from.
+
+Many reports also print their own subtotal row for each province, and those
+are the open rings. Because the ring and the line come from the same page,
+they should land on top of each other. When a ring sits off its line, the
+report's own arithmetic doesn't add up, and that's worth looking into.
 
 ```{ojs}
 {
@@ -248,11 +264,13 @@ its line is a finding.
 }
 ```
 
-## Case increments, per report
+## New cases between consecutive reports
 
-One point per report at its own reporting date, exactly as published — the
-increment since the previous report. Zeros are real: reports whose cumulative
-did not move. Negative points are the source's own downward revisions, kept.
+Each point is one report, placed at its reporting date, and shows how much the
+cumulative count went up since the report before it. I haven't smoothed or
+adjusted anything here. A zero means the report printed the same cumulative as
+the previous one, so those zeros are really in the data. A point below zero
+means the source revised its cumulative downward, and I've left those in too.
 
 ```{ojs}
 {
@@ -273,14 +291,19 @@ did not move. Negative points are the source's own downward revisions, kept.
 }
 ```
 
-## Every daily flow, by province
+## Every daily series, by province
 
-The reference document's central grid, live: one row per extracted stream,
-the two main provinces sharing that row's scale. Grey points are the
-observations as published, one per report; the coloured line is the same
-gap-broken seven-day rolling geometric mean as the static figure. The five
-streams the reference reads from tables not yet ported here (laboratory,
-alerts, contacts, isolation) will appear as rows when they are.
+This is the interactive version of the grid of daily series in the data
+document. Each row is one series I extract, and Ituri and Nord-Kivu, the two
+main provinces of the outbreak, share that row's vertical scale. The grey
+points are the numbers as each report published them. The coloured line is a
+seven-day rolling geometric mean, the same smoother as in the static figure,
+and it breaks wherever there's a gap in reporting so it doesn't draw a level
+across days the source said nothing about.
+
+The reference project also reads series from report tables I haven't fully
+extracted yet: the laboratory, alerts, contact-tracing and isolation tables.
+They'll show up here as rows once I do.
 
 ```{ojs}
 //| output: false
@@ -331,20 +354,24 @@ FLOW_LABELS = new Map([
 }
 ```
 
-## Reporting-noise diagnostics
+## How noisy is the reporting?
 
-Residuals of each per-report observation against the smoothed line, computed
-in the space the smoother lives in — `log1p(observed) − log1p(smoothed)`.
-Read the shape, not the mean: the window includes the point itself and
-truncates at the edges, so the residuals are only approximately centred.
-A strong right skew *would* be the batching signature — strings of
-under-filled reports, then a catch-up dump — but treat any asymmetry here
-with suspicion: an earlier version of this page reported Ituri at +0.62,
-and all of it was two of the source's negative revisions being clipped to
-zero inside the smoother window, lifting every neighbouring residual.
-Excluded properly, both provinces are near-symmetric. Negative increments
-are the source's own revisions: they enter neither the histogram nor any
-smoother window, and are counted beside the plot instead.
+Here I take each report's number and ask how far it sits from the smoothed
+line. Since the smoother averages on a log scale, I measure the distance on
+that scale too, as `log1p(observed) − log1p(smoothed)`. Pay more attention to
+the shape of the histogram than to its mean. The smoothing window includes the
+point being measured and gets cut short at the start and end of the series, so
+the residuals won't be centred exactly on zero.
+
+What would a real problem look like? If reports were batched, with a run of
+reports that undercount followed by one that catches up all at once, you'd see
+a strong right skew. Still, be suspicious of any lopsidedness you see here. An
+earlier version of this page showed Ituri skewed at +0.62, and all of it came
+from two of the source's downward revisions. The smoother was treating them as
+zeros, which pulled the line down and pushed every nearby residual up. Once
+those revisions are left out properly, both provinces come out close to
+symmetric. So negative increments are kept out of the histogram and out of
+every smoothing window, and I count them in the note above the plot instead.
 
 ```{ojs}
 viewof resStream = Inputs.select(
@@ -426,15 +453,20 @@ viewof resStream = Inputs.select(
 }
 ```
 
-## Weekly fitted streams
+## The weekly series downstream models fit
 
-The exact series the models consume, from `data/build/streams/` — weekly
-binned, every stream ending at a zero gap against the printed totals. Where
-the source revised its cumulative downward, the deficit is carried into
-subsequent rows rather than published as a negative count or clipped away, so
-every bar is a non-negative integer and every stream still totals what the
-cumulative moved; `data/build/streams/revisions.tsv` lists the rows that
-correction touched. Solid bars are cases; the paler overlay is deaths.
+These are exactly the series that downstream models read, taken from
+`data/build/streams/`. Counts are binned by week, and by the last week each
+series has no gap left against the printed cumulative totals.
+
+When the source revises its cumulative downward, the drop has to go
+somewhere. I don't publish it as a negative weekly count, and I don't throw it
+away either. Instead I carry the deficit forward and take it out of the weeks
+that follow. That way every bar is a whole number of zero or more, and each
+series still adds up to the full change in the printed cumulative.
+`data/build/streams/revisions.tsv` lists every row that this correction
+changed. The solid bars are cases and the paler bars drawn over them are
+deaths.
 
 ```{ojs}
 {
@@ -461,11 +493,16 @@ correction touched. Solid bars are cases; the paler overlay is deaths.
 }
 ```
 
-## Ours vs INRB-UMIE, per zone-day
+## My extraction against INRB-UMIE's, zone by zone and day by day
 
-Agreement is evidence about transcription, never about the counts — both
-lineages read the same pages. A red point is a finding; hover it for the full
-record.
+INRB-UMIE, at the national laboratory, publishes its own transcription of the
+same situation reports. I don't build anything from it; I only compare
+against it. Each point is one health zone in one report, with their number on
+one axis and mine on the other. Keep in mind that both of us are reading the
+same pages. When we agree, that tells you we copied the numbers correctly. It
+doesn't tell you anything about whether the counts themselves are right. A
+red point is a place where we disagree, and you can hover over it to see the
+full record.
 
 ```{ojs}
 {
@@ -489,10 +526,16 @@ record.
 }
 ```
 
-## Report index
+## Every report, in one table
 
-Searchable; every column sortable. *Route* is the layout the report was read
-through; *identity* asks whether the page's own arithmetic closes.
+You can search this table and sort it by any column. *Route* is the table
+layout I read that report's zone counts from, since the reports changed format
+over the course of the outbreak. *Identity* records whether the page's own
+arithmetic holds: `ok` if the zone rows add up to the totals the report prints,
+`fails` if they don't. *Residual* is the size of the gap when they don't.
+Under *flags*, `caveat` means the report warns its recent figures are still
+being consolidated, and `exception` means I've checked the mismatch by hand
+against the page and recorded it in `registers/reconciliation_exceptions.tsv`.
 
 ```{ojs}
 viewof q = Inputs.search(indexJ, {placeholder: "filter reports…"})
