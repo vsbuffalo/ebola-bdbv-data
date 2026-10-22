@@ -1,0 +1,30 @@
+cff-version: 1.2.0
+message: >-
+  If you use these data or this pipeline, please cite them as below. Each
+  daily release is a git tag (data/<date>-r<n>); please also name the tag you
+  used, so others can rebuild exactly the data you had.
+type: dataset
+title: >-
+  ebola-bdbv-data: health-zone-level case and death series for the 2026
+  Bundibugyo virus disease outbreak in the DRC, extracted from INSP situation
+  reports
+authors:
+  - family-names: Buffalo
+    given-names: Vince
+repository-code: https://github.com/vsbuffalo/ebola-bdbv-data
+url: https://vsbuffalo.github.io/ebola-bdbv-data/
+abstract: >-
+  Analysis-ready case, death, laboratory and clinical-care series for the 2026
+  Bundibugyo virus disease (Ebola) outbreak in the Democratic Republic of the
+  Congo, extracted from the daily situation reports of the Institut National de
+  Santé Publique (INSP) down to the health zone. Every number is checked
+  against the arithmetic of the page that printed it, every source PDF is
+  pinned by its SHA-256 hash, and each daily release is a git tag that
+  rebuilds exactly.
+keywords:
+  - Ebola
+  - Bundibugyo virus
+  - Democratic Republic of the Congo
+  - outbreak surveillance
+  - situation reports
+  - epidemiological data

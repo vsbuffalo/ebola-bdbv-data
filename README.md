@@ -9,11 +9,22 @@ with every number checked against the page that printed it.
 
 **Website:** <https://vsbuffalo.github.io/ebola-bdbv-data/>: every release, its notes and its figures.
 
+**How to cite:** use GitHub's "Cite this repository" button (it reads
+[`CITATION.cff`](CITATION.cff)), and please name the release tag you used, such
+as `data/2026-10-20-r0`, so anyone can rebuild exactly the data you had.
+
+**Found a problem?** Please [open an issue](https://github.com/vsbuffalo/ebola-bdbv-data/issues).
+A suspicion is enough; I'd rather check a false alarm than miss a real error.
+
+**Using these data?** I'd love to hear about it. Knowing who relies on this
+helps me decide what to keep up and what to add next, and an issue is a fine
+way to say hello.
+
 ## About this repository
 
 **This is independent work.** It was built by me, Vince Buffalo, guiding
 Anthropic's Claude Code agents, which wrote most of the code, extraction rules
-and documentation under his direction and review. It began as work at the
+and documentation under my direction and review. It began as work at the
 Institute for Disease Modeling (IDM) and is now released publicly. It is not an
 official product of IDM, of the DRC's Institut National de Santé Publique
 (INSP), of WHO, or of any ministry of health, and none of them has reviewed it.
