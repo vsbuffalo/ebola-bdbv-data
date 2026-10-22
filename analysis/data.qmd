@@ -21,6 +21,10 @@ from IPython.display import Markdown
 from _guard import figure, load, load_json, source, stat
 ```
 
+::: {.callout-note appearance="minimal"}
+Written and built by Anthropic's Claude Code agents under Vince Buffalo's direction and review, on the outbreak's daily schedule. The prose is AI-drafted; every number is computed by the pipeline, not written.
+:::
+
 ## Summary — what exists
 
 Every number and figure in this document is read from a pipeline artefact at

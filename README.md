@@ -1,5 +1,7 @@
 # ebola-bdbv-data
 
+[![daily update](https://github.com/vsbuffalo/ebola-bdbv-data/actions/workflows/daily-status.yml/badge.svg)](https://github.com/vsbuffalo/ebola-bdbv-data/issues?q=is%3Aopen+label%3Agate-failure)
+
 Analysis-ready case data for the 2026 Bundibugyo virus outbreak in the
 Democratic Republic of the Congo (DRC), extracted from the national public
 health institute's (INSP) daily situation reports — down to the health zone,
@@ -13,6 +15,10 @@ and documentation under his direction and review. It began as work at the
 Institute for Disease Modeling (IDM) and is now released publicly. It is not an
 official product of IDM, of the DRC's Institut National de Santé Publique
 (INSP), of WHO, or of any ministry of health, and none of them has reviewed it.
+It was built on the outbreak's schedule — a report a day, each needing to be
+read within hours of publication — and that pace was only possible with agents
+doing the reading, the code and much of the writing, which I directed and
+checked.
 
 **What it reads.** The primary source is INSP's situation reports on the 2026
 Bundibugyo virus outbreak, fetched from insp.cd and pinned by SHA-256. Two
@@ -70,7 +76,7 @@ the outputs would create a second copy free to drift from the code that makes
 them. To get the files, check out a release and build it:
 
 ```sh
-git checkout data/2026-10-18-r0     # or any tag: git tag -l 'data/*'
+git checkout data/2026-10-18-r0     # or the newest: git tag -l 'data/*' --sort=-creatordate | head -1
 make fetch-pinned                   # network: exactly the PDFs that tag read (~200 MB)
 make build streams                  # offline from here on
 ```
@@ -163,14 +169,33 @@ interactive companion. `make serve` serves both (port 8790 by default).
 
 ## Releases
 
-Data ships as git tags, `data/<date>-r<n>`: the date is the newest report's data
-date and `<n>` the revision, from `-r0`. A tag is cut only when every accounting
-identity holds, the test suite passes, the committed figures rebuild
-byte-identically from a fresh clone (`make release-check`), and the upstream
-check reports us current. Published tags never move and are never deleted —
-downstream models pin one per fit — and each is recorded in
-`registers/released_tags.tsv`. What changed in each release, and whether it
+Data ships as git tags, `data/<date>-r<n>`. The date is the data date — the date
+the newest report the build read speaks for — and `<n>` is the revision. The
+first release for a data date is `-r0`. If anything changes after that without a
+new report arriving — a reader fix, a correction to a register — the release is
+cut again as `-r1`, `-r2` and so on. So `data/2026-10-18-r1` would be the same
+reports as `-r0`, read better. Published tags never move and are never deleted,
+because downstream models pin one per fit; a later revision supersedes an
+earlier one without withdrawing it. Every tag is recorded in
+`registers/released_tags.tsv`, and what changed in each, including whether it
 breaks anything, is in the [CHANGELOG](CHANGELOG.md).
+
+A tag is cut only when every gate passes: the accounting identities hold, the
+test suite passes, every quote behind the counts outside the DRC is on the page
+it cites, and the committed figures rebuild byte-identically from a fresh clone
+(`make release-check`).
+
+**Releases are cut automatically.** A scheduled job (`make daily`, run at 14:00
+and 22:00 on my machine) checks INSP for new reports, fetches and builds them,
+and runs every gate. If they all pass, it tags the release, pushes it and logs
+it on the pinned *Daily releases* issue; its CHANGELOG entry is a short
+generated stub. If a gate fails, it files a `gate-failure` issue at once — the
+badge above turns red — and starts a Claude Code agent on a branch, with
+instructions in [`scripts/daily_fix_prompt.md`](scripts/daily_fix_prompt.md), to
+find the page that broke the reader and propose a fix. The agent can't push or
+tag; its fix arrives as a pull request that I review, and merging it is what
+lets the next run cut a revision. Releases stop while a failure is open, so a
+tag never skips past a report nobody has read correctly.
 
 ## Layout
 
