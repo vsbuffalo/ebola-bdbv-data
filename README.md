@@ -13,12 +13,14 @@ with every number checked against the page that printed it.
 [`CITATION.cff`](CITATION.cff)), and please name the release tag you used, such
 as `data/2026-10-20-r0`, so anyone can rebuild exactly the data you had.
 
-**Found a problem?** Please [open an issue](https://github.com/vsbuffalo/ebola-bdbv-data/issues).
-A suspicion is enough; I'd rather check a false alarm than miss a real error.
+**Found a problem?** Please [open an
+issue](https://github.com/vsbuffalo/ebola-bdbv-data/issues) for any extracted
+value that looks suspect; I'd rather check a false positive than miss a real
+error.
 
 **Using these data?** I'd love to hear about it. Knowing who relies on this
-helps me decide what to keep up and what to add next, and an issue is a fine
-way to say hello.
+helps me gauge usage and decide where my time goes: new features, rewriting
+the LLM-written documentation by hand so it reads better, and so on.
 
 ## About this repository
 
@@ -237,3 +239,12 @@ tag never skips past a report nobody has read correctly.
   that parses as the year 2022.
 - **Flows and stocks never share a column.** The same French word heads both, in
   different vintages.
+
+## Licence
+
+The code (`scripts/`, `tests/`, the `Makefile` and the site build) is under the
+[MIT licence](LICENSE). The extracted data (everything this pipeline produces,
+and the registers under `registers/`) are under
+[CC BY 4.0](LICENSE-data): use them for anything, including commercially, as
+long as you credit this work (see *How to cite* above). The licences cover this
+extraction, not INSP's situation reports themselves, which remain INSP's.

@@ -11,8 +11,10 @@ Scheduled by `make daily-install` (launchd, 14:00 and 22:00). Two tiers:
                  against the committed result. All pass: commit, cut the next
                  `data/<date>-r<n>`, record it in the tag register, push, and
                  comment on the pinned "Daily releases" issue, then
-                 add the release's figure gallery, republish the site, and
-                 email a summary of the new reports (`daily_summary.py`).
+                 publish the tag as a GitHub Release (which Zenodo archives
+                 under the repository's DOI), add the release's figure
+                 gallery, republish the site, and email a summary of the new
+                 reports (`daily_summary.py`).
   agent          a gate fails: open a `gate-failure` issue at once, then run
                  headless Claude Code on a `daily/<date>` branch with
                  `scripts/daily_fix_prompt.md`. The agent may read, edit, run
@@ -307,8 +309,28 @@ def release(run: Run, branch: str, prev: str, reports: list[str],
                 f"`{tag}` released: sitreps {', '.join(reports) or 'none new'}"
                 + (f"; fixes: {'; '.join(merged)}" if merged else "") + "."])
     run.say(f"released {tag}")
+    github_release(run, tag)
     publish_site(run, tag)
     summarize(run, tag, reports)
+
+
+def github_release(run: Run, tag: str) -> None:
+    """Publish the tag as a GitHub Release, its notes the tag's CHANGELOG
+    section. Zenodo archives every Release under the repository's concept
+    DOI, so each tag is citable on its own. The tag has already shipped, so a
+    failure is logged, not a gate: `gh release create <tag>` can be re-run."""
+    text = (ROOT / "CHANGELOG.md").read_text()
+    m = re.search(rf"^## `{re.escape(tag)}`[^\n]*\n(.*?)(?=^## `data/|\Z)",
+                  text, re.S | re.M)
+    notes = (m.group(1).strip().removesuffix("---").strip() if m
+             else "See CHANGELOG.md.")
+    if run.dry:
+        run.say(f"(dry run, not run) gh release create {tag}")
+        return
+    p = run.sh(["gh", "release", "create", tag, "--verify-tag",
+                "--title", tag, "--notes", notes])
+    run.say("GitHub release published" if p.returncode == 0 else
+            f"GitHub release failed (exit {p.returncode}): {tail(p.stderr, 5)}")
 
 
 def summarize(run: Run, tag: str, reports: list[str]) -> None:

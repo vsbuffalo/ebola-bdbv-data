@@ -1,0 +1,19 @@
+Copyright (c) 2026 Vince Buffalo
+
+The data produced by this pipeline -- every file it builds and publishes,
+including the release files, the streams and their dictionary -- and the
+registers under registers/ are licensed under the Creative Commons Attribution
+4.0 International licence (CC BY 4.0).
+
+You may share and adapt them for any purpose, including commercially, provided
+you give appropriate credit, link to the licence, and indicate if changes were
+made. To credit this work, cite it as described in CITATION.cff.
+
+Full legal text: https://creativecommons.org/licenses/by/4.0/legalcode
+
+This licence covers this extraction only. The situation reports it reads are
+published by the Institut National de Santé Publique (INSP) of the Democratic
+Republic of the Congo and remain theirs; the health-zone geography and
+populations come from the INRB-UMIE BDBV2026-Data repository
+(https://github.com/INRB-UMIE/BDBV2026-Data), which is under the MIT licence,
+Copyright (c) 2026 Kraemer Lab, University of Oxford.
