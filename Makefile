@@ -2,7 +2,7 @@
 # by design: `build` and `doc` never touch the network, so a rebuild can never
 # silently change what the source says.
 
-.PHONY: site serve-site scan-update fetch-pinned fetch-exports check-exports geography fmt verdict figures-release figures-compare watch-data-channel release-check escape-fraction care-ledger oneoff-testing oneoff-death-split oneoff-death-flow cron-install cron-uninstall daily daily-dry-run daily-install daily-uninstall check fetch refresh manifest verify build streams compare figures onset external \
+.PHONY: site serve-site publish-site scan-update fetch-pinned fetch-exports check-exports geography fmt verdict figures-release figures-compare watch-data-channel release-check escape-fraction care-ledger oneoff-testing oneoff-death-split oneoff-death-flow cron-install cron-uninstall daily daily-dry-run daily-install daily-uninstall check fetch refresh manifest verify build streams compare figures onset external \
 	external-update scan-refresh doc serve test
 
 # WHERE A FIGURE LANDS SAYS WHICH DATA MADE IT. Every figure this repository
@@ -611,6 +611,13 @@ figures-compare:
 site:
 	uv run python scripts/build_site.py --out data/build/site
 	cd data/build/site && quarto render
+
+## publish-site -- NETWORKED, and it pushes. Render the site and replace the
+##            gh-pages branch with it, which GitHub Pages serves at
+##            https://vsbuffalo.github.io/ebola-bdbv-data/. The daily job runs
+##            this after every release.
+publish-site: site
+	scripts/publish_site.sh data/build/site/_site
 
 serve-site:
 	@lsof -iTCP:$(SITE_PORT) -sTCP:LISTEN -n -P >/dev/null 2>&1 \

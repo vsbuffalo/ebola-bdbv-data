@@ -10,7 +10,8 @@ Scheduled by `make daily-install` (launchd, 14:00 and 22:00). Two tiers:
                  `make verdict`, `make check-exports`, and `make release-check`
                  against the committed result. All pass: commit, cut the next
                  `data/<date>-r<n>`, record it in the tag register, push, and
-                 comment on the pinned "Daily releases" issue.
+                 comment on the pinned "Daily releases" issue, then
+                 add the release's figure gallery and republish the site.
   agent          a gate fails: open a `gate-failure` issue at once, then run
                  headless Claude Code on a `daily/<date>` branch with
                  `scripts/daily_fix_prompt.md`. The agent may read, edit, run
@@ -303,6 +304,22 @@ def release(run: Run, branch: str, prev: str, reports: list[str],
                 f"`{tag}` released: sitreps {', '.join(reports) or 'none new'}"
                 + (f"; fixes: {'; '.join(merged)}" if merged else "") + "."])
     run.say(f"released {tag}")
+    publish_site(run, tag)
+
+
+def publish_site(run: Run, tag: str) -> None:
+    """Add the release's gallery and republish the site. The data release has
+    already shipped, so a failure here is an ordinary bug, not a gate."""
+    for cmd in (["make", "figures-release", f"TAG={tag}"], ["make", "publish-site"]):
+        p = run.sh(cmd)
+        if p.returncode:
+            run.remote(["gh", "issue", "create", "--label", "bug", "--title",
+                        f"Site not published for {tag}", "--body",
+                        f"`{' '.join(cmd)}` failed after the release was pushed; "
+                        f"the data is released, the site is a version behind.\n\n"
+                        f"```\n{tail(p.stdout + p.stderr, 60)}\n```"])
+            return
+    run.say("site published")
 
 
 class GateFailed(Exception):
