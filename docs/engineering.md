@@ -77,7 +77,8 @@ Two other groups transcribe the same reports: INRB-UMIE, at the DRC's national
 biomedical research institute, and the epiforecasts scan. I compare every
 value against both and record every disagreement. Neither one is an input, so
 an error in theirs can't flow into ours. When we disagree, I go back to the
-page, and so far the page has usually sided with us. One caveat: everyone is
+page. Of the 23 health-zone days where INRB-UMIE's transcription and ours
+differ, the page prints our number in all 23. One caveat: everyone is
 reading the same PDFs, so agreement tells you the transcription is right, not
 that the counts are.
 

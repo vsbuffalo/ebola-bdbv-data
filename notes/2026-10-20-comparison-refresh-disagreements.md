@@ -3,6 +3,39 @@
 Date: 2026-10-20 Project: ebola-bdbv-data Tags: validation, inrb-umie,
 epiforecasts-scan, source-defects
 
+## The other twelve INRB-UMIE rows, settled 2026-10-22
+
+The twelve disagreements from sitreps 007–064 that predate this refresh had
+never been read against the page. Three read-only agents read them, one per
+group of reports, and their key cells were re-read here from `pdftotext
+-layout`. **In all twelve the page prints our value**, and INRB-UMIE's own copy
+of the PDF prints it too, so none is a different printing. With items 1–3
+below and sitrep 032 Rwampara, every one of the 23 disagreeing rows is now
+settled, all as INRB-UMIE transcription errors.
+
+| Report, zone(s)                      | Ours        | Theirs      | What the page prints, and the mechanism                                                                                                                                        |
+| ------------------------------------ | ----------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 007 (21 May), Katwa / Butembo cases  | 2 / 1       | 1 / 2       | «Katwa 13 0 2 ND», «Butembo 7 0 1 ND». Two adjacent rows swapped; 008's «Butembo :1 et Katua ;1» new cases give 3 and 2 only from ours                                          |
+| 008 (22 May), Katwa cases            | 3           | 0           | «Katwa 13 0 3 ND»; the national «Total 867 204 91» closes only with 3. Mechanism unclear (new-cases table or the deaths column)                                                |
+| 010 (24 May), Bambu cases            | 0           | 2           | «Bambu 6 2 0 183»: the 2 is suspected deaths, the adjacent column. Ituri sums to the narrative's 94 only with 0                                                                |
+| 021 (4 Jun), 025 (8 Jun), Miti-Murhesa cases | 3     | 1           | «Miti-Murhesa 3 1 33,3%», «Sous-total Sud-Kivu 3 1», «Miti-Murhesa (3)». Isolated miskeys: INRB's series reads 3 on the days either side                                        |
+| 028 (11 Jun), Kyondo / Goma / Masereka deaths | 1 / 0 / 0 | 2 / 1 / 1 | «Kyondo 2 1», «Goma 1 0», «Masereka 1 0»; Nord-Kivu deaths sum to the printed 24 only with ours. INRB copied cases into deaths for the lower Nord-Kivu rows            |
+| 064 (17 Jul), Makiso-Kisangani cases; Mangobo, Lubunga deaths | 3; 1, 0 | 2; 0, 1 | Their PDF is byte-identical to ours. All three INRB values are 062's: they skipped 063, where the page changed. Tshopo sums to the printed 5 only with ours |
+
+**Source findings from the same reading**, which affect any lineage:
+
+- Between 062 and 063 INSP moved Tshopo's one death from Lubunga to Mangobo, so
+  Lubunga's printed cumulative deaths fall from 1 to 0 on 16 July.
+- Bambu is printed with 1 cumulative confirmed case in 006 and 007 and 0 from
+  009 on: the case was dropped or reclassified.
+- Sitrep 007 prints no new Nord-Kivu cases in its daily table, yet Nord-Kivu's
+  cumulative rises from 3 to 4 against 006.
+- Sitrep 008's narrative gives 88 cumulative confirmed cases (Nord-Kivu 5),
+  against 91 (Nord-Kivu 6) in its headline box and table.
+- INRB-UMIE's copy of 007 is a different printing from ours (9 cumulative
+  deaths against our 6, 746 suspects against 744), though not in the cells
+  compared. Their copies of 007–011 are image-only rescans.
+
 ## Context / question
 
 The two renderings this pipeline is only *checked against* — INRB-UMIE's manual
