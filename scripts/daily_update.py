@@ -215,8 +215,9 @@ def gates(run: Run) -> tuple[str, str] | None:
 
 
 def unexpected_changes(run: Run) -> list[str]:
-    changed = git(run, "status", "--porcelain").splitlines()
-    paths = [ln[3:] for ln in changed]
+    # -z, not the stripped text: stripping eats the leading space of " M path"
+    out = run.sh(["git", "status", "--porcelain", "-z"], check=True).stdout
+    paths = [e[3:] for e in out.split("\0") if e]
     return [p for p in paths if not p.startswith(REFRESH_WRITES)]
 
 
