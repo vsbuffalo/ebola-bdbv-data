@@ -1,7 +1,7 @@
 # ebola-bdbv-data
 
 [![daily update](https://github.com/vsbuffalo/ebola-bdbv-data/actions/workflows/daily-status.yml/badge.svg)](https://github.com/vsbuffalo/ebola-bdbv-data/issues?q=is%3Aopen+label%3Agate-failure)
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23581463.svg)](https://doi.org/10.5281/zenodo.23581463)
+[![DOI](https://zenodo.org/badge/1427599649.svg)](https://doi.org/10.5281/zenodo.23581463)
 
 Analysis-ready case data for the 2026 Bundibugyo virus outbreak in the
 Democratic Republic of the Congo (DRC), extracted from the national public
