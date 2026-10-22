@@ -11,7 +11,8 @@ Scheduled by `make daily-install` (launchd, 14:00 and 22:00). Two tiers:
                  against the committed result. All pass: commit, cut the next
                  `data/<date>-r<n>`, record it in the tag register, push, and
                  comment on the pinned "Daily releases" issue, then
-                 add the release's figure gallery and republish the site.
+                 add the release's figure gallery, republish the site, and
+                 email a summary of the new reports (`daily_summary.py`).
   agent          a gate fails: open a `gate-failure` issue at once, then run
                  headless Claude Code on a `daily/<date>` branch with
                  `scripts/daily_fix_prompt.md`. The agent may read, edit, run
@@ -62,10 +63,12 @@ REFRESH_WRITES = ("data/raw/insp_sitrep_index.tsv",
                   "data/raw/PROVENANCE.tsv",
                   "figures/")
 #: Changes since the last release that warrant a revision when merged.
-#: The scheduling and site scripts are excluded: they change no published file.
+#: The scheduling, site and summary scripts are excluded: they change no
+#: published file.
 RELEASE_RELEVANT = ("scripts/", "registers/", "data/raw/", "pyproject.toml",
                     "uv.lock", ":!scripts/daily_*", ":!scripts/launchd",
-                    ":!scripts/cron_*", ":!scripts/build_site.py")
+                    ":!scripts/cron_*", ":!scripts/build_site.py",
+                    ":!scripts/sitrep_digest.py", ":!scripts/publish_site.sh")
 #: What the fixing agent may do. No network, no push, no tags.
 AGENT_TOOLS = ["Read", "Edit", "Write", "Glob", "Grep",
                "Bash(make:*)", "Bash(uv run:*)", "Bash(pdftotext:*)",
@@ -305,6 +308,20 @@ def release(run: Run, branch: str, prev: str, reports: list[str],
                 + (f"; fixes: {'; '.join(merged)}" if merged else "") + "."])
     run.say(f"released {tag}")
     publish_site(run, tag)
+    summarize(run, tag, reports)
+
+
+def summarize(run: Run, tag: str, reports: list[str]) -> None:
+    """Email a modeller's summary of the new reports. Like the site, this
+    runs after the release has shipped, so a failure is logged, not a gate;
+    `daily_summary.py` emails a failure notice itself when it can."""
+    if not reports:
+        return
+    p = run.sh(["uv", "run", "python", "scripts/daily_summary.py", "--tag", tag,
+                *(["--send"] if not run.dry else []), *reports],
+               timeout=3600)
+    run.say("summary sent" if p.returncode == 0 else
+            f"summary failed (exit {p.returncode}); see the log above")
 
 
 def publish_site(run: Run, tag: str) -> None:
