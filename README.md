@@ -1,6 +1,7 @@
 # ebola-bdbv-data
 
 [![daily update](https://github.com/vsbuffalo/ebola-bdbv-data/actions/workflows/daily-status.yml/badge.svg)](https://github.com/vsbuffalo/ebola-bdbv-data/issues?q=is%3Aopen+label%3Agate-failure)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23581463.svg)](https://doi.org/10.5281/zenodo.23581463)
 
 Analysis-ready case data for the 2026 Bundibugyo virus outbreak in the
 Democratic Republic of the Congo (DRC), extracted from the national public
@@ -9,9 +10,11 @@ with every number checked against the page that printed it.
 
 **Website:** <https://vsbuffalo.github.io/ebola-bdbv-data/>: every release, its notes and its figures.
 
-**How to cite:** use GitHub's "Cite this repository" button (it reads
-[`CITATION.cff`](CITATION.cff)), and please name the release tag you used, such
-as `data/2026-10-20-r0`, so anyone can rebuild exactly the data you had.
+**How to cite:** Buffalo, V. (2026). *ebola-bdbv-data*. Zenodo.
+<https://doi.org/10.5281/zenodo.23581463>. GitHub's "Cite this repository" button gives the same
+in other formats. Please name the release tag you used, such as
+`data/2026-10-20-r0`, so anyone can rebuild exactly the data you had; each tag
+also has its own DOI on Zenodo.
 
 **Found a problem?** Please [open an
 issue](https://github.com/vsbuffalo/ebola-bdbv-data/issues) for any extracted
