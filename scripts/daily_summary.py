@@ -15,7 +15,12 @@ Run by `scripts/daily_update.py` after a release with new reports. Three steps:
   check    every «quote» in the summary is looked up in the report's own text;
            one that is not there word for word is marked unverified in what is
            sent. This is the guard against an invented quotation, and it is
-           mechanical, not a second opinion.
+           mechanical, not a second opinion. Every [n] reference must point to
+           an item of the Evidence list.
+  format   numbers outside the quotes are put in English form (the report's
+           `9 704` and `25,4 %` become `9,704` and `25.4%`), and the Markdown
+           is given its blank lines and wrapped at 80 columns, so neither the
+           plain-text nor the HTML email depends on the agent's layout.
 
 The summary lands in `data/build/summaries/<tag>.md`. `--send` emails it from
 the account whose app password is in the login keychain under service
@@ -33,6 +38,7 @@ import re
 import smtplib
 import subprocess
 import sys
+import textwrap
 import unicodedata
 from email.message import EmailMessage
 from pathlib import Path
@@ -45,9 +51,11 @@ PROMPT = ROOT / "scripts/daily_summary_prompt.md"
 MAIL_SERVICE = "ebola-bdbv-mail"
 BUDGET_USD = "5"
 TIMEOUT_S = 1800
-FOOTER = ("Written by Claude (Anthropic) from the INSP situation report text, "
-          "unreviewed. Quotes are checked mechanically against the report; "
-          "{checked}.")
+WIDTH = 80
+SUBJECT_WORDS = 15  # the prompt asks for 12; past this the subject falls back
+FOOTER = ("Release `{tag}`. Written by Claude (Anthropic) from the INSP "
+          "situation report text, unreviewed. Quotes are checked mechanically "
+          "against the report: {checked}.")
 
 
 def agent_command(prompt: str) -> list[str]:
@@ -90,6 +98,85 @@ def check_quotes(summary: str, sources: list[str]) -> tuple[str, int, int]:
     return re.sub(r"«\s*(.+?)\s*»", mark, summary, flags=re.S), total, bad
 
 
+def outside_quotes(md: str, f) -> str:
+    """Apply `f` to the text outside «quotes», which must stay as printed."""
+    parts = re.split(r"(«.*?»)", md, flags=re.S)
+    return "".join(p if p.startswith("«") else f(p) for p in parts)
+
+
+def english_numbers(s: str) -> str:
+    """`9 704` -> `9,704` and `25,4 %` -> `25.4%`: the report's French forms."""
+    s = re.sub(r"(?<![\d,.])(\d{1,3})((?:[ \u00a0\u202f]\d{3})+)(?!\d|,\d)",
+               lambda m: m[1] + re.sub(r"[ \u00a0\u202f]", ",", m[2]), s)
+    s = re.sub(r"(?<![\d,])(\d+),(\d+)[ \u00a0\u202f]?%", r"\1.\2%", s)
+    return re.sub(r"(\d)[ \u00a0\u202f]%", r"\1%", s)
+
+
+def missing_refs(md: str) -> list[int]:
+    """[n] references with no item n in the Evidence list."""
+    body, _, evidence = md.partition("## Evidence")
+    items = {int(n) for n in re.findall(r"(?m)^\s*(\d+)\. ", evidence)}
+    return sorted({int(n) for n in re.findall(r"\[(\d+)\]", body)} - items)
+
+
+ITEM = re.compile(r"^(\s*(?:- |\d+\. ))(.*)")
+
+
+def tidy(md: str, width: int = WIDTH) -> str:
+    """Blank lines between blocks, and paragraphs and list items wrapped.
+
+    The agent's lines are first joined into logical lines (a line that is not
+    a heading, item, fence or blank continues the one before it), then each
+    is wrapped, with list items given a hanging indent. Code fences are kept
+    as written: they hold the counts table.
+    """
+    blocks: list[tuple[str, str]] = []          # (kind, text)
+    fenced = False
+    for line in md.splitlines():
+        line = line.rstrip()
+        if line.lstrip().startswith("```"):
+            blocks.append(("close" if fenced else "open", line))
+            fenced = not fenced
+        elif fenced:
+            blocks.append(("code", line))
+        elif not line.strip():
+            blocks.append(("blank", ""))
+        elif line.startswith(("#", "Headline:")):
+            blocks.append(("heading", line))
+        elif ITEM.match(line):
+            blocks.append(("item", line))
+        elif blocks and blocks[-1][0] in ("item", "para"):
+            blocks[-1] = (blocks[-1][0], f"{blocks[-1][1]} {line.strip()}")
+        else:
+            blocks.append(("para", line.strip()))
+
+    out: list[str] = []
+    prev = "blank"
+    for kind, text in blocks:
+        if kind == "blank":
+            if out and out[-1]:
+                out.append("")
+            prev = kind
+            continue
+        if out and out[-1] and (kind in ("heading", "open")
+                                or prev in ("heading", "close")
+                                or {prev, kind} == {"item", "para"}):
+            out.append("")
+        if kind == "item":
+            m = ITEM.match(text)
+            out.append(textwrap.fill(m[2], width, initial_indent=m[1],
+                                     subsequent_indent=" " * len(m[1]),
+                                     break_long_words=False,
+                                     break_on_hyphens=False))
+        elif kind == "para":
+            out.append(textwrap.fill(text, width, break_long_words=False,
+                                     break_on_hyphens=False))
+        else:
+            out.append(text)
+        prev = kind
+    return "\n".join(out).strip() + "\n"
+
+
 def write(tag: str, reports: list[int]) -> Path:
     for n in reports:
         digest(n)
@@ -101,7 +188,8 @@ def write(tag: str, reports: list[int]) -> Path:
     if p.returncode or "Headline:" not in p.stdout:
         raise RuntimeError(f"summary agent exited {p.returncode}:\n"
                            f"{(p.stdout + p.stderr)[-3000:]}")
-    body = p.stdout[p.stdout.index("Headline:"):].strip()
+    body = outside_quotes(p.stdout[p.stdout.index("Headline:"):].strip(),
+                          english_numbers)
     sources = []
     for n in reports:
         sources += [pdftext(pdf_of(n), layout=False),
@@ -109,9 +197,21 @@ def write(tag: str, reports: list[int]) -> Path:
     body, total, bad = check_quotes(body, sources)
     checked = (f"all {total} found in the report" if not bad
                else f"{bad} of {total} not found, marked in the text")
+    if missing := missing_refs(body):
+        checked += (f"; references {', '.join(map(str, missing))} have no "
+                    "Evidence item")
     out = OUT / f"{tag.replace('/', '_')}.md"
-    out.write_text(f"{body}\n\n---\n\n*{FOOTER.format(checked=checked)}*\n")
+    footer = FOOTER.format(tag=tag, checked=checked)
+    out.write_text(tidy(f"{body}\n\n---\n\n*{footer}*\n"))
     return out
+
+
+def subject(reports: list[int], headline: str) -> str:
+    label = (f"Sitrep {reports[0]}" if len(reports) == 1
+             else f"Sitreps {', '.join(map(str, reports))}")
+    if not headline or len(headline.split()) > SUBJECT_WORDS:
+        headline = "summary"
+    return f"[ebola-bdbv] {label}: {headline}"
 
 
 def keychain_login() -> tuple[str, str]:
@@ -164,11 +264,11 @@ def main() -> int:
                  f"The release `{args.tag}` shipped, but its summary could not "
                  f"be written.\n\n```\n{e}\n```\n")
         raise
-    text = out.read_text()
-    headline = text.splitlines()[0].removeprefix("Headline:").strip()
+    first, _, rest = out.read_text().partition("\n")
+    headline = first.removeprefix("Headline:").strip()
     print(out.relative_to(ROOT))
     if args.send:
-        send(f"[ebola-bdbv] {args.tag}: {headline}", text)
+        send(subject(args.reports, headline), rest.strip() + "\n")
         print("sent")
     return 0
 
