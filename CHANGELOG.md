@@ -38,6 +38,16 @@ same as withdrawn: the older tag stays exactly where it is.
 
 ---
 
+## `data/2026-10-20-r0` — 2026-10-22 — daily update
+
+Cut automatically by `scripts/daily_update.py`: every release gate passed (tests, verdict, export quotes, fresh-clone rebuild).
+
+**New data.** Sitreps 158, 159, data date 2026-10-18 → 2026-10-20: 152 confirmed cases and 85 deaths nationally in windows from the previous data date.
+
+**Not breaking.** No code, register or schema changed.
+
+---
+
 ## `data/2026-10-18-r0` — 2026-10-20 — sitreps 128–157, an eighth province, cases outside the DRC, and four corrections to published history
 
 **Breaking.** A new province, a population denominator that moves, new files,
