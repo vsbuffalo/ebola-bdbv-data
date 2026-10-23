@@ -28,6 +28,7 @@ the failing step named, before any bar is read.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 
 import numpy as np
 
@@ -107,6 +108,17 @@ class Palette:
     transmission: float | None
 
 
+class Stacking(str, Enum):
+    """Which outcome a bar's stack starts from at the baseline. Most renders
+    put alive (light blue) at the baseline and dead (red) above it; sitreps
+    059-062 stack dead at the baseline and alive above. Measured once per
+    render from its two-colour bars (readers.detect_stacking), never
+    assumed: read in the wrong order the dead segment is fitted as alive
+    and the split collapses while the total survives."""
+    ALIVE_BOTTOM = "alive_bottom"
+    DEAD_BOTTOM = "dead_bottom"
+
+
 @dataclass(frozen=True)
 class Calibration:
     panel: Panel
@@ -124,6 +136,10 @@ class Calibration:
     band_left: int | None  # first image column of the incomplete band
     band_right: int | None  # last image column of the incomplete band
     tick_xs: tuple[float, ...]   # x tick-mark positions below the baseline
+    # Set by readers.detect_stacking, which refuses rather than guess; None
+    # until then, and the bar readers will not run on None.
+    stacking: Stacking | None = None
+    stacking_evidence: str | None = None   # the vote that decided it
 
     def see_through_band(self, im: np.ndarray) -> np.ndarray:
         return see_through_band(im, self.panel, self.palette,

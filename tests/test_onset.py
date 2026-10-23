@@ -175,11 +175,11 @@ def test_render_invariance_on_the_087_088_pair():
     import numpy as np
     from PIL import Image
     from lib.onset.calibrate import calibrate
-    from lib.onset.readers import read_bars, refine_scale
+    from lib.onset.readers import detect_stacking, read_bars, refine_scale
     totals = []
     for f in images[:2]:
         im = np.asarray(Image.open(f).convert("RGB")).astype(float)
-        cal = refine_scale(im, calibrate(im))
+        cal = detect_stacking(im, refine_scale(im, calibrate(im)))
         bars = read_bars(im, cal)
         totals.append(sum(b.alive + b.dead for b in bars))
     assert abs(totals[0] - totals[1]) <= 10, \
@@ -524,9 +524,90 @@ def test_the_band_label_and_top_border_are_not_bar_outlines(sitrep):
     # them for bar tops (106's 26 August bar: 87 dead; 147's empty slots
     # after the report date: 104 cases). No bar in either band exceeds 30.
     from lib.onset.calibrate import calibrate
-    from lib.onset.readers import read_bars, refine_scale
+    from lib.onset.readers import detect_stacking, read_bars, refine_scale
     im = _image(sitrep)
-    cal = refine_scale(im, calibrate(im))
+    cal = detect_stacking(im, refine_scale(im, calibrate(im)))
     tops = [(b.edge_alive or 0) + (b.edge_dead or 0)
             for b in read_bars(im, cal) if b.provisional]
     assert tops and max(tops) <= 30, tops
+
+
+# --------------------------------------------------------------------------
+# Stacking order: which colour sits at the baseline is measured per render.
+# Sitreps 059-062 stack dead (red) under alive (light blue); every render
+# from 064 on stacks alive under dead. Read in the wrong order, 060's deaths
+# were fitted as alive (27 dead of 1,792) and no gate saw it, because those
+# renders print no total for G2 to reconcile against.
+
+@pytest.mark.parametrize("sitrep,order,evidence", [
+    (60, "dead_bottom", "0 alive_bottom / 62 dead_bottom"),
+    (106, "alive_bottom", "109 alive_bottom / 0 dead_bottom"),
+])
+def test_stacking_order_is_measured_from_the_render(sitrep, order, evidence):
+    # Unanimous in both: every two-colour bar votes the same way.
+    from lib.onset.calibrate import calibrate
+    from lib.onset.readers import detect_stacking, refine_scale
+    im = _image(sitrep)
+    cal = detect_stacking(im, refine_scale(im, calibrate(im)))
+    assert cal.stacking.value == order
+    assert cal.stacking_evidence == evidence
+
+
+def test_bars_refuse_to_read_without_a_stacking_order():
+    from lib.onset.calibrate import calibrate
+    from lib.onset.readers import read_bars, refine_scale
+    im = _image(60)
+    with pytest.raises(ValueError, match="stacking order"):
+        read_bars(im, refine_scale(im, calibrate(im)))
+
+
+def test_an_ambiguous_stacking_vote_refuses():
+    # A render whose bars carry one colour only (here: 060 with every
+    # dead pixel repainted alive) has no two-colour bar to vote, and the
+    # order is then not guessed.
+    import numpy as np
+    from lib.onset.calibrate import CalibrationError, calibrate
+    from lib.onset.readers import detect_stacking, refine_scale
+    im = _image(60)
+    cal = refine_scale(im, calibrate(im))
+    dead = np.array(cal.palette.dead)
+    alive = np.array(cal.palette.alive)
+    near = np.linalg.norm(im - dead, axis=2) < 40
+    flat = im.copy()
+    flat[near] = alive
+    with pytest.raises(CalibrationError, match="stacking order not determined"):
+        detect_stacking(flat, cal)
+
+
+@needs_build
+def test_060_reads_its_deaths_below_the_living(vintages, snapshots):
+    import polars as pl
+    row = vintages.filter(pl.col("sitrep") == 60)
+    assert row["stacking"][0] == "dead_bottom"
+    assert 300 <= row["read_dead"][0] <= 700, row.rows()
+    # 1 June, the tallest bar: 51 cases, 19 of them dead, the dead segment
+    # at the baseline (by eye from the extracted image). Read in the wrong
+    # order it was 51 alive, 0 dead.
+    bar = snapshots.filter((pl.col("sitrep") == 60)
+                           & (pl.col("onset_date") == "2026-06-01"))
+    assert (bar["alive"][0], bar["dead"][0]) == (32, 19), bar.rows()
+
+
+@needs_build
+def test_normal_order_renders_are_unchanged_in_kind(vintages):
+    # 064 is the first render in the usual order and prints n = 2 064.
+    import polars as pl
+    row = vintages.filter(pl.col("sitrep") == 64)
+    assert row["stacking"][0] == "alive_bottom"
+    assert row["read_total"][0] == 2064
+    assert 400 <= row["read_dead"][0] <= 700
+
+
+@needs_build
+def test_every_read_render_records_its_stacking_order(vintages):
+    import polars as pl
+    read = vintages.filter(pl.col("read_total").is_not_null())
+    assert not read["stacking"].is_null().any()
+    early = read.filter(pl.col("sitrep") <= 63)["stacking"].unique().to_list()
+    later = read.filter(pl.col("sitrep") >= 64)["stacking"].unique().to_list()
+    assert early == ["dead_bottom"] and later == ["alive_bottom"]

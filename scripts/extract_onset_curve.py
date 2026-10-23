@@ -9,7 +9,8 @@ curve the reports publish. The one manual input is
 triple-checked against the detected geometry.
 
 What it produces, all under `data/build/onset/`:
-  vintages.csv    one row per report: identity, calibration, read totals,
+  vintages.csv    one row per report: identity, calibration (including the
+                  measured stacking order and its vote), read totals,
                   printed-total reconciliation, deduplication, and a gate
                   verdict with its reasons. Refusals are rows, not absences.
   snapshots.csv   the levels: one row per (distinct image, onset date) with
@@ -54,7 +55,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from lib.onset.pdfimg import extract_chart_candidates, tool_version   # noqa: E402
 from lib.onset.identify import identify                               # noqa: E402
 from lib.onset.calibrate import calibrate, CalibrationError           # noqa: E402
-from lib.onset.readers import read_bars, refine_scale                 # noqa: E402
+from lib.onset.readers import (read_bars, refine_scale,               # noqa: E402
+                                detect_stacking)
 from lib.onset.assemble import (Vintage, load_anchors, slot_dates,    # noqa: E402
                                 value_dedup, triangle)
 from lib.onset.gates import judge                                     # noqa: E402
@@ -126,7 +128,7 @@ def read_vintages(rows: list[dict], first_carrier: dict,
         img = Image.open(images_dir / info["file"]).convert("RGB")
         im = np.asarray(img).astype(float)
         try:
-            cal = refine_scale(im, calibrate(im))
+            cal = detect_stacking(im, refine_scale(im, calibrate(im)))
             anchor = anchors.get(sha[:12])
             if anchor is None:
                 raise CalibrationError(
@@ -187,14 +189,16 @@ def main() -> None:
                       "read_total": None, "read_alive": None,
                       "read_dead": None, "stable_total": None,
                       "px_per_case": None, "day_px": None, "y_step": None,
-                      "agreement": None})
+                      "agreement": None, "stacking": None,
+                      "stacking_votes": None})
         elif sha in failures:
             r.update({"status": "refused", "reasons": failures[sha],
                       "dedup_head": None, "printed_n": None,
                       "read_total": None, "read_alive": None,
                       "read_dead": None, "stable_total": None,
                       "px_per_case": None, "day_px": None, "y_step": None,
-                      "agreement": None})
+                      "agreement": None, "stacking": None,
+                      "stacking_votes": None})
         else:
             head_sha = head_of[sha]
             head = next(v for v in heads if v.sha256 == head_sha)
@@ -215,6 +219,11 @@ def main() -> None:
                 "y_step": v.calibration.y_step,
                 "agreement": round(
                     sum(b.reader_agreement for b in v.bars) / len(v.bars), 3),
+                # Which colour the render stacks at the baseline, and the
+                # two-colour bars' vote that measured it (readers.
+                # detect_stacking); a split vote is a refusal upstream.
+                "stacking": v.calibration.stacking.value,
+                "stacking_votes": v.calibration.stacking_evidence,
             })
         out_rows.append(r)
     pl.DataFrame(out_rows).sort("sitrep").write_csv(
