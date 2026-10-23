@@ -303,13 +303,12 @@ KNOWN_REFUSED = {
     109: "detected ticks",
     110: "no anchor row",
     111: "printed n not found in the title",
-    114: "falls 261 short of printed",
+    114: "short of printed",
     135: "y axis unreadable",
     138: "readers disagree",
-    140: "short of printed",
     141: "detected ticks",
     146: "printed n not found in the title",
-    149: "readers disagree",
+    149: "exceeds printed",
     150: "no zero label at the baseline",
     151: "printed n not found in the title",
     152: "printed n not found in the title",
@@ -320,8 +319,9 @@ KNOWN_REFUSED = {
 }
 
 #: Reports after the last one this register was written against. The daily
-#: release must not stop on the onset reader -- nothing it produces is
-#: published -- so a new report may refuse without an entry here; the
+#: release must not stop on the onset reader -- a refused vintage is left
+#: out of the published reporting-delay table, not guessed -- so a new
+#: report may refuse without an entry here; the
 #: reasons above stay pinned, and a known one that starts reading, or
 #: refuses for a different reason, still fails.
 UNREGISTERED_FROM = 160
@@ -473,3 +473,60 @@ def test_the_tick_grid_survives_half_pixel_tick_centres():
     # A stray detection off the weekly grid still refuses (sitrep 059).
     with pytest.raises(CalibrationError, match="weekly grid"):
         bar_pitch(prof, (ticks[0], ticks[0] + 0.11 * true_gap) + ticks[1:])
+
+
+# --------------------------------------------------------------------------
+# The "donnees potentiellement incompletes" band: a translucent overlay over
+# the last week of bars, read through rather than at.
+
+def test_the_band_is_the_pink_cluster_not_the_first_pink_column():
+    # Sitrep 106's "premier resultat positif" annotation box puts one pink
+    # column at x = 174. Taken as the band's left edge, it marked 133 of
+    # the figure's bars provisional and read them against washed colours.
+    from lib.onset.calibrate import calibrate
+    cal = calibrate(_image(106))
+    assert cal.band_left == 688           # the antialiased edge column
+    assert cal.band_right == 718
+    assert 0.35 <= cal.palette.transmission <= 0.5
+
+
+def test_bars_drawn_over_the_band_are_read_as_drawn():
+    # In sitreps 059-062 the bars sit on top of the band in their legend
+    # colours; inverting an overlay that is not over them would wash them
+    # out. Measured, not assumed: the "bars on top" hypothesis wins.
+    from lib.onset.calibrate import calibrate
+    assert calibrate(_image(60)).palette.transmission is None
+    assert calibrate(_image(106)).palette.transmission is not None
+
+
+@needs_build
+@pytest.mark.parametrize("sitrep,onset,total", [
+    (106, "2026-08-24", 29),   # under the band and its label; read as 2
+    (143, "2026-09-30", 23),   # narrow render, outline column; read as 2
+    (149, "2026-10-05", 19),   # in the band's antialiased edge; read as 2
+])
+def test_a_bar_under_the_band_is_read_through_it(snapshots, sitrep, onset,
+                                                 total):
+    # Totals by eye from the extracted images, and equal (within a case) to
+    # the epiforecasts digitisation at 7704956, which reads these bars
+    # independently.
+    import polars as pl
+    row = snapshots.filter((pl.col("sitrep") == sitrep)
+                           & (pl.col("onset_date") == onset))
+    assert row.height == 1
+    assert abs(row["total"][0] - total) <= 1, row.rows()
+
+
+@pytest.mark.parametrize("sitrep", [106, 147])
+def test_the_band_label_and_top_border_are_not_bar_outlines(sitrep):
+    # The label's glyphs are drawn on top of the band, and the panel's top
+    # border crosses it; both are dark, and the outline reader once took
+    # them for bar tops (106's 26 August bar: 87 dead; 147's empty slots
+    # after the report date: 104 cases). No bar in either band exceeds 30.
+    from lib.onset.calibrate import calibrate
+    from lib.onset.readers import read_bars, refine_scale
+    im = _image(sitrep)
+    cal = refine_scale(im, calibrate(im))
+    tops = [(b.edge_alive or 0) + (b.edge_dead or 0)
+            for b in read_bars(im, cal) if b.provisional]
+    assert tops and max(tops) <= 30, tops

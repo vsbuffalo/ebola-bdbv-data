@@ -21,10 +21,14 @@ What it produces, all under `data/build/onset/`:
   proof/          the reader's conclusions drawn onto those pixels, for the
                   human check no CSV can give.
 
-Fitted: no. This is extraction; nothing here enters a model.
+Fitted: no -- this is extraction -- but it is published. `make onset`
+derives the onset-to-report delay table from triangle.csv
+(data/build/series/reporting_delay.csv), and build_streams.py ships it as
+`streams/reference/reporting_delay.tsv` and `meta['reporting_delay']`, which
+downstream models convolve with. A misread bar here is a wrong delay there.
 
-Validated by: the figure's own printed total (the 52 distinct accepted
-renders that print one reconcile from -1.36% to +0.06%, median -0.24%, as
+Validated by: the figure's own printed total (the 53 distinct accepted
+renders that print one reconcile from -0.70% to +0.09%, median -0.19%, as
 of sitrep 159), cross-vintage monotonicity and alignment gates
 over all of history on every run, and the design's regression fixtures in
 tests/test_onset.py. Design: notes/2026-08-28-onset-digitiser-design.md;

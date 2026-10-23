@@ -17,9 +17,11 @@ The geometry rests on the two structures a render cannot omit:
     to the fill-coloured columns has no such ambiguity.
 
 The palette is sampled from the legend swatches each figure prints, so the
-readers never contain a colour constant; the faded fills inside the
-"donnees potentiellement incompletes" band are measured from the band's own
-interior. A figure this module cannot calibrate raises CalibrationError with
+readers never contain a colour constant. The "donnees potentiellement
+incompletes" band is a translucent overlay drawn over the last week of bars;
+its colour and its transmission are measured from the band itself, and the
+readers look through it (`see_through_band`) rather than at it, so a bar under
+the band is read against the same legend colours as every other bar. A figure this module cannot calibrate raises CalibrationError with
 the failing step named, before any bar is read.
 """
 
@@ -40,6 +42,35 @@ BORDER_GAP = 3
 # Anything darker than this is ink rather than the white page; used only to
 # find a light-grey panel border, never to classify a bar's pixels.
 PAGE_LUM = 235
+# The band's rotated label interrupts its pink columns; gaps up to this share
+# of the panel width are bridged (106: a 9 px label in a 698 px panel).
+BAND_LABEL_GAP = 0.04
+# A washed-fill pixel lies within this RGB distance of its predicted colour,
+# and at least this many must agree before a transmission is reported.
+BAND_MATCH = 20.0
+BAND_MIN_PIXELS = 40
+# JPEG slack below the darkest colour the overlay can produce, before a pixel
+# is taken for the label drawn on top of the band.
+LABEL_MARGIN = 15.0
+# Rows under the panel's top border left uninverted (see see_through_band).
+BAND_BORDER_ROWS = 2
+# Antialiasing halo around the label's glyphs, in pixels.
+LABEL_HALO = 2
+
+
+def _dilate(m: np.ndarray, r: int) -> np.ndarray:
+    """Grow a boolean mask by r pixels (square neighbourhood)."""
+    out = m.copy()
+    for dy in range(-r, r + 1):
+        for dx in range(-r, r + 1):
+            sh = np.zeros_like(m)
+            ys = slice(max(dy, 0), m.shape[0] + min(dy, 0))
+            yd = slice(max(-dy, 0), m.shape[0] + min(-dy, 0))
+            xs = slice(max(dx, 0), m.shape[1] + min(dx, 0))
+            xd = slice(max(-dx, 0), m.shape[1] + min(-dx, 0))
+            sh[ys, xs] = m[yd, xd]
+            out |= sh
+    return out
 
 
 class CalibrationError(Exception):
@@ -68,9 +99,12 @@ class Panel:
 class Palette:
     alive: tuple[float, float, float]
     dead: tuple[float, float, float]
-    band: tuple[float, float, float] | None          # incomplete-band overlay
-    faded_alive: tuple[float, float, float] | None   # fills inside the band
-    faded_dead: tuple[float, float, float] | None
+    band: tuple[float, float, float] | None   # incomplete-band overlay on white
+    # Share of the underlying pixel's distance from white that survives the
+    # overlay: under the band a pixel F renders as band - t * (255 - F).
+    # None when the bars are drawn over the band (059-062) or the band holds
+    # too few bar pixels to measure it; the band colour is then background.
+    transmission: float | None
 
 
 @dataclass(frozen=True)
@@ -88,7 +122,12 @@ class Calibration:
                            # all (sitreps 059-062); G2 cannot run there and
                            # the vintage is at best accepted_with_caveat.
     band_left: int | None  # first image column of the incomplete band
+    band_right: int | None  # last image column of the incomplete band
     tick_xs: tuple[float, ...]   # x tick-mark positions below the baseline
+
+    def see_through_band(self, im: np.ndarray) -> np.ndarray:
+        return see_through_band(im, self.panel, self.palette,
+                                self.band_left, self.band_right)
 
 
 # ---------------------------------------------------------------------------
@@ -276,42 +315,124 @@ def find_legend_palette(im: np.ndarray, panel: Panel) \
 
 
 def find_band(im: np.ndarray, panel: Panel) \
-        -> tuple[tuple[float, ...] | None, int | None]:
-    """The incomplete-band overlay colour and its first column, if drawn.
+        -> tuple[tuple[float, ...] | None, int | None, int | None]:
+    """The incomplete-band overlay colour and its column extent, if drawn.
 
-    The band is the columns near the panel's right edge whose upper region
-    (above every bar) is pink rather than white."""
+    The band is a run of columns whose upper region (above every bar) is
+    pink rather than white, interrupted only by its own rotated label. Other
+    pink furniture reaches the probe too -- the edge of the "premier
+    resultat positif" annotation box is a single pink column at x=174 in
+    sitrep 106 -- so the band is the largest cluster of pink columns, with
+    gaps up to a label's width bridged, never simply the leftmost pink
+    column. Returns (colour, left, right)."""
     probe = im[panel.top + 4: panel.top + max(5, panel.height // 6),
                panel.left: panel.right + 1]
     r, g, b = probe[:, :, 0], probe[:, :, 1], probe[:, :, 2]
     pink = (r > 235) & (r - b > 18) & (r - g > 18) & (b > 180)
-    frac = pink.mean(axis=0)
-    cols = np.where(frac > 0.6)[0]
+    cols = np.where(pink.mean(axis=0) > 0.6)[0]
     if len(cols) < 3:
-        return None, None
-    band_cols = probe[:, cols[0]:cols[-1] + 1]
-    colour = tuple(band_cols[pink[:, cols[0]:cols[-1] + 1]]
-                   .reshape(-1, 3).mean(axis=0))
-    return colour, int(cols[0] + panel.left)
+        return None, None, None
+    label_gap = max(12, int(BAND_LABEL_GAP * panel.width))
+    clusters: list[list[int]] = []
+    for c in cols:
+        if clusters and c - clusters[-1][-1] <= label_gap:
+            clusters[-1].append(int(c))
+        else:
+            clusters.append([int(c)])
+    band = max(clusters, key=len)
+    if len(band) < 3:
+        return None, None, None
+    lo, hi = band[0], band[-1]
+    sel = pink[:, lo:hi + 1]
+    colour = tuple(probe[:, lo:hi + 1][sel].reshape(-1, 3).mean(axis=0))
+    # The band's edge columns are antialiased, about half pink, below the
+    # threshold above -- and a bar can sit in one (sitrep 149's 5 October
+    # bar, read as 2 against 19). Columns at least half as pink as the
+    # band's interior are band too.
+    excess = (r - b).mean(axis=0)
+    half = 0.5 * (colour[0] - colour[2])
+    while lo > 0 and excess[lo - 1] >= half:
+        lo -= 1
+    while hi + 1 < len(excess) and excess[hi + 1] >= half:
+        hi += 1
+    return colour, lo + panel.left, hi + panel.left
 
 
-def faded_fills(im: np.ndarray, panel: Panel, band_left: int,
-                alive: tuple, dead: tuple) \
-        -> tuple[tuple[float, ...] | None, tuple[float, ...] | None]:
-    """The washed fill colours inside the band, measured from its interior.
+def band_transmission(im: np.ndarray, panel: Panel, band_left: int,
+                      band_right: int, band: tuple, alive: tuple,
+                      dead: tuple) -> float | None:
+    """How much of the bars shows through the band, measured in the band.
 
-    Bars in the band are the alpha-composite of the fills with the overlay.
-    Rather than estimating the opacity, the composite is measured where it
-    exists: band-interior pixels nearer the blue or red family than the
-    band colour, averaged per family. Absent bars leave these None and the
-    band's dates are published as provisional with no counts."""
-    region = im[panel.top + 2: panel.bottom - 1, band_left: panel.right]
+    The overlay composites as `band - t * (255 - F)` for an underlying
+    pixel F (white maps to the band colour itself), so the washed fills are
+    a one-parameter family in t. The t that puts the most band-interior
+    pixels on the washed legend colours is the measurement; pixels that are
+    the band colour itself carry no information and are set aside.
+
+    Not every render draws the band over the bars: in sitreps 059-062 the
+    bars sit on top of it in their legend colours. That is tested as one
+    more hypothesis -- band pixels matching the unwashed fills -- and when
+    it wins, or when too few pixels match anything (an empty band), the
+    result is None and the image is read as drawn."""
+    region = im[panel.top + 2: panel.bottom - 1, band_left: band_right + 1]
     px = region.reshape(-1, 3)
-    bluish = (px[:, 2] > px[:, 0] + 8) & (px[:, 1] > 150) & (px[:, 2] > 170)
-    reddish = (px[:, 0] > px[:, 2] + 30) & (px[:, 0] > 180) & (px[:, 1] < 190)
-    f_alive = tuple(px[bluish].mean(axis=0)) if bluish.sum() > 40 else None
-    f_dead = tuple(px[reddish].mean(axis=0)) if reddish.sum() > 40 else None
-    return f_alive, f_dead
+    B = np.array(band)
+    px = px[(np.linalg.norm(px - B, axis=1) > 25) & (px.mean(axis=1) > 150)]
+    best_t, best_n = None, 0
+    for t in np.arange(0.2, 0.9001, 0.01):
+        n = sum(int((np.linalg.norm(px - (B - t * (255.0 - np.array(f))),
+                                    axis=1) < BAND_MATCH).sum())
+                for f in (alive, dead))
+        if n > best_n:
+            best_t, best_n = float(t), n
+    on_top = sum(int((np.linalg.norm(px - np.array(f), axis=1)
+                      < BAND_MATCH).sum()) for f in (alive, dead))
+    if on_top >= best_n or best_n < BAND_MIN_PIXELS:
+        return None
+    return best_t
+
+
+def see_through_band(im: np.ndarray, panel: Panel, pal: Palette,
+                     band_left: int | None, band_right: int | None) \
+        -> np.ndarray:
+    """The image with the band's overlay inverted, inside the band only.
+
+    Inverting `band - t * (255 - F)` gives F back, so a bar under the band
+    is read with the legend colours and the outline strokes regain their
+    darkness. Inversion amplifies JPEG noise by 1/t (about 2x); both readers
+    already tolerate that much.
+
+    The band's rotated label is drawn on top of the overlay, not under it,
+    so its ink is darker than anything the overlay can produce: under the
+    band no pixel is darker than `band - t * 255`. Pixels darker than that
+    floor in every channel are the label, and are returned as NaN -- no
+    evidence for either reader -- instead of being inverted into a black
+    that reader two would take for a bar's outline (sitrep 106's 26 August
+    bar read as 87 dead cases off the letters). The glyphs are antialiased
+    into the band, so the mask is grown by a halo of LABEL_HALO pixels.
+
+    The panel's top border also crosses the band, antialiased into the row
+    beneath it; inverted, that grey reads as a dark outline at the top of
+    the panel (sitrep 147: six empty slots read as 104 cases). No bar
+    reaches the top border, so the rows next to it are left as drawn.
+
+    Outside the band, or where the transmission could not be measured, the
+    image is returned unchanged."""
+    if band_left is None or band_right is None or pal.band is None \
+            or pal.transmission is None:
+        return im
+    out = im.copy()
+    lo, hi = band_left, band_right + 1
+    p = panel
+    B = np.array(pal.band)
+    top = p.top + 1 + BAND_BORDER_ROWS
+    region = out[top: p.bottom, lo:hi]
+    floor = B - pal.transmission * 255.0 - LABEL_MARGIN
+    label = _dilate((region < floor).all(axis=2), LABEL_HALO)
+    seen = np.clip(255.0 - (B - region) / pal.transmission, 0.0, 255.0)
+    seen[label] = np.nan
+    out[top: p.bottom, lo:hi] = seen
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -319,11 +440,10 @@ def faded_fills(im: np.ndarray, panel: Panel, band_left: int,
 
 
 def fill_mask(im: np.ndarray, pal: Palette, radius: float = 40.0) -> np.ndarray:
-    """Pixels belonging to any bar fill, saturated or faded."""
-    targets = [pal.alive, pal.dead]
-    targets += [c for c in (pal.faded_alive, pal.faded_dead) if c is not None]
+    """Pixels belonging to any bar fill. Pass the image seen through the
+    band, so washed fills under it count too."""
     m = np.zeros(im.shape[:2], dtype=bool)
-    for c in targets:
+    for c in (pal.alive, pal.dead):
         m |= np.linalg.norm(im - np.array(c), axis=2) < radius
     return m
 
@@ -640,12 +760,12 @@ def _valley_cells(title: np.ndarray, op: dict, cl: dict) -> list[dict]:
 def calibrate(im: np.ndarray) -> Calibration:
     panel = find_panel(im)
     alive, dead = find_legend_palette(im, panel)
-    band_colour, band_left = find_band(im, panel)
-    f_alive = f_dead = None
+    band_colour, band_left, band_right = find_band(im, panel)
+    t = None
     if band_left is not None:
-        f_alive, f_dead = faded_fills(im, panel, band_left, alive, dead)
-    pal = Palette(alive=alive, dead=dead, band=band_colour,
-                  faded_alive=f_alive, faded_dead=f_dead)
+        t = band_transmission(im, panel, band_left, band_right, band_colour,
+                              alive, dead)
+    pal = Palette(alive=alive, dead=dead, band=band_colour, transmission=t)
 
     # Tick marks first: short dark strokes just below the baseline, one per
     # labelled tick. They validate the bar pitch and are what the anchor
@@ -661,7 +781,8 @@ def calibrate(im: np.ndarray) -> Calibration:
     tick_xs = tuple(float(np.mean(t)) for t in groups
                     if panel.left - 5 <= np.mean(t) <= panel.right + 5)
 
-    fills = fill_mask(im, pal)
+    seen = see_through_band(im, panel, pal, band_left, band_right)
+    fills = fill_mask(seen, pal)
     fills[:panel.top + 2, :] = False
     fills[panel.bottom:, :] = False
     fills[:, :panel.left + 1] = False
@@ -710,4 +831,5 @@ def calibrate(im: np.ndarray) -> Calibration:
                        x_phase=x_phase, n_slots=n_slots,
                        px_per_case=px_per_case, y_step=y_step,
                        y_labels=y_labels, printed_n=printed_n,
-                       band_left=band_left, tick_xs=tick_xs)
+                       band_left=band_left, band_right=band_right,
+                       tick_xs=tick_xs)

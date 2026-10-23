@@ -18,6 +18,14 @@ fail in different renders -- compression washes fills but spares strokes,
 downsampling blurs strokes but spares fills -- so their agreement is
 evidence and their disagreement is a flag, never an average.
 
+Both readers look at the image through the "donnees potentiellement
+incompletes" band (`Calibration.see_through_band`): the band is a translucent
+overlay, and a bar under it is the same bar in washed colours, outlines
+included. Read as-is, the washed fills matched neither legend colour and the
+washed outlines were too light to be strokes, so reader one fitted most of a
+bar as background (sitrep 106's 24 August bar, 29 cases, read as 2) and
+reader two fell silent -- a single-reader bar no gate could question.
+
 Everything here consumes a Calibration and returns integer counts with the
 evidence attached: the fit margin (cost gap between the best and runner-up
 hypothesis), the outline reader's verdict, and the render's resolution in
@@ -40,6 +48,8 @@ AGREE_CASES = 1.0
 # A fit whose runner-up sits closer than this (cost units per case of
 # segment) is not a confident read.
 MIN_MARGIN = 1.0
+# Rows under the panel's top border that reader two never takes for a bar top.
+TOP_BORDER_ROWS = 2
 
 
 @dataclass(frozen=True)
@@ -56,23 +66,35 @@ class BarMeasure:
 
 
 def _class_costs(strip: np.ndarray, colour: tuple | None) -> np.ndarray:
-    """Per-row mean clipped distance to a palette colour (rows x 1)."""
+    """Per-row mean clipped distance to a palette colour (rows x 1).
+    Masked (NaN) pixels -- the band's label -- carry no weight; a row with
+    nothing else costs every class the same, nothing."""
     if colour is None:
         return np.full(strip.shape[0], COST_CLIP)
     d = np.linalg.norm(strip - np.array(colour), axis=2)
-    return np.minimum(d, COST_CLIP).mean(axis=1)
+    return _row_mean(np.minimum(d, COST_CLIP))
+
+
+def _row_mean(d: np.ndarray) -> np.ndarray:
+    seen = ~np.isnan(d)
+    n = seen.sum(axis=1)
+    return np.where(n > 0, np.where(seen, d, 0.0).sum(axis=1)
+                    / np.maximum(n, 1), 0.0)
 
 
 def _background_cost(strip: np.ndarray, band_colour: tuple | None,
-                     in_band: bool) -> np.ndarray:
+                     in_band: bool, seen_through: bool = False) -> np.ndarray:
     """Background is white, gridline grey, or the band overlay -- whichever
-    is nearest, per pixel, so a gridline crossing costs nothing."""
+    is nearest, per pixel, so a gridline crossing costs nothing. Seen
+    through the band, white alone (see fit_bar)."""
     refs = [(255.0, 255.0, 255.0), (178.0, 178.0, 178.0)]
     if in_band and band_colour is not None:
         refs.append(band_colour)
+    if seen_through:
+        refs = refs[:1]
     d = np.min(np.stack([np.linalg.norm(strip - np.array(c), axis=2)
                          for c in refs]), axis=0)
-    return np.minimum(d, COST_CLIP).mean(axis=1)
+    return _row_mean(np.minimum(d, COST_CLIP))
 
 
 def fit_bar(im: np.ndarray, cal: Calibration, slot: int) \
@@ -95,13 +117,22 @@ def fit_bar(im: np.ndarray, cal: Calibration, slot: int) \
     provisional = cal.band_left is not None and centre >= cal.band_left
 
     # Rows indexed upward from the baseline: i = 0 is the row just above it.
+    # `im` is already seen through the band (read_bars); where the band's
+    # transmission could not be measured its colour stays a background.
     strip = im[p.top + 1: p.bottom, x0:x1 + 1][::-1]
     pal = cal.palette
-    alive_col = pal.faded_alive if provisional and pal.faded_alive else pal.alive
-    dead_col = pal.faded_dead if provisional and pal.faded_dead else pal.dead
-    sa = _class_costs(strip, alive_col)
-    sd = _class_costs(strip, dead_col)
-    sb = _background_cost(strip, pal.band, provisional)
+    sa = _class_costs(strip, pal.alive)
+    sd = _class_costs(strip, pal.dead)
+    # A slot is read as seen through the band when any of its columns is
+    # band, even with its centre just outside (149's 5 October bar). There
+    # the background is white alone: inversion pushes a bar's antialiased
+    # outline column toward gridline grey, and with grey as a background
+    # the fill and background hypotheses tie (143's 30 September bar, 23
+    # cases, read as 2). Under the band the dotted gridlines are faint.
+    through = (pal.transmission is not None and cal.band_left is not None
+               and x1 >= cal.band_left)
+    sb = _background_cost(strip, pal.band,
+                          provisional and pal.transmission is None, through)
     R = len(sa)
     PA = np.concatenate([[0.0], np.cumsum(sa)])
     PD = np.concatenate([[0.0], np.cumsum(sd)])
@@ -166,6 +197,9 @@ def edge_bar(im: np.ndarray, cal: Calibration, slot: int) \
     # what the stroke never has.
     stroke = (lum < 135) & (rgb[:, :, 0] - rgb[:, :, 2] < 90) \
         & (rgb[:, :, 0] < 170)
+    # The panel's top border can fall in the strip's first rows (sitrep
+    # 127); no bar reaches it, so those rows are never a bar top.
+    stroke[:TOP_BORDER_ROWS] = False
     tops, bounds = [], []
     for col in range(lum.shape[1]):
         dark = np.where(stroke[:, col])[0]
@@ -232,7 +266,11 @@ def _confident_heights(im: np.ndarray, cal: Calibration) -> np.ndarray:
             dk = np.where(stroke[:, col])[0]
             if len(dk):
                 tops.append(lum.shape[0] - float(dk[0]))
-        if len(tops) >= 3:
+        # Three agreeing columns where the slot has them; at ~3 px a day a
+        # slot is two columns wide, and demanding three left sitreps 141,
+        # 143, 147, 149 and 159 with too few tops to refine the scale (149
+        # read 1.7% short of its printed n, a case low on most bars).
+        if len(tops) >= min(3, lum.shape[1]):
             t = np.array(tops)
             if np.percentile(t, 84) - np.percentile(t, 16) <= 2.0 \
                     and np.median(t) > 3:
@@ -267,6 +305,7 @@ def refine_scale(im: np.ndarray, cal: Calibration) -> Calibration:
 def read_bars(im: np.ndarray, cal: Calibration) -> list[BarMeasure]:
     out = []
     res = 1.0 / cal.px_per_case
+    im = cal.see_through_band(im)
     for slot in range(cal.n_slots):
         a1, d1, margin, prov = fit_bar(im, cal, slot)
         edge = edge_bar(im, cal, slot)
