@@ -38,6 +38,19 @@ same as withdrawn: the older tag stays exactly where it is.
 
 ---
 
+## `data/2026-10-20-r1` — 2026-10-23 — daily update
+
+Cut automatically by `scripts/daily_update.py`: every release gate passed (tests, verdict, export quotes, fresh-clone rebuild).
+
+**Fixes merged since the last release** (see each pull request for what moved):
+
+- onset: stacking order measured per render -- 059-062 stack dead under alive, and both readers had folded the deaths into alive (060: 27 dead of 1,792, now 482 of 1,817, equal to epiforecasts on every day)
+- onset: bar_pitch's docstring describes the tick regression it does; blog-onset target, and blog figure scripts no longer cut a data revision
+- onset: read bars through the incomplete-data band rather than at it
+- onset: read the long-axis renders -- the grey y axis is the panel corner, slots clear the border, ticks counted gap by gap; anchor rows for 103-159
+
+---
+
 ## `data/2026-10-20-r0` — 2026-10-22 — daily update
 
 Cut automatically by `scripts/daily_update.py`: every release gate passed (tests, verdict, export quotes, fresh-clone rebuild).
