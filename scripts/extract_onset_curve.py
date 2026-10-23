@@ -23,8 +23,9 @@ What it produces, all under `data/build/onset/`:
 
 Fitted: no. This is extraction; nothing here enters a model.
 
-Validated by: the figure's own printed total (24 titled renders reconcile to
-a worst deficit of -0.6%), cross-vintage monotonicity and alignment gates
+Validated by: the figure's own printed total (the 52 distinct accepted
+renders that print one reconcile from -1.36% to +0.06%, median -0.24%, as
+of sitrep 159), cross-vintage monotonicity and alignment gates
 over all of history on every run, and the design's regression fixtures in
 tests/test_onset.py. Design: notes/2026-08-28-onset-digitiser-design.md;
 measured failure modes it answers:

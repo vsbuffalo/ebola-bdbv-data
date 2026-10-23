@@ -30,7 +30,12 @@ needs_build = pytest.mark.skipif(
 PRINTED_N = {64: 2064, 65: 2090, 66: 2175, 67: 2233, 68: 2306, 69: 2329,
              72: 2521, 73: 2567, 77: 2814, 78: 2855, 79: 2915, 81: 3066,
              82: 3092, 83: 3092, 87: 3362, 88: 3362, 92: 3767, 94: 3838,
-             97: 4084, 98: 4140, 99: 4140, 100: 4238, 101: 4287, 102: 4372}
+             97: 4084, 98: 4140, 99: 4140, 100: 4238, 101: 4287, 102: 4372,
+             103: 4454, 106: 4628, 112: 4997, 123: 5626, 125: 5693,
+             128: 5854, 129: 5896, 130: 5944, 132: 6046, 133: 6138,
+             136: 6256, 138: 6370, 139: 6417, 140: 6468, 143: 6621,
+             147: 7054, 149: 7136, 153: 7388, 154: 7438, 156: 7438,
+             158: 7660, 159: 7660}
 
 
 @pytest.fixture(scope="module")
@@ -222,27 +227,22 @@ def test_stable_regions_never_fall(vintages):
 
 
 #: Onset vintages the reader refuses, each with the reason, so a refusal is a
-#: recorded gap rather than a silent skip. Five distinct causes, and only two
-#: are a maintenance backlog:
+#: recorded gap rather than a silent skip. The causes:
 #:
-#:   * no anchor row (103, 106, 107) -- a genuine onset figure whose printed
-#:     tick labels have not been registered in
-#:     `registers/onset_axis_anchors.tsv` yet. This is the backlog, and
-#:     clearing an entry means reading the labels off the proof crop. Sitreps
-#:     114-127 arrived in the 2026-09-18 archive with ten more of these; all
-#:     ten are now cleared (see `git log` on the register) and the fix
-#:     doubled as a check that this route scales -- ten proof crops read and
-#:     registered in one pass, each re-verified by the same machine checks
-#:     that would refuse a wrong one.
+#:   * a stray tick (59) -- a detection 0.11 weeks from the first, which no
+#:     weekly axis can carry. The renders from 108 on that this entry used
+#:     to share were a different defect, now fixed: their y axis is a light
+#:     grey line the zero label touches, so the panel was taken to start at
+#:     the label, and the label's ink below the baseline became a phantom
+#:     first tick (see `calibrate._corner`).
 #:
-#:   * first tick off the grid the rest form (59, 108, 109, 112, 123, 125) --
-#:     the leftmost tick sits half a slot to a whole slot away from the
-#:     weekly spacing every other tick keeps, so the axis cannot be anchored
-#:     on it. 108/109 are one image, 112 a second, 123/125 the same shape
-#:     again at 2026-09-14 and 2026-09-16 -- the offset compounds as the
-#:     render family's axis grows longer, but the cause has not changed.
+#:   * too few ticks detected for the anchor's span (108, 109, 141) -- the
+#:     labels are registered, but the tick reader misses one (108) or three
+#:     late ticks (141), so the detected count does not fit the weeks the
+#:     printed labels span and the register's dates cannot be trusted onto
+#:     these ticks.
 #:
-#:   * the title's printed total not read (111) -- a genuine onset figure
+#:   * the title's printed total not read (111, 146, 151, 152) -- a genuine onset figure
 #:     whose glyphs the title reader did not resolve. It is refused rather
 #:     than read because that total is the checksum the bar sum is validated
 #:     against, and reading the bars without it would ship an unvalidated
@@ -261,6 +261,23 @@ def test_stable_regions_never_fall(vintages):
 #:     something the pixel calibration reads slightly wrong -- is losing
 #:     real ink, and the checksum gate is doing exactly its job by refusing
 #:     a vintage that would otherwise ship 5% under its own printed count.
+#:     140, 149 and 153-155 are refused by the same gate for a measured
+#:     reason: `readers.refine_scale` moves the scale up by 1-1.5% from the
+#:     label fit on these ~2.6 px-per-case renders (114 by 3.9%), and every
+#:     upward move across the archive makes the read worse, while every
+#:     downward one improves it; at this resolution a case is about the size
+#:     of the measured bar tops' noise, so the integer lattice no longer pins
+#:     the scale.
+#:
+#:   * the two readers disagree on over a quarter of bars (138, 149, 153-155,
+#:     159) -- at 2.3-2.8 px per case the outline reader often misses the
+#:     stroke between the alive and dead segments, and JPEG chroma smears
+#:     that boundary across about a case, so the cross-check cannot confirm
+#:     the split. 159 reads within its printed total (-0.65%) and is refused
+#:     on this gate alone.
+#:
+#:   * the y axis not read (135, 150) -- too few labels recognised (135) or
+#:     no zero glyph at the baseline (150).
 #:
 #:   * NOT AN ONSET FIGURE AT ALL (110) -- and this one is a defect, not a
 #:     gap. Sitrep 110 prints a chart titled "par date de notification" where
@@ -276,73 +293,38 @@ def test_stable_regions_never_fall(vintages):
 #:     note naming the hash so nobody adds it; the classifier still needs a
 #:     discriminator that does not rest on a colour the source controls.
 #:
-#: The cost of the real refusals is that the triangle's onset cohorts are
-#: settled only through August: 2026-07 and 2026-08 show no further arrivals,
-#: 2026-09 is still arriving with a *negative* follow-up window (the newest
-#: onset dates in the triangle sit past the 2026-09-18 archive's own data
-#: date, an artefact of the weekly bin extending past the last report rather
-#: than a real observation), and 2026-04/05/06 remain open on their long
-#: right tail. Read the September cohort's count as provisional.
+#: The cost of the real refusals is that the triangle skips the refused
+#: vintages: an increment is only ever taken between two accepted ones, so a
+#: refused report widens the window of the next increment instead of
+#: inventing one.
 KNOWN_REFUSED = {
-    59:  "first tick sits",
-    103: "no anchor row",
-    106: "no anchor row",
-    107: "no anchor row",
-    108: "x ticks are not on a weekly grid",
-    109: "x ticks are not on a weekly grid",
+    59:  "x ticks are not on a weekly grid",
+    108: "detected ticks",
+    109: "detected ticks",
     110: "no anchor row",
     111: "printed n not found in the title",
-    112: "x ticks are not on a weekly grid",
     114: "falls 261 short of printed",
-    123: "x ticks are not on a weekly grid",
-    125: "x ticks are not on a weekly grid",
-    # EVERY REPORT FROM 128 (2026-09-19) TO 157 (2026-10-18) REFUSES. The chart
-    # is the same chart; it has grown. With five and a half months on one axis
-    # a day is ~2.5 px wide and the date labels crowd, and the tick-grid,
-    # baseline and title readers fail on it in turn. The anchor rows could be
-    # added by hand, but on their own they would unblock 12 of the 29 and leave
-    # the triangle's newest vintage resting on a reader that is failing
-    # everywhere else on the same images -- so the reader comes first. Until
-    # then the triangle stops at the 2026-09-18 vintage, and the reporting
-    # delay built from it is not advanced by these reports.
-    128: "x ticks are not on a weekly grid",
-    129: "x ticks are not on a weekly grid",
-    130: "no anchor row",
-    131: "no anchor row",
-    132: "no anchor row",
-    133: "no anchor row",
-    134: "no anchor row",
     135: "y axis unreadable",
-    136: "no zero label at the baseline",
-    137: "no zero label at the baseline",
-    138: "x ticks are not on a weekly grid",
-    139: "no anchor row",
-    140: "no anchor row",
-    141: "x ticks sit 0.25 slots off",
-    143: "x ticks are not on a weekly grid",
-    144: "x ticks are not on a weekly grid",
-    145: "x ticks are not on a weekly grid",
+    138: "readers disagree",
+    140: "short of printed",
+    141: "detected ticks",
     146: "printed n not found in the title",
-    147: "no zero label at the baseline",
-    148: "no zero label at the baseline",
-    149: "no anchor row",
-    150: "x ticks are not on a weekly grid",
-    151: "x ticks are not on a weekly grid",
-    152: "x ticks are not on a weekly grid",
-    153: "no anchor row",
-    154: "no zero label at the baseline",
-    155: "no zero label at the baseline",
-    156: "no anchor row",
-    157: "no anchor row",
+    149: "readers disagree",
+    150: "no zero label at the baseline",
+    151: "printed n not found in the title",
+    152: "printed n not found in the title",
+    153: "readers disagree",
+    154: "readers disagree",
+    155: "readers disagree",
+    159: "readers disagree",
 }
 
-#: From this sitrep on, every chart is expected to refuse until the reader is
-#: rebuilt for the long axis (see the comment above), so a new report's
-#: refusal is not a finding and needs no entry: registering one by hand each
-#: day would stop the daily release on a cause already known. The entries
-#: above for 128-157 stay, and still pin their reasons. A report from here on
-#: that the reader *accepts* is a finding, and fails below.
-REFUSES_FROM = 128
+#: Reports after the last one this register was written against. The daily
+#: release must not stop on the onset reader -- nothing it produces is
+#: published -- so a new report may refuse without an entry here; the
+#: reasons above stay pinned, and a known one that starts reading, or
+#: refuses for a different reason, still fails.
+UNREGISTERED_FROM = 160
 
 
 @needs_build
@@ -357,17 +339,11 @@ def test_refusals_are_the_known_ones_and_nothing_new(vintages):
     import polars as pl
     refused = vintages.filter((pl.col("status") == "refused")
                               & (pl.col("kind") == "onset_daily"))
-    got = set(refused["sitrep"].to_list())
-    expected = set(KNOWN_REFUSED) | {n for n in got if n >= REFUSES_FROM}
-    accepted_late = set(vintages.filter(
-        (pl.col("status") != "refused") & (pl.col("kind") == "onset_daily")
-        & (pl.col("sitrep") >= REFUSES_FROM))["sitrep"].to_list())
+    got = {n for n in refused["sitrep"].to_list() if n < UNREGISTERED_FROM}
+    expected = set(KNOWN_REFUSED)
     assert got == expected, (
         f"unexplained refusal(s): {sorted(got - expected)}; "
         f"newly readable: {sorted(expected - got)}")
-    assert not accepted_late, (
-        f"accepted from sitrep {REFUSES_FROM} on, where every chart refused: "
-        f"{sorted(accepted_late)} -- check the reading, then lower REFUSES_FROM")
     for n, why in KNOWN_REFUSED.items():
         row = refused.filter(pl.col("sitrep") == n)
         assert why in row["reasons"][0], (
@@ -418,3 +394,82 @@ def test_anchor_register_spans_whole_weeks():
                 - dt.date.fromisoformat(r["first_date"])).days
         assert span > 0 and span % 7 == 0, \
             f"{r['image_file']}: {span} days is not whole weeks"
+
+
+# --------------------------------------------------------------------------
+# The long-axis renders (sitrep 108 on): a light grey y axis, half-pixel ticks.
+
+def _image(sitrep: int):
+    images = sorted((ONSET / "images").glob(f"*-{sitrep:03d}-*.png"))
+    if not images:
+        pytest.skip("images not built; run `make onset`")
+    import numpy as np
+    from PIL import Image
+    return np.asarray(Image.open(images[0]).convert("RGB")).astype(float)
+
+
+def test_a_light_grey_axis_is_the_panel_corner():
+    # Sitrep 159's y axis is a grey line (luminance ~200) at x = 44 that the
+    # zero label touches. Taking the baseline run's start (x = 35, the label)
+    # as the corner clipped the zero out of the y reader's margin and made
+    # the label's ink a phantom tick 1.9 weeks before 06 avr.
+    from lib.onset.calibrate import calibrate
+    cal = calibrate(_image(159))
+    assert cal.panel.left == 44
+    assert cal.tick_xs[0] == 78.0          # the 06 avr tick, not the label
+    assert len(cal.tick_xs) == 29          # 06 avr .. 19 oct, 28 weeks
+    assert [v for v, _ in cal.y_labels] == [0, 25, 50, 75, 100]
+
+
+@needs_build
+def test_the_zero_label_against_a_grey_axis_is_read(vintages):
+    # 136 refused "no zero label at the baseline" for the same cause.
+    import polars as pl
+    row = vintages.filter(pl.col("sitrep") == 136)
+    assert row["status"][0] == "accepted"
+    assert row["printed_n"][0] == 6256
+
+
+@needs_build
+def test_sitrep_159_reads_within_its_printed_total(vintages):
+    # Its first slot sat on the grey axis and read 98 cases from the line
+    # alone (+0.64% over printed n, a G2 refusal). With slots required to
+    # clear the border it reads -0.65%, inside G2, and is refused only by
+    # the reader-agreement gate.
+    import polars as pl
+    from lib.onset import gates
+    row = vintages.filter(pl.col("sitrep") == 159)
+    n, got = row["printed_n"][0], row["read_total"][0]
+    assert -gates.G2_UNDER * n <= got - n <= gates.G2_OVER * n
+    assert row["reasons"][0].startswith("G-R:")
+
+
+@needs_build
+def test_no_bar_is_read_off_the_left_border(snapshots):
+    # Every count before April in an accepted vintage was the axis line read
+    # as fill: one or two cases on 28-29 March, zeros either side (sitreps
+    # 100, 117, 119, 122, 130). The epidemic's first onsets are in April.
+    import polars as pl
+    early = snapshots.filter((pl.col("status") != "refused")
+                             & (pl.col("onset_date") < "2026-04-01")
+                             & ((pl.col("alive") + pl.col("dead")) > 0))
+    assert early.height == 0, early.select("sitrep", "onset_date").rows()
+
+
+def test_the_tick_grid_survives_half_pixel_tick_centres():
+    # Tick centres are whole or half pixels. Thirty ticks 21.34 px apart
+    # alternate 21 and 22 px gaps, whose median (21.5) drifted the old
+    # distance-from-first test a quarter of a week over the axis.
+    import numpy as np
+    from lib.onset.calibrate import CalibrationError, bar_pitch
+    true_gap = 21.34
+    ticks = tuple(float(np.round(78 + k * true_gap * 2) / 2)
+                  for k in range(30))
+    pitch = true_gap / 7
+    prof = np.array([0.0 if (x % pitch) < 0.6 else 10.0
+                     for x in range(700)])
+    got, _ = bar_pitch(prof, ticks)
+    assert abs(got - pitch) < 0.01
+    # A stray detection off the weekly grid still refuses (sitrep 059).
+    with pytest.raises(CalibrationError, match="weekly grid"):
+        bar_pitch(prof, (ticks[0], ticks[0] + 0.11 * true_gap) + ticks[1:])

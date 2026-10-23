@@ -37,6 +37,9 @@ MAX_DAY_PX = 13.0
 # leniently, and a line may gap by a few pixels where a bar outline meets it.
 BORDER_LUM = 170
 BORDER_GAP = 3
+# Anything darker than this is ink rather than the white page; used only to
+# find a light-grey panel border, never to classify a bar's pixels.
+PAGE_LUM = 235
 
 
 class CalibrationError(Exception):
@@ -120,6 +123,31 @@ def _run_extent(mask_1d: np.ndarray) -> tuple[int, int]:
     return end - int(lens[end]) + 1, end
 
 
+def _corner(im: np.ndarray, dark: np.ndarray, left: int, right: int,
+            top: int, base: int) -> int:
+    """The panel's left edge, given the baseline run's start.
+
+    The baseline run can extend past the panel's true corner when the zero
+    label at the baseline blurs into the axis line (sitrep 087's encode does
+    this). The vertical border column is the arbiter: if a tall column sits
+    within a few label-widths right of the run's start, the panel begins
+    there. The border need not be dark: from sitrep 108 on the y axis is
+    often a light grey line (luminance 150-210) that the zero label touches,
+    and taking the run's start as the corner put the panel at the label --
+    clipping the zero out of the margin the y reader searches, and turning
+    the label's ink below the baseline into a phantom first date tick, which
+    the anchor register would then have dated. Non-page ink over the whole
+    panel height is what a border is; a gridline is dotted and a bar short.
+    """
+    col_runs = _run_lengths(_close_gaps(dark[top:base, :].T))
+    ink = _close_gaps(im.mean(axis=2) < PAGE_LUM)
+    ink_runs = _run_lengths(_close_gaps(ink[top:base, :].T))
+    for x in range(left, min(left + 30, right)):
+        if max(col_runs[x], ink_runs[x]) >= 0.9 * (base - top):
+            return x
+    return left
+
+
 def find_panel(im: np.ndarray) -> Panel:
     """The plot area, anchored on the baseline.
 
@@ -153,16 +181,7 @@ def find_panel(im: np.ndarray) -> Panel:
              if lens[y] >= 0.9 * lens[base] and isolated(y)]
     if cands:
         top = min(cands)
-        # The baseline run can extend past the panel's true corner when the
-        # zero label at the baseline blurs into the axis line (sitrep 087's
-        # encode does this). The vertical border column is the arbiter: if a
-        # tall dark column sits within a few label-widths right of the run's
-        # start, the panel begins there.
-        col_runs = _run_lengths(_close_gaps(dark[top:base, :].T))
-        for x in range(left, min(left + 30, right)):
-            if col_runs[x] >= 0.9 * (base - top):
-                left = x
-                break
+        left = _corner(im, dark, left, right, top, base)
         return Panel(left=left, top=top, right=right, bottom=base,
                      top_from_border=True)
     # No top border survived the render (sitrep 100's washed out entirely).
@@ -174,9 +193,9 @@ def find_panel(im: np.ndarray) -> Panel:
     pink_cols = np.where(pink.sum(axis=0) > 0.3 * base)[0]
     if len(pink_cols) >= 3:
         band = pink[:, pink_cols]
-        top_rows = np.where(band.any(axis=1))[0]
-        return Panel(left=left, top=int(top_rows.min()), right=right,
-                     bottom=base, top_from_border=False)
+        top = int(np.where(band.any(axis=1))[0].min())
+        return Panel(left=_corner(im, dark, left, right, top, base), top=top,
+                     right=right, bottom=base, top_from_border=False)
     inner = im[:base, left:right + 1]
     nonwhite = (inner.min(axis=2) < 215).sum(axis=1)
     content = np.where(nonwhite > 0.05 * (right - left))[0]
@@ -334,19 +353,32 @@ def bar_pitch(col_prof: np.ndarray, tick_xs: tuple[float, ...]) \
         raise CalibrationError(
             f"tick spacing {med_gap:.1f}px implies day pitch "
             f"{med_gap / 7.0:.2f}px, outside [{MIN_DAY_PX}, {MAX_DAY_PX}]")
-    # Every tick must be a whole number of weeks from the first; a stray
-    # detection (a stain, a label descender) refuses rather than tilting
-    # the regression.
-    weeks = (ticks - ticks[0]) / med_gap
-    if np.abs(weeks - np.round(weeks)).max() > 0.25:
+    # Every tick must be a whole number of weeks from its neighbour, and all
+    # of them must sit on one straight weekly grid; a stray detection (a
+    # stain, a label descender) refuses rather than tilting the regression.
+    # Weeks are counted gap by gap, not as distance-from-the-first over the
+    # median gap: tick centres are whole or half pixels, so the median of
+    # gaps that alternate 21 and 22 px is 21.5 against a true 21.34, and
+    # dividing by it drifts 0.21 of a week across sitrep 159's 29 ticks --
+    # within a hundredth of the 0.25 refusal, on a figure whose ticks are
+    # exactly weekly.
+    per_gap = gaps / med_gap
+    if np.abs(per_gap - np.round(per_gap)).max() > 0.25 \
+            or np.round(per_gap).min() < 1:
         raise CalibrationError(
-            f"x ticks are not on a weekly grid: offsets {weeks.round(2)}")
+            f"x ticks are not on a weekly grid: gaps {per_gap.round(2)} "
+            "weeks")
+    k = np.concatenate([[0.0], np.cumsum(np.round(per_gap))])
     # The pitch from a single gap is good to ~1%; over 150 slots that
     # drifts half a slot and interleaves neighbouring days between
     # vintages. Regressing position on week index uses the whole axis
     # span, which pins the pitch to a few hundredths of a pixel.
-    k = np.round(weeks)
-    slope = float(np.polyfit(k, ticks, 1)[0])
+    slope, intercept = (float(c) for c in np.polyfit(k, ticks, 1))
+    resid = (ticks - (slope * k + intercept)) / slope
+    if np.abs(resid).max() > 0.25:
+        raise CalibrationError(
+            f"x ticks are not on a weekly grid: residuals {resid.round(2)} "
+            "weeks from the fitted grid")
     pitch = slope / 7.0
 
     # Gap phase with the pitch fixed: the comb offset minimising summed
@@ -660,7 +692,19 @@ def calibrate(im: np.ndarray) -> Calibration:
 
     # Only slots that fit wholly inside the panel are bars; a slot centred
     # against the right border reads the border's own pixels as a phantom
-    # bar (sitrep 099 grew 78 cases from one sliver of band edge).
+    # bar (sitrep 099 grew 78 cases from one sliver of band edge). The left
+    # border is the same hazard: once the panel starts at a light grey axis
+    # line, a first slot centred on it reads the line as fill (sitrep 159's
+    # slot 0 read 98 cases from the axis alone). The border can be two
+    # columns wide, dark then antialiased (sitrep 130: luminance 151, 225),
+    # so the slot must clear the border's last inked column, not its first.
+    border_right = panel.left
+    col_ink = (im[panel.top:panel.bottom, :].mean(axis=2) < PAGE_LUM).mean(
+        axis=0)
+    while border_right + 1 < panel.right and col_ink[border_right + 1] >= 0.9:
+        border_right += 1
+    while x_phase - 0.45 * day_px <= border_right + 0.5:
+        x_phase += day_px
     n_slots = int((panel.right - 0.45 * day_px - x_phase) / day_px) + 1
     return Calibration(panel=panel, palette=pal, day_px=day_px,
                        x_phase=x_phase, n_slots=n_slots,
