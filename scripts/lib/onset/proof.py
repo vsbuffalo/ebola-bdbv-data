@@ -15,6 +15,7 @@ import datetime as dt
 from PIL import Image, ImageDraw
 
 from .assemble import Vintage
+from .calibrate import Stacking
 
 INK_TOTAL = (20, 20, 20)
 INK_ALIVE = (0, 120, 60)
@@ -35,12 +36,16 @@ def draw_proof(img: Image.Image, v: Vintage, status: str,
         x0 = cal.x_phase + bar.slot * cal.day_px - 0.45 * cal.day_px
         x1 = x0 + 0.9 * cal.day_px
         top_total = p.bottom - (bar.alive + bar.dead) * c
-        top_alive = p.bottom - bar.alive * c
+        # The split line sits on the baseline segment's top, which is the
+        # dead segment's where the render stacks dead first (059-062).
+        lower = (bar.dead if cal.stacking is Stacking.DEAD_BOTTOM
+                 else bar.alive)
+        top_lower = p.bottom - lower * c
         if bar.alive + bar.dead > 0:
             d.rectangle([x0, top_total, x1, p.bottom],
                         outline=INK_TOTAL, width=1)
-            if bar.dead > 0:
-                d.line([x0, top_alive, x1, top_alive],
+            if 0 < lower < bar.alive + bar.dead:
+                d.line([x0, top_lower, x1, top_lower],
                        fill=INK_ALIVE, width=1)
         if not bar.reader_agreement:
             d.line([x0, p.top + 2, x1, p.top + 2], fill=INK_FLAG, width=2)
@@ -52,6 +57,7 @@ def draw_proof(img: Image.Image, v: Vintage, status: str,
               + (f"  printed {v.printed_n}  "
                  f"deficit {v.total - v.printed_n:+d}"
                  if v.printed_n is not None else "  printed —")
+              + f"  {cal.stacking.value if cal.stacking else ''}"
               + f"  {status}")
     d.rectangle([0, out.height - 30, out.width, out.height],
                 fill=(255, 255, 255))

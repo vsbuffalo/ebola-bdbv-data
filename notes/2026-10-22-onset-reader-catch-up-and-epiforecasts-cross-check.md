@@ -4,6 +4,59 @@ Date: 2026-10-22
 Project: ebola-bdbv-data
 Tags: onset-curve, digitiser, epiforecasts, reporting-delay, source-format
 
+## Stacking order: 059–062 put the dead at the baseline
+
+**What the renders show.** Each bar stacks the confirmed cases of one onset
+day by outcome: alive (light blue) and deceased (red). In sitreps 059–062
+(12–15 July; 063 reprints 062's image) the red segment sits on the baseline
+with alive above it. Every render from 064 on is the other way round. Both
+readers assumed alive at the baseline, so on 059–062 they fitted the red rows
+as alive and agreed with each other, and no gate fired, because those renders
+print no total for the closure gate (G2) to check.
+
+**The fix.** The order is measured once per render and handed to both
+readers; it is never looked up by sitrep number. `readers.detect_stacking`
+fits every bar under both orders. A bar votes when its better fit needs both
+colours (at least 2 cases each) and beats the other order by at least 5 cost
+units per case. The render needs at least 10 votes with at most 5% dissent;
+anything else is a calibration refusal. The order and its vote go into
+`vintages.csv` as `stacking` and `stacking_votes`. Reader two (`edge_bar`)
+looks for the boundary edge with the measured order's colours on either side.
+No gate was loosened.
+
+**The vote is unanimous on every render.** 060, 061 and 062: 62 of 62
+voting bars say dead at the baseline. 064 to 159: all of them say alive at the
+baseline (68 to 164 bars per render). The weakest winning bar beats the other
+order by 2.3 cost units per case, and the median bar by 54 to 194, so the
+thresholds have a wide margin on both sides. 059 is still refused for its x
+ticks, before this check runs.
+
+**Result against epiforecasts** (their per-day readings, a comparison and
+never an input; both are readings of the same INSP images, so agreement is
+evidence about transcription, not about the epidemic):
+
+| sitrep | before: alive / dead | after: alive / dead | epiforecasts | days, alive and dead exact |
+| --- | --- | --- | --- | --- |
+| 060 | 1,765 / 27 | 1,335 / 482 | 1,335 / 482 | 74 of 74 |
+| 061 | 1,838 / 30 | 1,390 / 507 | 1,390 / 507 | 76 of 76 |
+| 062 | 1,838 / 30 | 1,390 / 507 | 1,390 / 507 | 76 of 76 |
+
+Over all overlapping sitreps (6,073 onset days), the share of days within one
+case of epiforecasts on the dead count rose from 94.3% to 97.2%, and on the
+total from 97.5% to 97.7%. Nothing from 064 on moved: same counts on every
+row, same verdicts, same reasons.
+
+**The totals were wrong too, so the published delay table changes.** Read in
+the wrong order, the lattice also lost cases. 060 read 1,792 instead of 1,817,
+and 061/062 read 1,868 instead of 1,897. 062's 21 May bar was 12 cases short,
+and those 12 then "arrived" as increments in 064, 57 days after onset. Nine
+rows of `triangle.csv` changed `d_total`. In `reporting_delay.csv` the May
+onset cohort goes from n = 323 (mean delay 113.5 d, median 116) to n = 300
+(117.2 d, 118). The delay-57 cell falls from 14 cases to 2. The July cohort
+goes from 1,543 to 1,540, and its mean and median are unchanged. Every other
+cohort is identical. The change reaches `streams/reference/reporting_delay.tsv`
+in the next release.
+
 ## After the band fix (9765dec)
 
 **Why the readers lost bars under the band.** The pink band is a see-through

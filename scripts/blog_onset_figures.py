@@ -36,7 +36,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from lib.onset.assemble import load_anchors, slot_dates  # noqa: E402
 from lib.onset.calibrate import calibrate, fill_mask  # noqa: E402
 from lib.onset.readers import (_background_cost, _class_costs,  # noqa: E402
-                               fit_bar, refine_scale)
+                               detect_stacking, fit_bar, refine_scale)
 
 sys.path.insert(0, str(ROOT / "scripts/vendor"))
 import epiforecasts_onset_bfe9014 as U  # noqa: E402
@@ -441,10 +441,12 @@ class Fit:
 def our_objective(im: np.ndarray, sitrep: int) -> Fit:
     """Reader one's cost lattice for the 25 July bar, restated from
     `readers.fit_bar` so the whole surface can be drawn; `check` below
-    asserts its argmin is the reader's answer."""
+    asserts its argmin is the reader's answer. Restated for the
+    alive-at-baseline order, which is what 087 and 088 measure."""
     path, _ = load(sitrep)
     f = im.astype(float)
-    cal = refine_scale(f, calibrate(f))
+    cal = detect_stacking(f, refine_scale(f, calibrate(f)))
+    assert cal.stacking.value == "alive_bottom", (sitrep, cal.stacking)
     slot = slot_dates(cal, load_anchors()[path.stem.rsplit("-", 1)[1]]).index(BAR)
     p, c, pal = cal.panel, cal.px_per_case, cal.palette
     centre = cal.x_phase + slot * cal.day_px

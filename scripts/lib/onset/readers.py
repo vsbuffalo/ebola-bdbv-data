@@ -2,8 +2,8 @@
 
 Reader one never asks a pixel to decide anything: for one bar the truth is a
 pair of integers (alive, dead), so every admissible pair is rendered --
-alive fill up `a` cases from the baseline, dead fill for the next `d`,
-background above -- and scored against the observed pixels as a robust cost.
+the baseline colour's fill up its count from the baseline, the other
+colour's fill for the next, background above -- and scored against the observed pixels as a robust cost.
 The argmax over the enumerated lattice is the exact global best; a smeared
 pixel moves one candidate's score by a sliver and can truncate nothing.
 Rows adjacent to a hypothesised boundary carry no weight, because JPEG
@@ -26,6 +26,11 @@ washed outlines were too light to be strokes, so reader one fitted most of a
 bar as background (sitrep 106's 24 August bar, 29 cases, read as 2) and
 reader two fell silent -- a single-reader bar no gate could question.
 
+Which colour sits at the baseline is not a constant: sitreps 059-062 stack
+dead under alive, every later render alive under dead. Both readers take the
+order from the calibration, where `detect_stacking` has measured it from the
+render's own two-colour bars or refused the image.
+
 Everything here consumes a Calibration and returns integer counts with the
 evidence attached: the fit margin (cost gap between the best and runner-up
 hypothesis), the outline reader's verdict, and the render's resolution in
@@ -34,11 +39,12 @@ cases per pixel.
 
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass
 
 import numpy as np
 
-from .calibrate import Calibration
+from .calibrate import Calibration, CalibrationError, Stacking
 
 # Robust-cost ceiling: one aberrant pixel can cost at most this much, so no
 # single pixel outvotes a row and no row outvotes a bar.
@@ -97,15 +103,21 @@ def _background_cost(strip: np.ndarray, band_colour: tuple | None,
     return _row_mean(np.minimum(d, COST_CLIP))
 
 
-def fit_bar(im: np.ndarray, cal: Calibration, slot: int) \
-        -> tuple[int, int, float, bool]:
-    """Reader one: exact integer maximum-likelihood by enumeration.
+def _require_stacking(cal: Calibration) -> Stacking:
+    if cal.stacking is None:
+        raise ValueError("stacking order not measured; run detect_stacking "
+                         "on the calibration before reading bars")
+    return cal.stacking
 
-    Returns (alive, dead, margin, provisional). The objective for (a, d)
-    decomposes into three contiguous row-range sums of per-row class costs,
-    so with prefix sums the whole lattice is scored as one broadcast; the
-    rows at each hypothesised boundary are excluded by index shift, which
-    is the zero-weight band."""
+
+def _fit_lattice(im: np.ndarray, cal: Calibration, slot: int,
+                 stacking: Stacking) -> tuple[int, int, float, bool, float]:
+    """The enumeration behind reader one, for one stacking order.
+
+    Returns (lower, upper, margin, provisional, objective): the counts of
+    the segment at the baseline and of the one above it, the normalised
+    margin, and the best hypothesis's raw cost, which detect_stacking
+    compares across the two orders."""
     p = cal.panel
     c = cal.px_per_case
     centre = cal.x_phase + slot * cal.day_px
@@ -123,6 +135,7 @@ def fit_bar(im: np.ndarray, cal: Calibration, slot: int) \
     pal = cal.palette
     sa = _class_costs(strip, pal.alive)
     sd = _class_costs(strip, pal.dead)
+    s_lo, s_up = (sa, sd) if stacking is Stacking.ALIVE_BOTTOM else (sd, sa)
     # A slot is read as seen through the band when any of its columns is
     # band, even with its centre just outside (149's 5 October bar). There
     # the background is white alone: inversion pushes a bar's antialiased
@@ -134,8 +147,8 @@ def fit_bar(im: np.ndarray, cal: Calibration, slot: int) \
     sb = _background_cost(strip, pal.band,
                           provisional and pal.transmission is None, through)
     R = len(sa)
-    PA = np.concatenate([[0.0], np.cumsum(sa)])
-    PD = np.concatenate([[0.0], np.cumsum(sd)])
+    PL = np.concatenate([[0.0], np.cumsum(s_lo)])
+    PU = np.concatenate([[0.0], np.cumsum(s_up)])
     PB = np.concatenate([[0.0], np.cumsum(sb)])
 
     def rng(P: np.ndarray, lo: np.ndarray, hi: np.ndarray) -> np.ndarray:
@@ -146,17 +159,16 @@ def fit_bar(im: np.ndarray, cal: Calibration, slot: int) \
         return P[hi2] - P[lo2]
 
     amax = int(R / c)
-    ha = np.round(np.arange(amax + 1) * c).astype(int)      # alive top, px
+    ha = np.round(np.arange(amax + 1) * c).astype(int)      # lower top, px
     a_idx = np.arange(amax + 1)
-    # h2[a, d] = pixel row of the dead segment's top
+    # h2[l, u] = pixel row of the upper segment's top
     h2 = np.minimum(ha[:, None] + ha[None, :], R)
     valid = (ha[:, None] + ha[None, :]) <= R + int(c)
 
-    cost_alive = rng(PA, np.zeros_like(ha), ha)             # per a
-    zero = np.zeros_like(h2)
-    cost_dead = rng(PD, np.broadcast_to(ha[:, None], h2.shape), h2)
+    cost_lower = rng(PL, np.zeros_like(ha), ha)             # per l
+    cost_upper = rng(PU, np.broadcast_to(ha[:, None], h2.shape), h2)
     cost_bg = rng(PB, h2, np.full_like(h2, R))
-    obj = cost_alive[:, None] + cost_dead + cost_bg
+    obj = cost_lower[:, None] + cost_upper + cost_bg
     obj = np.where(valid, obj, np.inf)
 
     flat = np.argsort(obj, axis=None)
@@ -169,9 +181,76 @@ def fit_bar(im: np.ndarray, cal: Calibration, slot: int) \
         if cand != b0:
             margin = float(obj[cand] - obj[b0])
             break
-    a, d = int(a_idx[b0[0]]), int(a_idx[b0[1]])
-    seg_px = max(1.0, (a + d) * c)
-    return a, d, margin / max(1.0, seg_px / c), provisional
+    lo, up = int(a_idx[b0[0]]), int(a_idx[b0[1]])
+    seg_px = max(1.0, (lo + up) * c)
+    return (lo, up, margin / max(1.0, seg_px / c), provisional,
+            float(obj[b0]))
+
+
+def fit_bar(im: np.ndarray, cal: Calibration, slot: int) \
+        -> tuple[int, int, float, bool]:
+    """Reader one: exact integer maximum-likelihood by enumeration.
+
+    Returns (alive, dead, margin, provisional). The objective for a
+    (lower, upper) pair decomposes into three contiguous row-range sums of
+    per-row class costs -- the baseline segment's colour, the other
+    colour, background -- so with prefix sums the whole lattice is scored
+    as one broadcast; the rows at each hypothesised boundary are excluded
+    by index shift, which is the zero-weight band. Which colour is the
+    baseline segment is the render's measured stacking order
+    (`cal.stacking`), never assumed."""
+    stacking = _require_stacking(cal)
+    lo, up, margin, prov, _ = _fit_lattice(im, cal, slot, stacking)
+    alive, dead = (lo, up) if stacking is Stacking.ALIVE_BOTTOM else (up, lo)
+    return alive, dead, margin, prov
+
+
+# Stacking-order detection. A bar votes only when its better order needs
+# both colours (each segment at least this many cases) and beats the other
+# order by at least this much cost per case of bar: a one-colour bar fits
+# both orders identically and says nothing.
+STACK_MIN_SEGMENT = 2
+STACK_MIN_GAP = 5.0
+# The render's order is accepted only from at least this many voting bars,
+# with at most this share dissenting. Anything else refuses.
+STACK_MIN_VOTES = 10
+STACK_MAX_DISSENT = 0.05
+
+
+def detect_stacking(im: np.ndarray, cal: Calibration) -> Calibration:
+    """Measure which colour a render stacks at the baseline.
+
+    Every slot is fitted under both orders; on a two-colour bar the wrong
+    order must either fit one colour's rows against the other's palette
+    or give up a segment, and both cost far more than the right order. The
+    order is a property of the render (one ggplot call draws every bar), so
+    the bars vote once per image and a near-unanimous verdict from enough
+    of them is required. A split or thin vote raises CalibrationError: a
+    wrong order would silently move every death into "alive" (sitreps
+    059-062, read 27 dead of 1,792 before this check existed), and no
+    printed total can catch that, because the total survives."""
+    seen = cal.see_through_band(im)
+    votes = {Stacking.ALIVE_BOTTOM: 0, Stacking.DEAD_BOTTOM: 0}
+    for slot in range(cal.n_slots):
+        fits = {s: _fit_lattice(seen, cal, slot, s) for s in Stacking}
+        best = min(fits, key=lambda s: fits[s][4])
+        other = next(s for s in Stacking if s is not best)
+        lo, up = fits[best][0], fits[best][1]
+        if min(lo, up) < STACK_MIN_SEGMENT:
+            continue
+        gap = (fits[other][4] - fits[best][4]) / (lo + up)
+        if gap >= STACK_MIN_GAP:
+            votes[best] += 1
+    n = sum(votes.values())
+    win = max(votes, key=lambda s: votes[s])
+    evidence = (f"{votes[Stacking.ALIVE_BOTTOM]} alive_bottom / "
+                f"{votes[Stacking.DEAD_BOTTOM]} dead_bottom")
+    if n < STACK_MIN_VOTES or (n - votes[win]) > STACK_MAX_DISSENT * n:
+        raise CalibrationError(
+            f"stacking order not determined from the render: two-colour "
+            f"bars voted {evidence} (need {STACK_MIN_VOTES} votes, at most "
+            f"{STACK_MAX_DISSENT:.0%} dissent)")
+    return dataclasses.replace(cal, stacking=win, stacking_evidence=evidence)
 
 
 def edge_bar(im: np.ndarray, cal: Calibration, slot: int) \
@@ -179,7 +258,16 @@ def edge_bar(im: np.ndarray, cal: Calibration, slot: int) \
     """Reader two: the outline-edge read, or None where the bar was not
     measurable -- columns disagreeing beyond a case is a refusal, because a
     percentile over truncated columns is how upstream turned five bad
-    columns and one good one into a confident wrong answer."""
+    columns and one good one into a confident wrong answer.
+
+    The internal edge it looks for is the one between the render's two
+    segments in its measured stacking order: red over blue where alive is
+    at the baseline, blue over red where dead is (059-062). Looking only
+    for red over blue, it found no boundary on those renders and called
+    every bar all alive -- agreeing with reader one's same mistake, which
+    is why the order is measured once and handed to both."""
+    stacking = _require_stacking(cal)
+    dead_low = stacking is Stacking.DEAD_BOTTOM
     p = cal.panel
     c = cal.px_per_case
     centre = cal.x_phase + slot * cal.day_px
@@ -208,7 +296,8 @@ def edge_bar(im: np.ndarray, cal: Calibration, slot: int) \
             bounds.append(0.0)
             continue
         # Edges are dark runs; the topmost is the bar top. An internal edge
-        # with red above and blue below is the alive/dead boundary.
+        # with the upper segment's colour above and the lower's below is
+        # the alive/dead boundary.
         runs: list[list[int]] = []
         for r in dark:
             if runs and r - runs[-1][-1] <= 1:
@@ -225,7 +314,8 @@ def edge_bar(im: np.ndarray, cal: Calibration, slot: int) \
                 continue
             ab = rgb[above, col]
             be = rgb[below, col]
-            if ab[0] > ab[2] + 20 and be[2] >= be[0]:     # red over blue
+            red, blue = (be, ab) if dead_low else (ab, be)
+            if red[0] > red[2] + 20 and blue[2] >= blue[0]:
                 inner = lum.shape[0] - float(np.mean(run))
                 break
         bounds.append(inner if inner is not None else 0.0)
@@ -240,9 +330,12 @@ def edge_bar(im: np.ndarray, cal: Calibration, slot: int) \
     inner_px = float(np.median(bounds_a[bounds_a > 0])) \
         if (bounds_a > 0).sum() >= max(1, len(bounds_a) // 3) else 0.0
     total = int(round(total_px / c))
-    alive = int(round(inner_px / c)) if inner_px > 0 else total
-    alive = min(alive, total)
-    return alive, total - alive
+    # No internal edge: a one-colour bar, read as the baseline colour.
+    lower = int(round(inner_px / c)) if inner_px > 0 else total
+    lower = min(lower, total)
+    if dead_low:
+        return total - lower, lower
+    return lower, total - lower
 
 
 def _confident_heights(im: np.ndarray, cal: Calibration) -> np.ndarray:
@@ -288,7 +381,6 @@ def refine_scale(im: np.ndarray, cal: Calibration) -> Calibration:
     regression value, recovers the scale to a tenth of a percent. A wrong
     scale cannot minimise the lattice residual -- that is the alarm the
     design requires (G7)."""
-    import dataclasses
     heights = _confident_heights(im, cal)
     if len(heights) < 15:
         return cal
@@ -303,6 +395,7 @@ def refine_scale(im: np.ndarray, cal: Calibration) -> Calibration:
 
 
 def read_bars(im: np.ndarray, cal: Calibration) -> list[BarMeasure]:
+    _require_stacking(cal)
     out = []
     res = 1.0 / cal.px_per_case
     im = cal.see_through_band(im)
