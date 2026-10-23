@@ -65,12 +65,13 @@ REFRESH_WRITES = ("data/raw/insp_sitrep_index.tsv",
                   "data/raw/PROVENANCE.tsv",
                   "figures/")
 #: Changes since the last release that warrant a revision when merged.
-#: The scheduling, site and summary scripts are excluded: they change no
-#: published file.
+#: The scheduling, site, summary and blog-figure scripts are excluded: they
+#: change no published file.
 RELEASE_RELEVANT = ("scripts/", "registers/", "data/raw/", "pyproject.toml",
                     "uv.lock", ":!scripts/daily_*", ":!scripts/launchd",
                     ":!scripts/cron_*", ":!scripts/build_site.py",
-                    ":!scripts/sitrep_digest.py", ":!scripts/publish_site.sh")
+                    ":!scripts/sitrep_digest.py", ":!scripts/publish_site.sh",
+                    ":!scripts/blog_*", ":!scripts/vendor/")
 #: What the fixing agent may do. No network, no push, no tags.
 AGENT_TOOLS = ["Read", "Edit", "Write", "Glob", "Grep",
                "Bash(make:*)", "Bash(uv run:*)", "Bash(pdftotext:*)",
