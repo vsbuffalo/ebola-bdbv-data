@@ -4868,3 +4868,22 @@ def test_each_opening_level_plus_its_flows_is_the_last_printed_row():
         t = pl.read_csv(STREAMS / f"cases_daily_{slug}.tsv", separator="\t",
                         null_values="NA")
         assert entry["cases"]["cum"] + t[f"cases_{slug}"].sum() == printed[slug], slug
+
+
+def test_a_build_formats_only_the_markdown_it_wrote():
+    """Daily run 2026-10-22 (issue #5) stopped on `unexpected changes`: no
+    sitrep was new, but `make streams` ended in a bare `make fmt`, which
+    rewraps every markdown file in the repository. Nine committed documents
+    -- the CHANGELOG stub the runner itself had written the day before among
+    them -- came back rewrapped, and one Quarto callout had its `:::` fences
+    folded into the paragraph. A build target may tidy what it generated and
+    nothing a person wrote, so every recipe that calls `fmt` must name its
+    files, and they must all be build outputs."""
+    calls = [line.strip() for line in (ROOT / "Makefile").read_text().splitlines()
+             if line.startswith("\t") and " fmt" in line
+             and "$(MAKE)" in line]
+    assert calls, "streams no longer tidies its dictionary; update this test"
+    for call in calls:
+        assert "FMT_PATHS=" in call, f"formats the whole repository: {call}"
+        paths = call.split("FMT_PATHS=", 1)[1].strip("'\"").split()
+        assert paths and all(p.startswith("data/build/") for p in paths), call
