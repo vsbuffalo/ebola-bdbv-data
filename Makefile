@@ -2,7 +2,7 @@
 # by design: `build` and `doc` never touch the network, so a rebuild can never
 # silently change what the source says.
 
-.PHONY: summary site serve-site publish-site scan-update fetch-pinned fetch-exports check-exports geography fmt verdict figures-release figures-compare watch-data-channel release-check escape-fraction care-ledger oneoff-testing oneoff-death-split oneoff-death-flow cron-install cron-uninstall daily daily-dry-run daily-install daily-uninstall check fetch refresh manifest verify build streams compare figures onset external \
+.PHONY: blog-onset summary site serve-site publish-site scan-update fetch-pinned fetch-exports check-exports geography fmt verdict figures-release figures-compare watch-data-channel release-check escape-fraction care-ledger oneoff-testing oneoff-death-split oneoff-death-flow cron-install cron-uninstall daily daily-dry-run daily-install daily-uninstall check fetch refresh manifest verify build streams compare figures onset external \
 	external-update scan-refresh doc serve test
 
 # WHERE A FIGURE LANDS SAYS WHICH DATA MADE IT. Every figure this repository
@@ -422,6 +422,13 @@ compare:
 ##          vintages.csv, snapshots.csv (levels), triangle.csv (derived
 ##          increments), images/ (the exact pixels read), proof/ (the
 ##          reader's conclusions drawn onto them, for the human check).
+## blog-onset -- OFFLINE. Figures for the onset-digitiser blog post: our
+##          readers and epiforecasts' reader at bfe9014 (vendored unchanged in
+##          scripts/vendor/) on sitreps 087 and 088. Exposition only; nothing
+##          published reads them. Outputs under data/build/blog/onset/.
+blog-onset: onset
+	uv run python scripts/blog_onset_figures.py
+
 onset:
 	uv run python scripts/extract_onset_curve.py
 	# Onset-to-report delay, per onset cohort. `cases_*` is indexed by report

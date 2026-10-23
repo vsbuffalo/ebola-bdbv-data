@@ -454,12 +454,11 @@ def bar_pitch(col_prof: np.ndarray, tick_xs: tuple[float, ...]) \
 
     The tick marks below the baseline are printed weekly on every observed
     render, so their median spacing over seven is a first estimate of the
-    day pitch that cannot lock onto a harmonic. Autocorrelation of the
-    mean-removed fill profile then refines it to sub-pixel: the bars repeat
-    at exactly one slot per day, and the autocorrelation peak nearest the
-    tick-derived estimate is the fundamental. The two must agree within ten
-    percent -- a disagreement means the figure's furniture is not what this
-    module thinks it is, and that is a refusal, not a preference.
+    day pitch that cannot lock onto a harmonic. A straight-line fit of tick
+    position on week number then refines it to sub-pixel, because it uses the
+    whole axis span rather than one rounded gap. Ticks that do not sit on one
+    weekly grid are a refusal, not a preference: they mean the figure's
+    furniture is not what this module thinks it is.
 
     Phase comes from the gaps: the comb offset at which the profile is
     lowest marks the bar boundaries, and bar centres sit half a pitch away.
