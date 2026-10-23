@@ -267,8 +267,10 @@ streams: onset
 		--uganda-stream data/build/streams/uganda_exports.tsv \
 		--exports-dir data/build/streams \
 		--out-dir data/build/streams
-	# tidy the dictionary this just wrote, and every other markdown with it
-	$(MAKE) --no-print-directory fmt
+	# tidy the dictionary this just wrote, and nothing else: a build that
+	# rewrapped every markdown in the repo dirtied hand-written docs, and the
+	# daily runner rightly stops on a refresh that changes files it should not
+	$(MAKE) --no-print-directory fmt FMT_PATHS=data/build/streams/README.md
 	# writes, one file per stream (this list is load-bearing: the document
 	# guard derives the declared-artefact set from these paths):
 	#   data/build/streams/cases_ituri.tsv      data/build/streams/deaths_ituri.tsv
@@ -661,10 +663,11 @@ SITE_PORT ?= 8791
 ##            documented offline, and dprint fetches its plugin over the network
 ##            on a cold cache, so this skips with a note if dprint is absent and
 ##            never fails a build. Formatting is idempotent, so running it twice
-##            changes nothing.
+##            changes nothing. FMT_PATHS limits it to the files named; unset,
+##            it formats everything, which is for a person to run, never a build.
 fmt:
 	@command -v dprint >/dev/null 2>&1 \
-	  && dprint fmt --config dprint.json --no-gitignore 2>/dev/null \
+	  && dprint fmt --config dprint.json --no-gitignore $(FMT_PATHS) 2>/dev/null \
 	  || echo "  dprint not installed or offline; markdown left as written"
 
 ## verdict -- OFFLINE. One screen: is this build safe to release? Reads the
