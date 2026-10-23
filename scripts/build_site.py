@@ -16,7 +16,8 @@ site cannot say anything the repository does not:
                DISTINCT=1` from the tag's own pinned inputs. Tags that read the
                same reports share one gallery, because their figures cannot
                differ;
-  data.html, explore.html  the rendered documents, copied as they are.
+  data.html, explore.html  the rendered documents, copied with the site's
+               navigation bar added.
 
 A release with no CHANGELOG section says so, rather than borrowing another's
 notes. A release whose figure set has not been rebuilt says that too.
@@ -42,6 +43,37 @@ HEADLINE = ("epi_curve", "province_overview", "ascertainment")
 
 #: Where the repository is published, for commit links.
 REPO_URL = "https://github.com/vsbuffalo/ebola-bdbv-data"
+
+#: The site's top navigation, in order: (page, label). One list for both the
+#: Quarto navbar and the bar written into data.html and explore.html, which are
+#: rendered on their own (self-contained, outside this project) and so would
+#: otherwise arrive with no way back to the rest of the site.
+NAV = (("index.qmd", "Home"), ("figures.qmd", "Figures"),
+       ("releases.qmd", "Releases"), ("engineering.qmd", "How it's built"),
+       ("data.html", "Data document"), ("explore.html", "Explorer"))
+
+
+def with_site_nav(html: str, page: str) -> str:
+    """`html` with the site's navigation bar as the first thing in its body,
+    styled inline to match the Quarto navbar (cosmo's light bar), with `page`
+    marked current. Raises if the page has no `<body>` tag, rather than
+    shipping a page with no way back."""
+    links = "".join(
+        f'<a href="{h.replace(".qmd", ".html")}" style="color:'
+        f'{"#1f4db5" if h == page else "#545555"};text-decoration:none;'
+        f'padding:.5em .6em"{' aria-current="page"' if h == page else ""}>{t}</a>'
+        for h, t in NAV)
+    bar = ('<nav aria-label="Site" style="background:#f8f9fa;'
+           'border-bottom:1px solid #dee2e6;display:flex;flex-wrap:wrap;'
+           'align-items:center;padding:.3em 1em;font-size:.95rem">'
+           '<a href="index.html" style="color:#545555;text-decoration:none;'
+           'font-size:1.1em;margin-right:1em">ebola-bdbv-data</a>'
+           f'{links}<a href="{REPO_URL}" style="color:#545555;'
+           'text-decoration:none;margin-left:auto;padding:.5em .6em">GitHub</a></nav>')
+    new, n = re.subn(r"<body[^>]*>", lambda m: m.group(0) + bar, html, count=1)
+    if not n:
+        raise SystemExit(f"{page}: no <body> tag to put the site navigation in")
+    return new
 
 
 def released_tags() -> list[dict]:
@@ -110,19 +142,7 @@ website:
   title: "ebola-bdbv-data"
   navbar:
     left:
-      - href: index.qmd
-        text: Home
-      - href: figures.qmd
-        text: Figures
-      - href: releases.qmd
-        text: Releases
-      - href: engineering.qmd
-        text: How it's built
-      - href: data.html
-        text: Data document
-      - href: explore.html
-        text: Explorer
-    right:
+""" + "".join(f"      - href: {h}\n        text: {t}\n" for h, t in NAV) + """    right:
       - icon: github
         href: """ + REPO_URL + """
   page-footer:
@@ -229,7 +249,7 @@ format:
     for doc in ("data.html", "explore.html"):
         p = ROOT / "analysis" / doc
         if p.exists():
-            shutil.copy2(p, out / doc)
+            (out / doc).write_text(with_site_nav(p.read_text(), doc))
     print(f"site project -> {out}: {len(tags)} releases, "
           f"{len(built)} galleries, {len(list((ROOT / 'figures').glob('*.png')))} figures")
 
