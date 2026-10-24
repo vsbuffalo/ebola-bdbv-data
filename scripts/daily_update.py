@@ -71,7 +71,7 @@ RELEASE_RELEVANT = ("scripts/", "registers/", "data/raw/", "pyproject.toml",
                     "uv.lock", ":!scripts/daily_*", ":!scripts/launchd",
                     ":!scripts/cron_*", ":!scripts/build_site.py",
                     ":!scripts/sitrep_digest.py", ":!scripts/publish_site.sh",
-                    ":!scripts/blog_*", ":!scripts/vendor/")
+                    ":!scripts/blog_*", ":!scripts/vendor/", ":!scripts/oneoff_*")
 #: What the fixing agent may do. No network, no push, no tags.
 AGENT_TOOLS = ["Read", "Edit", "Write", "Glob", "Grep",
                "Bash(make:*)", "Bash(uv run:*)", "Bash(pdftotext:*)",
@@ -178,7 +178,10 @@ def next_tag(run: Run, date: str) -> str:
 
 
 def new_reports(run: Run, since: str) -> list[str]:
-    """Sitrep numbers added to the committed manifest since a ref."""
+    """Sitrep numbers the manifest in the working tree holds and `since` did
+    not. Called with the previous release tag, so reports that reached main
+    through a fixing agent's pull request (its `data: fetch` commit) still
+    count as new in the release that first ships them."""
     diff = git(run, "diff", since, "--", "data/raw/sitrep_pdfs.manifest.tsv")
     return sorted({m.group(1) for m in
                    re.finditer(r"^\+.*?sitrep_(\d{3})", diff, re.M)})
@@ -427,8 +430,50 @@ def main() -> int:
     LOCK.write_text(str(os.getpid()))
     try:
         return update(run, args)
+    except Exception as e:
+        run.say(f"crashed: {e}")
+        file_crash(run, e)
+        return 1
     finally:
         LOCK.unlink(missing_ok=True)
+
+
+def clear_merged_branch(run: Run, branch: str) -> None:
+    """Delete a leftover local `branch` if main already holds all of it.
+
+    A run that fails a gate leaves its `daily/<date>` branch behind for the
+    fixing agent's pull request. Once that is merged, a second run the same
+    day would stop on `git switch -c`. A branch holding commits main does not
+    is unreviewed work, and is never deleted here."""
+    if not git(run, "branch", "--list", branch):
+        return
+    if run.sh(["git", "merge-base", "--is-ancestor", branch, "HEAD"]).returncode:
+        raise RuntimeError(f"{branch} exists and holds commits main does not; "
+                           "not overwriting it")
+    git(run, "branch", "-q", "-d", branch)
+
+
+def file_crash(run: Run, err: BaseException) -> None:
+    """An error outside a gate stops the run like a gate failure does, and
+    says so where a person will see it, instead of only in the launchd log."""
+    body = (f"The daily update of {dt.date.today()} crashed outside its gates, "
+            "so no fixing agent was started.\n\n"
+            f"```\n{tail(str(err), 60)}\n```\n\n"
+            f"The full log is `logs/{run.log.name}` on the machine that ran it. "
+            "Releases are paused until this closes.")
+    try:
+        open_ = open_issues(run, "gate-failure")
+        if open_:                             # a crash repeats every run until fixed
+            run.remote(["gh", "issue", "comment", open_[0], "--body",
+                        f"Daily run {dt.date.today()} crashed:\n\n"
+                        f"```\n{tail(str(err), 20)}\n```"])
+            return
+        run.remote(["gh", "issue", "create", "--title",
+                    f"Daily update {dt.date.today()}: crashed",
+                    "--label", "gate-failure", "--label", "priority: high",
+                    "--body", body])
+    except Exception as e:                    # the network may be what failed
+        run.say(f"could not file the crash issue: {e}")
 
 
 def update(run: Run, args) -> int:
@@ -451,7 +496,7 @@ def update(run: Run, args) -> int:
     prev = last_tag(run)
     merged = [s for s in git(run, "log", "--format=%s", f"{prev}..HEAD",
                              "--", *RELEASE_RELEVANT).splitlines()
-              if not s.startswith("releases:")]
+              if not s.startswith(("releases:", "data: fetch for"))]
     if check.returncode == 3:
         run.say("INSP unreachable; the next run will try again")
         return 0
@@ -460,6 +505,7 @@ def update(run: Run, args) -> int:
         return 0
 
     branch = f"daily/{dt.date.today()}"
+    clear_merged_branch(run, branch)
     git(run, "switch", "-q", "-c", branch)
     reports: list[str] = []
     try:
@@ -468,7 +514,7 @@ def update(run: Run, args) -> int:
         steps = (["make", "refresh"] if check.returncode == 1
                  else ["make", "build", "streams", "figures", "compare", "doc"])
         p = run.sh(steps)
-        reports = new_reports(run, "HEAD")
+        reports = new_reports(run, prev)
         if p.returncode:
             raise GateFailed(" ".join(steps[1:]), p.stdout + p.stderr)
         stray = unexpected_changes(run)
