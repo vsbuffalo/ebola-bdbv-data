@@ -38,6 +38,17 @@ same as withdrawn: the older tag stays exactly where it is.
 
 ---
 
+## `data/2026-10-22-r0` — 2026-10-24 — daily update
+
+Cut automatically by `scripts/daily_update.py`: every release gate passed (tests, verdict, export quotes, fresh-clone rebuild).
+
+**Fixes merged since the last release** (see each pull request for what moved):
+
+- data: fetch for 2026-10-24
+- care: a capitalised lead-in opens a passage, and bullet glyphs set apart from their text are dropped -- sitrep 158 ends Ituri's bullet with no full stop ("dans 4 CTE Au Nord-Kivu") and puts four displaced glyphs inside it ("431 patients • • • • sont hospitalisés"), so Ituri's row carried Nord-Kivu's census of 509, its 332/410 beds and ten recoveries, and Nord-Kivu had no row
+
+---
+
 ## `data/2026-10-20-r1` — 2026-10-23 — daily update
 
 Cut automatically by `scripts/daily_update.py`: every release gate passed (tests, verdict, export quotes, fresh-clone rebuild).
