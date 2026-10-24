@@ -42,6 +42,35 @@ same as withdrawn: the older tag stays exactly where it is.
 
 Cut automatically by `scripts/daily_update.py`: every release gate passed (tests, verdict, export quotes, fresh-clone rebuild).
 
+**New data.** Sitreps 160 and 161 (data dates 2026-10-21 and 2026-10-22). The
+runner's own note below lists them only as "data: fetch for 2026-10-24",
+because they reached main through the pull request that fixed the care reader;
+the runner now counts reports against the previous tag, so this does not recur.
+
+**Corrects `data/2026-10-20-r1` (care streams).** The care reader merged two
+provinces' passages on sitreps 144 and 158, where a bullet ends with no full
+stop. In r1:
+
+- `care_census_ituri.tsv`, 2026-10-19: **509**, which is Nord-Kivu's census.
+  Sitrep 158 prints 431 for Ituri ("431 patients sont hospitalisés (193
+  confirmés et 238 suspects)"); this release reads 431, `closes`.
+- `care_census_dedicated_ituri.tsv`: its only row, 332 on 2026-10-19, is
+  Nord-Kivu's dedicated-centre census (332/410 beds). The file is no longer
+  published.
+- `care_exits_recovered_ituri.tsv`, window ending 2026-10-20: **10**, Nord-Kivu's
+  recoveries. Ituri prints 5 ("dont 5 guérisons"), which this release does
+  not read, so the stream has no row there. Nord-Kivu now carries its own row
+  for that day
+  (census 509, 154 admissions, 95 exits, 10 recoveries).
+- `care_exits_recovered_bas_uele.tsv` (3), `care_exits_deaths_bas_uele.tsv` (1)
+  and `care_exits_noncase_bas_uele.tsv` (7), windows ending 2026-10-06, are
+  Haut-Uélé's figures from sitrep 144. They are now in the Haut-Uélé streams,
+  and Bas-Uélé reads its own 29 admissions and 2 exits.
+
+**Consumer action:** a fit pinned to `data/2026-10-20-r1` that uses the care
+census or care exits for Ituri, Nord-Kivu, Bas-Uélé or Haut-Uélé should move to
+this tag. Not breaking: no column changed; one stream file was removed.
+
 **Fixes merged since the last release** (see each pull request for what moved):
 
 - data: fetch for 2026-10-24
