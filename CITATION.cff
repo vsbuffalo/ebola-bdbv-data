@@ -12,9 +12,7 @@ authors:
   - family-names: Buffalo
     given-names: Vince
 doi: 10.5281/zenodo.23581463
-license:
-  - MIT
-  - CC-BY-4.0
+license: CC-BY-4.0
 repository-code: https://github.com/vsbuffalo/ebola-bdbv-data
 url: https://vsbuffalo.github.io/ebola-bdbv-data/
 abstract: >-
