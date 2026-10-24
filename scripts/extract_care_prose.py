@@ -195,10 +195,22 @@ JOINED = re.compile(r"^\s*(?:et|/|,)\s*(?:l[ae]\s+)?"
                     re.I)
 
 
+#: A CAPITALISED LEAD-IN OPENS A PASSAGE WITHOUT THE PUNCTUATION. Sitrep 158
+#: ends its Ituri bullet with no full stop -- "... 27 poches de sang ont été
+#: distribuées dans 4 CTE" -- and sets the next bullet's glyph apart from its
+#: text, so reading order gives "4 CTE Au Nord-Kivu, 154 nouvelles
+#: admissions". Nord-Kivu then opened nothing, and Ituri's row took Nord-Kivu's
+#: census of 509 against the 431 Ituri prints. Mid-sentence, the reports write
+#: the preposition in lower case ("1 au Nord Kivu", sitrep 068); a capital one
+#: before a province name starts a sentence.
+CAP_LEAD_IN = re.compile(r"(?:^|\s)(?:En|Au|Aux|[ÀA]\s+la|Dans\s+l[ae])\s*$")
+
+
 def opens_passage(block: str, at: int) -> bool:
     """Does the province mention at `at` begin a passage about that province?"""
     before = block[max(0, at - 24):at]
-    return bool(OPENER.search(LEAD_IN.sub("", before)))
+    return bool(OPENER.search(LEAD_IN.sub("", before))
+                or CAP_LEAD_IN.search(before))
 
 CARE_WORD = re.compile(r"hospitalis|isolement|isol[ée]s?\b|lits?\b|admissions?"
                        r"|sorties?\b|[ée]vad|gu[ée]ri|occupation|non-?cas"
@@ -1043,12 +1055,20 @@ def offer(best: dict[str, dict], refused: list[dict], prov: str, r: dict,
 #: suspects ...)", which the thousands separator joins into a census of 6 453
 #: on a day Nord-Kivu held 453; sitrep 149 reads "demeuraient en 6 isolement".
 PAGE_NUMBER = re.compile(r"\n[ \t]*\d{1,3}[ \t]*\n\s*\f")
+#: BULLET GLYPHS SET APART FROM THEIR TEXT. Sitrep 158 draws the glyphs of four
+#: care bullets as one block, and reading order puts it inside the bullet
+#: before: "Ainsi, 431 patients • • • • sont hospitalisés (193 confirmés et 238
+#: suspects)". The census pattern cannot cross the glyphs, so Ituri's 431 was
+#: not read. A bullet followed by a lower-case word does not open anything --
+#: every bullet in the care pillar opens on a capital -- so those are dropped.
+DISPLACED_BULLETS = re.compile(r"(?:\s*[•●▪])+\s+(?=[a-zà-ÿ])")
 
 
 def extract(pdf: Path) -> tuple[list[dict], list[dict]]:
     text = subprocess.run(["pdftotext", "-q", str(pdf), "-"],
                           capture_output=True, text=True).stdout
     flat = re.sub(r"\s+", " ", PAGE_NUMBER.sub("\n\f", text))
+    flat = DISPLACED_BULLETS.sub(" ", flat)
     refused: list[dict] = []
 
     best: dict[str, dict] = {}
