@@ -2,7 +2,7 @@
 # by design: `build` and `doc` never touch the network, so a rebuild can never
 # silently change what the source says.
 
-.PHONY: blog-onset summary site serve-site publish-site scan-update fetch-pinned fetch-exports check-exports geography fmt verdict figures-release figures-compare watch-data-channel release-check escape-fraction care-ledger oneoff-testing oneoff-death-split oneoff-death-flow cron-install cron-uninstall daily daily-dry-run daily-install daily-uninstall check fetch refresh manifest verify build streams compare figures onset external \
+.PHONY: blog-onset summary site serve-site publish-site scan-update fetch-pinned fetch-exports check-exports geography fmt verdict figures-release figures-compare watch-data-channel release-check escape-fraction care-ledger oneoff-testing oneoff-upload-timing oneoff-death-split oneoff-death-flow cron-install cron-uninstall daily daily-dry-run daily-install daily-uninstall check fetch refresh manifest verify build streams compare figures onset external \
 	external-update scan-refresh doc serve test
 
 # WHERE A FIGURE LANDS SAYS WHICH DATA MADE IT. Every figure this repository
@@ -764,6 +764,16 @@ escape-fraction:
 ##            census, and charging them against it inflates both.
 care-ledger:
 	uv run python scripts/care_ledger.py --streams data/build/streams
+
+## oneoff-upload-timing -- DISPOSABLE question figure: when INSP uploads each
+##            report, and how long our run schedule makes it wait. FETCH=1 is
+##            NETWORKED (upload times from INSP's media endpoint, into
+##            data/build/oneoff/); without it, offline from that file. Delete
+##            with scripts/oneoff_upload_timing.py once the schedule is decided.
+oneoff-upload-timing:
+	$(if $(FETCH),uv run python scripts/oneoff_upload_timing.py --fetch,)
+	uv run python scripts/oneoff_upload_timing.py \
+		--out data/build/figures/oneoff_upload_timing.png
 
 ## oneoff-death-flow -- DISPOSABLE diagram: where a death goes, from the
 ##            event to the likelihood, with the two lossy edges named.
