@@ -38,6 +38,16 @@ same as withdrawn: the older tag stays exactly where it is.
 
 ---
 
+## `data/2026-10-23-r0` — 2026-10-25 — daily update
+
+Cut automatically by `scripts/daily_update.py`: every release gate passed (tests, verdict, export quotes, fresh-clone rebuild).
+
+**New data.** Sitreps 163, data date 2026-10-22 → 2026-10-23: 60 confirmed cases and 46 deaths nationally in windows from the previous data date.
+
+**Not breaking.** No code, register or schema changed.
+
+---
+
 ## `data/2026-10-22-r0` — 2026-10-24 — daily update
 
 Cut automatically by `scripts/daily_update.py`: every release gate passed (tests, verdict, export quotes, fresh-clone rebuild).
