@@ -93,3 +93,27 @@ def test_the_fixing_agent_adds_no_coauthor_or_attribution():
     cmd = du.agent_command("x")
     settings = json.loads(Path(cmd[cmd.index("--settings") + 1]).read_text())
     assert settings["attribution"] == {"commit": "", "pr": "", "sessionUrl": False}
+
+
+def test_a_notice_is_filed_once_and_a_closed_one_is_not_refiled(monkeypatch):
+    output = ("CURRENT  --  ...\n"
+              "NOTICE: numbering: sitrep 161 (2026-10-22) is followed by 163\n"
+              "NOTICE: numbering: sitrep 170 (2026-11-01) is followed by 172\n")
+    created = []
+
+    class FakeRun:
+        def say(self, msg):
+            pass
+
+        def sh(self, cmd, **kw):
+            return subprocess.CompletedProcess(
+                cmd, 0, "Source notice: numbering: sitrep 161 (2026-10-22) "
+                        "is followed by 163\n", "")
+
+        def remote(self, cmd):
+            created.append(cmd[cmd.index("--title") + 1])
+            return ""
+
+    du.file_notices(FakeRun(), output)
+    assert created == ["Source notice: numbering: sitrep 170 (2026-11-01) "
+                       "is followed by 172"]

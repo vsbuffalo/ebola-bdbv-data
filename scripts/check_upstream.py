@@ -55,6 +55,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fetch_sitrep_index import (API, EPIDEMIC_START, QUERY, _BARE, _NUM,
+                                numbering_conflicts, numbering_shifts,
                                 parse_row)
 from lib.provenance import REPO_ROOT, UA, _encode
 from lib.report_date import load_external_sitreps
@@ -88,6 +89,12 @@ def _committed(index: Path) -> tuple[set[int], dict[str, str]]:
                 urls[r["filename"]] = (r["url"],
                                        int(r["sitrep"]) if r["sitrep"] else None)
     return nums, urls
+
+
+def _indexed_urls(index: Path) -> set[str]:
+    """Every URL the committed index lists, picked or not."""
+    with index.open() as fh:
+        return {r["url"] for r in csv.DictReader(fh, delimiter="\t")}
 
 
 def _external_sitreps() -> set[int]:
@@ -204,6 +211,35 @@ def main() -> None:
     unclassified = [r for r in rows if not r["sitrep"]]
 
     findings, verdict = [], OK
+
+    # --- NUMBERS ARE INSP'S CLAIM, NOT A FACT. ---
+    # Comparing numbers alone hid a report for two days: the 23 October report
+    # was uploaded as `..._163_23_10_2026.pdf` (its front page says 162), so
+    # when the real 163 arrived "we hold 163" was true and this check said
+    # CURRENT. A number under two data dates is two reports, and the fetch
+    # refuses to choose between them; a file the index has never seen is new
+    # whatever number it carries; and a shift between number and date is
+    # reported for a person to read, without stopping anything.
+    if conflicts := numbering_conflicts(rows):
+        verdict = CHANGED
+        findings.append(
+            "one SitRep number, two data dates: "
+            + "; ".join(f"{n} ({', '.join(d)})" for n, d in sorted(conflicts.items()))
+            + "\n      Two reports, one misnumbered. Read the front pages and "
+              "record the true number in registers/sitrep_number_overrides.tsv.")
+    indexed = _indexed_urls(args.index)
+    unindexed = [r for r in rows
+                 if r["sitrep"] and r["published"] >= EPIDEMIC_START
+                 and int(r["sitrep"]) in have_nums and r["url"] not in indexed]
+    if unindexed:
+        verdict = max(verdict, BEHIND) if verdict != CHANGED else CHANGED
+        findings.append(
+            f"{len(unindexed)} file(s) listed under a number we already hold, "
+            f"which our index has never seen: "
+            + ", ".join(r["filename"] for r in unindexed[:6])
+            + "\n      A revision or a misnumbered report; the fetch decides "
+              "which, and refuses if the dates disagree.")
+    notices = [f"numbering: {s}" for s in numbering_shifts(rows)]
 
     # --- THE REGRESSION GUARD, and the one that would have caught this. ---
     # If our own enumeration finds fewer reports than we already hold, the
@@ -350,6 +386,9 @@ def main() -> None:
         f"our latest report {max(have_nums) if have_nums else 'none'}")
     for f in findings:
         say(f"\n  * {f}")
+    # Column 0 and this exact prefix: `daily_update.file_notices` reads them.
+    for n in notices:
+        say(f"NOTICE: {n}")
     if verdict == BEHIND:
         say("\n  To update:  make refresh      "
             "(fetch the index and PDFs, then rebuild everything offline)")

@@ -82,7 +82,8 @@ AGENT_TIMEOUT_S = 3 * 3600
 
 LABELS = {"gate-failure": ("b60205", "The daily update stopped on a gate"),
           "priority: high": ("d93f0b", "Needs attention today"),
-          "daily-release": ("0e8a16", "The daily release log")}
+          "daily-release": ("0e8a16", "The daily release log"),
+          "source-notice": ("fbca04", "Something odd in INSP's reports; releases continue")}
 
 
 def agent_command(prompt: str) -> list[str]:
@@ -476,6 +477,47 @@ def file_crash(run: Run, err: BaseException) -> None:
         run.say(f"could not file the crash issue: {e}")
 
 
+def file_notices(run: Run, check_output: str) -> None:
+    """Each `NOTICE:` line from check_upstream becomes one issue, filed once.
+
+    A notice does not stop the run -- it is something a person should read
+    (a report number that does not follow the dates), not something that
+    makes the data wrong. The title is the notice itself, so the same anomaly
+    is never filed twice, and closing the issue is how a person says "read,
+    and it is fine": a closed title is not filed again."""
+    notices = re.findall(r"(?m)^NOTICE: (.+)$", check_output)
+    if not notices:
+        return
+    out = run.sh(["gh", "issue", "list", "--label", "source-notice", "--state",
+                  "all", "--limit", "500", "--json", "title", "--jq", ".[].title"])
+    if out.returncode:
+        run.say(f"could not list source notices; not filing: {tail(out.stderr, 3)}")
+        return
+    seen = set(out.stdout.splitlines())
+    for n in notices:
+        title = f"Source notice: {n}"
+        if title in seen:
+            continue
+        run.say(f"filing: {title}")
+        try:
+            run.remote(["gh", "issue", "create", "--title", title,
+                        "--label", "source-notice", "--body",
+                        f"`check_upstream.py` on {dt.date.today()}:\n\n> {n}\n\n"
+                        "INSP numbers one report per data day, so a report "
+                        "number and its data date normally advance together. "
+                        "When they do not, either INSP skipped a number or a "
+                        "day, or a filename carries the wrong number (on "
+                        "2026-10-25 the 23 October report was uploaded as 163; "
+                        "its front page says 162).\n\n"
+                        "Read the front pages of the reports named. If a "
+                        "filename is wrong, add a row to "
+                        "`registers/sitrep_number_overrides.tsv`. If the source "
+                        "really skipped, close this issue; it will not be "
+                        "filed again. Releases are not paused."])
+        except Exception as e:                # a notice must never stop a run
+            run.say(f"could not file the notice: {e}")
+
+
 def update(run: Run, args) -> int:
     if git(run, "branch", "--show-current") != "main":
         raise RuntimeError("the daily run starts from main")
@@ -493,6 +535,7 @@ def update(run: Run, args) -> int:
         return 0
 
     check = run.sh(["uv", "run", "python", "scripts/check_upstream.py"])
+    file_notices(run, check.stdout)
     prev = last_tag(run)
     merged = [s for s in git(run, "log", "--format=%s", f"{prev}..HEAD",
                              "--", *RELEASE_RELEVANT).splitlines()
