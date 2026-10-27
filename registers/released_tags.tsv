@@ -17,6 +17,15 @@
 # resolves means a published tag moved, and the fix is to restore the tag, not
 # to update the register to match the damage.
 #
+# The one deliberate move. On 2026-10-27 main was rewritten from cad2148 to
+# drop a co-author trailer from two commit messages, and the three tags on that
+# stretch were re-pointed at their rewritten twins. Every file under each tag is
+# byte-identical to before (checked tree by tree against a full backup bundle);
+# only the commit IDs changed:
+#   data/2026-10-20-r1  43e606ed7e7b278e02ad1b952bf19032198cf7f7 -> 101bf980
+#   data/2026-10-22-r0  fa0d50e30881595962ab77ee1256c8cfdf353a52 -> fdeb967a
+#   data/2026-10-23-r0  08dd97ed09a6fb5c1cc825980a739dab30f55e80 -> 075bfa9d
+#
 # `commit` is the commit the tag names -- the dereferenced target for an
 # annotated tag, which all of these are.
 #
@@ -68,6 +77,6 @@ data/2026-09-04-r0	2026-09-07	317c0090cf255c781c4c749b8fa6ff6fd2752cf5
 data/2026-09-18-r0	2026-09-21	bbd9d4dc589149cd47ca904ac7f31939514210ec
 data/2026-10-18-r0	2026-10-20	6df9e2083eb3a04c7224a5ac700f64acb55fde1e
 data/2026-10-20-r0	2026-10-22	0a062832f32ac030b943c6459deec98e96ed1a4d
-data/2026-10-20-r1	2026-10-23	43e606ed7e7b278e02ad1b952bf19032198cf7f7
-data/2026-10-22-r0	2026-10-24	fa0d50e30881595962ab77ee1256c8cfdf353a52
-data/2026-10-23-r0	2026-10-25	08dd97ed09a6fb5c1cc825980a739dab30f55e80
+data/2026-10-20-r1	2026-10-23	101bf98059e770b9fd2754d94dc6d330cfcbc8da
+data/2026-10-22-r0	2026-10-24	fdeb967a00005711bbb35db9e26821a47c889915
+data/2026-10-23-r0	2026-10-25	075bfa9d11fedc58b862ca9c5c41e12746124c98
