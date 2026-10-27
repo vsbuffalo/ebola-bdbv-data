@@ -323,6 +323,46 @@ def choose(rows: list[dict]) -> list[str]:
     return ambiguous
 
 
+def numbering_conflicts(rows: list[dict]) -> dict[str, list[str]]:
+    """SitRep numbers that two uploads give DIFFERENT data dates.
+
+    Versions of one report share its data date; two dates under one number are
+    two reports, one of them misnumbered. `choose` would keep the later upload
+    and drop the other without a word: INSP's `SITREP_MVEBDB_163_23_10_2026.pdf`
+    is SitRep 162 by its front page, and the real 163 (24 October) arrived
+    under the same number. Resolve each with a row in
+    `registers/sitrep_number_overrides.tsv`, read from the front page."""
+    dates: dict[str, set[str]] = {}
+    for r in rows:
+        if r["sitrep"] and r["data_date"]:
+            dates.setdefault(r["sitrep"], set()).add(r["data_date"])
+    return {n: sorted(d) for n, d in dates.items() if len(d) > 1}
+
+
+def numbering_shifts(rows: list[dict]) -> list[str]:
+    """Consecutive reports whose numbers and data dates advance by different
+    amounts.
+
+    INSP publishes one report per data day, so the number minus the day is
+    constant: across all 152 reports to 2026-10-23 it changed once, at the
+    misnumbered 162. A shift is not proof of an error -- INSP may skip a number
+    or a day -- so this is a notice for a person to read the front pages, not
+    a refusal. Numbers that `numbering_conflicts` reports are left out."""
+    import datetime as dt
+    conflicted = numbering_conflicts(rows)
+    by_num = {int(r["sitrep"]): dt.date.fromisoformat(r["data_date"])
+              for r in rows
+              if r["sitrep"] and r["data_date"] and r["sitrep"] not in conflicted}
+    nums = sorted(by_num)
+    out = []
+    for a, b in zip(nums, nums[1:]):
+        days = (by_num[b] - by_num[a]).days
+        if days != b - a:
+            out.append(f"sitrep {a} ({by_num[a]}) is followed by {b} "
+                       f"({by_num[b]}): {b - a} number(s) for {days} day(s)")
+    return out
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--out", required=True, type=Path)
@@ -371,6 +411,13 @@ def main() -> None:
     all_mve += probed
     rows = [r for r in all_mve if r["published"] >= EPIDEMIC_START]
     prior_epidemic = len(all_mve) - len(rows)
+    if conflicts := numbering_conflicts(rows):
+        raise SystemExit(
+            "one SitRep number, two data dates -- two reports, one misnumbered: "
+            + "; ".join(f"{n}: {', '.join(d)}" for n, d in sorted(conflicts.items()))
+            + "\nRead each front page and record the true number in "
+              "registers/sitrep_number_overrides.tsv. Refusing to write an "
+              "index that would keep one report and drop the other.")
     ambiguous = choose(rows)
     rows.sort(key=lambda r: (int(r["sitrep"]) if r["sitrep"] else 999, r["published"]))
 
