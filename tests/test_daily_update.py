@@ -9,6 +9,7 @@ saying "sitreps none new" and sending no summary.
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -82,3 +83,13 @@ def test_a_crash_files_an_issue_and_exits_nonzero(monkeypatch, tmp_path):
     assert du.main() == 1
     assert filed and "exited 128" in filed[0]
     assert not (tmp_path / "lock").exists()
+
+
+def test_the_fixing_agent_adds_no_coauthor_or_attribution():
+    """The agent runs with `--setting-sources project,local`, so the user's own
+    attribution setting is not loaded; without this one, its commits on
+    daily/2026-10-22 and daily/2026-10-24 carried a Claude co-author trailer
+    into main."""
+    cmd = du.agent_command("x")
+    settings = json.loads(Path(cmd[cmd.index("--settings") + 1]).read_text())
+    assert settings["attribution"] == {"commit": "", "pr": "", "sessionUrl": False}
