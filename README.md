@@ -1,6 +1,6 @@
 # ebola-bdbv-data
 
-[![daily update](https://github.com/vsbuffalo/ebola-bdbv-data/actions/workflows/daily-status.yml/badge.svg)](https://github.com/vsbuffalo/ebola-bdbv-data/issues?q=is%3Aopen+label%3Agate-failure)
+[![daily update](https://github.com/vsbuffalo/ebola-bdbv-data/actions/workflows/daily-status.yml/badge.svg)](https://github.com/vsbuffalo/ebola-bdbv-data/issues?q=is%3Aopen+label%3Agate-failure%2Cno-update)
 [![DOI](https://zenodo.org/badge/1427599649.svg)](https://doi.org/10.5281/zenodo.23581463)
 
 Analysis-ready case data for the 2026 Bundibugyo virus outbreak in the
@@ -215,6 +215,13 @@ find the page that broke the reader and propose a fix. The agent can't push or
 tag; its fix arrives as a pull request that I review, and merging it is what
 lets the next run cut a revision. Releases stop while a failure is open, so a
 tag never skips past a report nobody has read correctly.
+
+A run that releases nothing new counts as a failure too, once the newest release
+is a day old. INSP has published one report per data day, so silence means
+something stopped: INSP itself, its website, a gate, or a pause waiting on me.
+The run opens a `no-update` issue (the badge turns red here as well) and every
+later run comments its reason on it, until a release with a new report closes
+it. This issue doesn't pause anything, because only a release can close it.
 
 ## Layout
 
