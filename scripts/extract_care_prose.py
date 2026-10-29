@@ -184,7 +184,12 @@ SEGMENT_CAP = 1300
 #: "dans la province du NordKivu" fail the test, as they should.
 LEAD_IN = re.compile(r"\b(?:en|au|aux|[àa]\s+la|dans\s+l[ae]|du|de\s+la|le|la)\s*$",
                      re.I)
-OPENER = re.compile(r"(?:^|[→➔•●▪.;:!?])\s*$")
+#: U+F0B7 and U+F0A7 are Word's Symbol-font "•" and Wingdings "▪", which
+#: pdftotext leaves in the private-use area: sitrep 166 opens its care pillar
+#: "Principales actions  Ituri, 63 nouvelles admissions" and sitrep 164
+#: "Principales actions  Ituri : 59 nouvelles admissions", with no full
+#: stop before either, so Ituri opened nothing and its census had no row.
+OPENER = re.compile(r"(?:^|[→➔•●▪.;:!?])\s*$")
 #: "→ Haut-Uélé et Tshopo : 2 confirmés ont été admis ... pour 37 malades
 #: hospitalisés" (sitrep 079). One passage, two provinces, one set of numbers:
 #: there is no way to split 37 between them, and filing it under either is a
@@ -489,9 +494,12 @@ ADM_SPLIT_DE = re.compile(
 EXITS = [rf"({NUM})\s+sorties?\b(?!\s+non-?\s?cas)"]
 #: `nouv\w+` rather than `nouveaux?`: the July vintage is typeset with an
 #: accent fault that prints "nouvéaux", and an exact spelling dropped sitrep
-#: 063's twenty recoveries.
-RECOVERED = [rf"({NUM})\s+(?:nouv\w+\s+)?gu[ée]ris\b",
-             rf"({NUM})\s+(?:nouv\w+\s+)?gu[ée]ri\b"]
+#: 063's twenty recoveries. "474 guéris sur 700 (67,7 %) sont suivis" (sitrep
+#: 165) is the share of the province's survivors in follow-up, not the day's
+#: recoveries -- the same report's care bullet prints those as "dont 14
+#: guérisons" -- so a count followed by "sur" is a numerator, never a flow.
+RECOVERED = [rf"({NUM})\s+(?:nouv\w+\s+)?gu[ée]ris\b(?!\s+sur\s)",
+             rf"({NUM})\s+(?:nouv\w+\s+)?gu[ée]ri\b(?!\s+sur\s)"]
 ABSCONDED = [rf"({NUM})\s+[ée]vad[ée]s?\b"]
 NONCASE = [rf"({NUM})\s+(?:cas\s+|suspects?\s+)?non-?\s?cas\b",
            rf"({NUM})\s+sorties?\s+non-?\s?cas\b"]
