@@ -38,6 +38,22 @@ same as withdrawn: the older tag stays exactly where it is.
 
 ---
 
+## `data/2026-10-27-r0` — 2026-10-29 — daily update
+
+Cut automatically by `scripts/daily_update.py`: every release gate passed (tests, verdict, export quotes, fresh-clone rebuild).
+
+**New data.** Sitreps 162, 163, 164, 165, 166, data date 2026-10-23 → 2026-10-27: 317 confirmed cases and 157 deaths nationally in windows from the previous data date.
+
+**Fixes merged since the last release** (see each pull request for what moved):
+
+- lab: once a report's laboratory section reads any province, readings from outside it are not used -- the front page runs the day's province list into the national laboratory total with no full stop, so the last-named province's segment licensed the national pair against the national rate: Tshopo 60/450 on 23 October and 96/479 on 25 October (its bullets: 1/13, 6/19), Haut-Uélé 88/512 on 24 October (5/18), and the national testing series counted each day twice; across 159 reports only those three rows change
+- care: Word's private-use bullets open a passage, and "N guéris sur M" is a numerator, not the day's recoveries -- sitrep 166 opens its care pillar "Principales actions [U+F0B7] Ituri, 63 nouvelles admissions" and sitrep 164 "[U+F0A7] Ituri : 59 nouvelles admissions", so Ituri opened nothing (and on 164 no province did); sitrep 165's "en Ituri, 474 guéris sur 700 (67,7 %) sont suivis" published 474 Ituri recoveries for 2026-10-26, a day whose bullet prints "88 sorties, dont 14 guérisons"
+- fetch: a held report the index renumbers takes the new number and keeps its date -- INSP uploaded the 23 October report as SITREP_MVEBDB_163_23_10_2026.pdf (front page: 'SitRep N°162/MVE-BDBV/23/10/2026'); the archive held it as sitrep_163_2026-10-23.pdf, and once the overrides register renumbered it the refetch matched those bytes and kept the old name, so the real 163 (24 October) left 163 held twice and 162 held never, and the archive reconciliation stopped the 2026-10-27 refresh
+- upstream: count files, not numbers; refuse a number under two data dates; file a notice when number and date stop advancing together -- INSP uploaded the 23 October report as 163 (front page: 162), so when the real 163 arrived the check said CURRENT for two days and a refresh would have dropped the 23 October report; replayed on the 25, 26 and 27 October listings: notice, CHANGED, BEHIND
+- index: INSP's SITREP_MVEBDB_163_23_10_2026.pdf is SitRep 162 -- its front page reads 'SitRep N°162/MVE-BDBV/23/10/2026'; the real 163 (24 October) uploaded on 26 October shared its number, so check_upstream reported CURRENT for two days and the next index refresh would have unpicked the 23 October report
+
+---
+
 ## `data/2026-10-23-r0` — 2026-10-25 — daily update
 
 Cut automatically by `scripts/daily_update.py`: every release gate passed (tests, verdict, export quotes, fresh-clone rebuild).
