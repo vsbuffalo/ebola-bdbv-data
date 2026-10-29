@@ -27,6 +27,12 @@ Scheduled by `make daily-install` (launchd, 14:00 and 22:00). Two tiers:
 While a `gate-failure` issue is open, runs add a comment to it and stop: the
 releases are a sequence, and a second agent on the same failure helps nobody.
 
+A run that ships no new report, for whatever reason (INSP published nothing,
+INSP unreachable, a gate failed, releases paused), is itself a failure once
+the newest released data is a day old or more: it opens one `no-update` issue,
+comments on it each run with the reason, and closes it when a release with a
+new report goes out. It does not pause releases -- a release is what closes it.
+
 Notification is GitHub's, via `.github/workflows/daily-status.yml`: an issue
 this script opens under your own login does not notify you, so the workflow
 @-mentions the owner from the bot account, and fails (turning the README badge
@@ -83,7 +89,11 @@ AGENT_TIMEOUT_S = 3 * 3600
 LABELS = {"gate-failure": ("b60205", "The daily update stopped on a gate"),
           "priority: high": ("d93f0b", "Needs attention today"),
           "daily-release": ("0e8a16", "The daily release log"),
-          "source-notice": ("fbca04", "Something odd in INSP's reports; releases continue")}
+          "source-notice": ("fbca04", "Something odd in INSP's reports; releases continue"),
+          "no-update": ("b60205", "No new report released for a day or more")}
+#: Days the newest released data may age before a run without a new report
+#: files a `no-update` issue. INSP has published one report per data day.
+STALE_DAYS = 1
 
 
 def agent_command(prompt: str) -> list[str]:
@@ -167,6 +177,18 @@ def last_tag(run: Run) -> str:
             (ROOT / "registers/released_tags.tsv").read_text().splitlines()
             if ln.startswith("data/")]
     return rows[-1][0]
+
+
+def data_shipped_on() -> tuple[str, dt.date]:
+    """The newest released data date, and the day the first release carrying
+    it shipped. A revision (`-r1`) of the same data date does not count as an
+    update: the date is taken from its `-r0`, or whichever came first."""
+    rows = [ln.split("\t") for ln in
+            (ROOT / "registers/released_tags.tsv").read_text().splitlines()
+            if ln.startswith("data/")]
+    date = re.match(r"data/(\d{4}-\d{2}-\d{2})", rows[-1][0]).group(1)
+    first = next(r for r in rows if r[0].startswith(f"data/{date}"))
+    return date, dt.date.fromisoformat(first[1])
 
 
 def next_tag(run: Run, date: str) -> str:
@@ -286,7 +308,7 @@ def changelog_stub(run: Run, tag: str, prev: str, reports: list[str],
 
 
 def release(run: Run, branch: str, prev: str, reports: list[str],
-            merged: list[str]) -> None:
+            merged: list[str]) -> str:
     tag = next_tag(run, data_date())
     changelog_stub(run, tag, prev, reports, merged)
     git(run, "add", "-u")
@@ -298,7 +320,7 @@ def release(run: Run, branch: str, prev: str, reports: list[str],
     if run.dry:
         run.say(f"dry run: every gate passed; would tag {tag}, record it, "
                 f"merge {branch} into main and push. Left on {branch}.")
-        return
+        return tag
     git(run, "tag", "-a", tag, "-m",
         f"{tag}: automatic daily release; every gate passed. See CHANGELOG.md.")
     commit = git(run, "rev-parse", f"{tag}^{{commit}}")
@@ -317,6 +339,7 @@ def release(run: Run, branch: str, prev: str, reports: list[str],
     github_release(run, tag)
     publish_site(run, tag)
     summarize(run, tag, reports)
+    return tag
 
 
 def github_release(run: Run, tag: str) -> None:
@@ -430,11 +453,17 @@ def main() -> int:
         return 0
     LOCK.write_text(str(os.getpid()))
     try:
-        return update(run, args)
-    except Exception as e:
-        run.say(f"crashed: {e}")
-        file_crash(run, e)
-        return 1
+        try:
+            reason, code = update(run, args), 0
+        except Exception as e:
+            run.say(f"crashed: {e}")
+            file_crash(run, e)
+            reason, code = f"the run crashed: {tail(str(e), 3)}", 1
+        try:
+            flag_no_update(run, reason)
+        except Exception as e:                # bookkeeping must not fail a run
+            run.say(f"could not update the no-update issue: {e}")
+        return code
     finally:
         LOCK.unlink(missing_ok=True)
 
@@ -518,7 +547,43 @@ def file_notices(run: Run, check_output: str) -> None:
             run.say(f"could not file the notice: {e}")
 
 
-def update(run: Run, args) -> int:
+def flag_no_update(run: Run, reason: str | None) -> None:
+    """Open, extend or close the one `no-update` issue.
+
+    `reason` is None when this run released a new report: any open issue is
+    closed. Otherwise it says why nothing new shipped, and once the newest
+    released data shipped `STALE_DAYS` or more ago, the run comments it on
+    the open issue, or opens one. The issue is labelled apart from
+    `gate-failure` because that label pauses releases, and a release is the
+    only thing that should close this one."""
+    have = open_issues(run, "no-update")
+    if reason is None:
+        for n in have:
+            run.remote(["gh", "issue", "close", n, "--comment",
+                        f"Daily run {dt.date.today()} released a new report."])
+        return
+    date, shipped = data_shipped_on()
+    age = (dt.date.today() - shipped).days
+    if age < STALE_DAYS:
+        return
+    line = (f"Daily run {dt.datetime.now():%Y-%m-%d %H:%M}: no new report "
+            f"released; {reason}")
+    if have:
+        run.remote(["gh", "issue", "comment", have[0], "--body", line])
+        return
+    run.remote(["gh", "issue", "create", "--title",
+                f"No new data released since {shipped} (data date {date})",
+                "--label", "no-update", "--label", "priority: high", "--body",
+                f"The newest release carries data through {date} and shipped "
+                f"on {shipped}, {age} day(s) ago. INSP has published one "
+                "report per data day, so a day with no release is treated as "
+                "a failure. Each run that ships nothing adds a comment here "
+                "with its reason; the first release with a new report closes "
+                "this. Releases are not paused by this issue.\n\n" + line])
+
+
+def update(run: Run, args) -> str | None:
+    """One daily run. None when it released a new report; otherwise why not."""
     if git(run, "branch", "--show-current") != "main":
         raise RuntimeError("the daily run starts from main")
     if git(run, "status", "--porcelain", "--untracked-files=no"):
@@ -532,7 +597,10 @@ def update(run: Run, args) -> int:
         run.say(f"gate failure #{blocking[0]} is still open; releases paused")
         run.remote(["gh", "issue", "comment", blocking[0], "--body",
                     f"Daily run {dt.date.today()}: paused while this is open."])
-        return 0
+        # Still look, so the no-update issue says what the pause is holding back.
+        check = run.sh(["uv", "run", "python", "scripts/check_upstream.py"])
+        return (f"releases paused by gate failure #{blocking[0]}. INSP now:\n\n"
+                f"```\n{tail(check.stdout, 25)}\n```")
 
     check = run.sh(["uv", "run", "python", "scripts/check_upstream.py"])
     file_notices(run, check.stdout)
@@ -542,10 +610,12 @@ def update(run: Run, args) -> int:
               if not s.startswith(("releases:", "data: fetch for"))]
     if check.returncode == 3:
         run.say("INSP unreachable; the next run will try again")
-        return 0
+        return "INSP's site was unreachable."
     if check.returncode in (0, 4) and not merged:
         run.say("current, and nothing merged since the last release")
-        return 0
+        return ("INSP has published no report we do not hold"
+                + (" and has gone quiet (check exit 4)." if check.returncode == 4
+                   else "."))
 
     branch = f"daily/{dt.date.today()}"
     clear_merged_branch(run, branch)
@@ -568,11 +638,13 @@ def update(run: Run, args) -> int:
         failed = gates(run)
         if failed:
             raise GateFailed(*failed)
-        release(run, branch, prev, reports, merged)
+        tag = release(run, branch, prev, reports, merged)
     except GateFailed as f:
         run.say(f"gate failed: {f.step}")
         fix(run, branch, f, reports, args.no_agent)
-    return 0
+        return (f"the gate `{f.step}` failed with sitreps "
+                f"{', '.join(reports) or 'none'} new; see the gate-failure issue.")
+    return None if reports else f"released {tag}, a revision with no new report."
 
 
 if __name__ == "__main__":

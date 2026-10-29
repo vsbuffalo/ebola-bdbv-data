@@ -2,9 +2,10 @@
 #
 # scripts/daily_update.py files a `gate-failure` issue under the owner's own
 # login, and GitHub does not notify anyone of their own actions -- so this
-# workflow @-mentions the owner from the bot account, which does. It also
-# fails while any gate failure is open, so the README badge is red exactly
-# while releases are paused.
+# workflow @-mentions the owner from the bot account, which does. The same
+# goes for a `no-update` issue (a day or more with no new report released).
+# It fails while either kind is open, so the README badge is red exactly
+# while releases are paused or the newest release is a day or more old.
 name: daily-status
 on:
   issues:
@@ -26,8 +27,16 @@ jobs:
         run: >-
           gh issue comment "${{ github.event.issue.number }}" --repo "$REPO"
           --body "@${{ github.repository_owner }} the daily update stopped on a gate; releases are paused until this closes."
-      - name: Fail while any gate failure is open
+      - name: Mention the owner on a new no-update issue
+        if: >-
+          github.event_name == 'issues' && github.event.action == 'opened' &&
+          contains(github.event.issue.labels.*.name, 'no-update')
+        run: >-
+          gh issue comment "${{ github.event.issue.number }}" --repo "$REPO"
+          --body "@${{ github.repository_owner }} no new report has been released for a day or more; each run adds its reason here."
+      - name: Fail while any gate failure or no-update issue is open
         run: |
-          n=$(gh issue list --repo "$REPO" --label gate-failure --state open --json number --jq length)
-          echo "open gate failures: $n"
-          test "$n" -eq 0
+          g=$(gh issue list --repo "$REPO" --label gate-failure --state open --json number --jq length)
+          u=$(gh issue list --repo "$REPO" --label no-update --state open --json number --jq length)
+          echo "open gate failures: $g; open no-update issues: $u"
+          test "$g" -eq 0 && test "$u" -eq 0
