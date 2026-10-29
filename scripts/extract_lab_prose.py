@@ -268,7 +268,7 @@ def extract(pdf: Path) -> tuple[list[dict], list[dict]]:
                 # zero -- so this row is as validated as a printed number.
                 rows.append({"province": prov, "samples": int(ns[0]),
                              "positives": 0, "printed_pct": 0.0,
-                             "rate_printed": True,
+                             "rate_printed": True, "in_lab": in_lab,
                              "sentence": seg.strip()[:220]})
                 continue
         if not pcts:
@@ -283,7 +283,7 @@ def extract(pdf: Path) -> tuple[list[dict], list[dict]]:
                     n, k = got
                     rows.append({"province": prov, "samples": n,
                                  "positives": k, "printed_pct": None,
-                                 "rate_printed": False,
+                                 "rate_printed": False, "in_lab": in_lab,
                                  "sentence": seg.strip()[:220]})
                 elif why == "positives_exceed_samples":
                     refused.append({"why": "fallback_positives_exceed_samples",
@@ -301,8 +301,23 @@ def extract(pdf: Path) -> tuple[list[dict], list[dict]]:
             continue
         k, n, p = got
         rows.append({"province": prov, "samples": n, "positives": k,
-                     "printed_pct": p, "rate_printed": True,
+                     "printed_pct": p, "rate_printed": True, "in_lab": in_lab,
                      "sentence": seg.strip()[:220]})
+    # THE LABORATORY SECTION IS THE PROVINCE'S OWN STATEMENT; ELSEWHERE A
+    # SEGMENT CAN SWALLOW A NATIONAL SENTENCE. The front page lists the day's
+    # provinces and runs straight into the national laboratory total with no
+    # full stop between them -- sitrep 162: "... et de la Tshopo (1) Un total
+    # de 450 nouveaux échantillons a été analysé ; 60 de ces échantillons se
+    # sont révélés positifs ..., soit 13,3 %" -- so the last-named province's
+    # segment holds a pair (60, 450) that reproduces its printed rate and
+    # licenses. It was Tshopo's on 23 and 25 October (the section says 1/13
+    # and 6/19) and Haut-Uélé's on 24 October (5/18), and the national
+    # series counted each of those days twice. Once the section has spoken
+    # for any province, readings from outside it are not used for that
+    # report; they remain the route for reports whose section the reader
+    # cannot find.
+    if any(r["in_lab"] for r in rows):
+        rows = [r for r in rows if r["in_lab"]]
     out, conflicts = dedupe_by_province(rows)
     refused.extend(conflicts)
     return out, refused
@@ -358,6 +373,7 @@ def main() -> None:
         num, date = report_key(pdf)
         got, refused = extract(pdf)
         for r in got:
+            r = {k: v for k, v in r.items() if k != "in_lab"}
             rows.append({"sitrep": num, "date": date, **r})
         status.append({"sitrep": num, "date": date, "n_parsed": len(got),
                        "n_refused": len(refused),

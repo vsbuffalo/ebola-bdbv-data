@@ -1146,6 +1146,51 @@ def test_lab_prose_validated_rows_agree_with_their_own_printed_pct():
     assert not bad, bad
 
 
+@needs_pdfs
+@pytest.mark.parametrize("n, province, want", [
+    (162, "Tshopo", (13, 1)),       # front page: 450 analysed, 60 positive
+    (163, "Haut-Uélé", (18, 5)),    # front page: 512 analysed, 88 positive
+    (164, "Tshopo", (19, 6)),       # front page: 479 analysed, 96 positive
+])
+def test_lab_prose_the_national_headline_is_not_the_last_named_province(
+        n, province, want):
+    """The front page names the day's provinces and runs into the national
+    laboratory total with no full stop between ("... et de la Tshopo (1) Un
+    total de 450 nouveaux échantillons a été analysé ; 60 ..."), so the last
+    province's segment holds the national pair, and it licenses against the
+    national rate. The province's own bullet in the laboratory section is
+    the reading; the headline is not."""
+    import extract_lab_prose as L
+    got, _ = L.extract(pdf(n))
+    by = {r["province"]: (r["samples"], r["positives"]) for r in got}
+    assert by[province] == want
+
+
+@needs_lab_prose_build
+def test_lab_prose_no_province_holds_the_national_count():
+    """One province cannot account for every confirmed case of a day on
+    which another province also had positives. A province row equal to the
+    day's national confirmed cases on such a day is the national sentence
+    read into a province: on 2026-10-23..25 that put 60, 88 and 96 positives
+    into Tshopo and Haut-Uélé and counted each day twice nationally."""
+    import polars as pl
+    cases_file = ROOT / "data/build/streams/cases_daily_national.tsv"
+    if not cases_file.exists():
+        pytest.skip("cases_daily_national.tsv is not built; run `make streams`")
+    lab = pl.read_csv(LAB_PROSE_BUILD, infer_schema_length=None)
+    cases = pl.read_csv(cases_file, separator="\t", null_values="NA").select(
+        pl.col("window_start").alias("date"),
+        pl.col("cases_national").alias("national"))
+    breadth = lab.group_by("date").agg(
+        (pl.col("positives") > 0).sum().alias("n_positive_provinces"))
+    bad = (lab.join(cases, on="date").join(breadth, on="date")
+           .filter((pl.col("positives") > 0)
+                   & (pl.col("positives") == pl.col("national"))
+                   & (pl.col("n_positive_provinces") >= 2)))
+    assert bad.is_empty(), bad.select("sitrep", "province", "samples",
+                                      "positives", "national").rows()
+
+
 # --------------------------------------------------------------------------
 # The letality check, and the register entry it produced
 # --------------------------------------------------------------------------
