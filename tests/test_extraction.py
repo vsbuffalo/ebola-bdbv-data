@@ -3539,6 +3539,36 @@ def test_care_a_subset_admissions_figure_is_refused_not_guessed():
 
 
 @needs_pdfs
+def test_care_a_private_use_bullet_opens_a_passage():
+    """Word's Symbol-font "•" and Wingdings "▪" reach pdftotext as U+F0B7 and
+    U+F0A7. Sitrep 166 opens its care pillar "Principales actions  Ituri,
+    63 nouvelles admissions" and sitrep 164 "Principales actions  Ituri :
+    59 nouvelles admissions", with no full stop before either, so Ituri opened
+    no passage on either report -- and on sitrep 164 no province did."""
+    itu = _care(166)["Ituri"]
+    assert (itu["census"], itu["census_confirmed"], itu["census_suspect"]) \
+        == (359, 121, 238)
+    assert "census_split=pass" in itu["checks"]
+    assert (itu["admissions"], itu["exits"], itu["exits_deaths_confirmed"]) \
+        == (63, 99, 7)
+    by = _care(164)
+    assert (by["Ituri"]["admissions"], by["Ituri"]["exits"],
+            by["Ituri"]["census"]) == (59, 72, 409)
+    assert (by["Haut-Uélé"]["census"], by["Bas-Uélé"]["census"]) == (38, 38)
+
+
+@needs_pdfs
+def test_care_survivors_in_follow_up_are_not_the_days_recoveries():
+    """Sitrep 165's continuity-of-care section prints "en Ituri, 474 guéris sur
+    700 (67,7 %) sont suivis" -- survivors in follow-up, a numerator over a
+    cohort. Read as a flow it published 474 Ituri recoveries for 2026-10-26,
+    a day whose care bullet prints "88 sorties, dont 14 guérisons"."""
+    itu = _care(165)["Ituri"]
+    assert itu["exits_recovered"] is None
+    assert (itu["admissions"], itu["exits"], itu["census"]) == (94, 88, 412)
+
+
+@needs_pdfs
 def test_care_sitrep_158_keeps_ituri_and_nord_kivu_apart():
     """Sitrep 158 draws the glyphs of four care bullets as one block, which
     reading order puts inside Ituri's bullet -- "Ainsi, 431 patients • • • •
@@ -4061,14 +4091,18 @@ def test_the_confirmed_census_holds_the_observations_the_release_rests_on():
                         separator="\t", infer_schema_length=None)
         counts[slug] = (t.height,
                         t.filter(pl.col("time") > "2026-08-02").height)
-    # 30/16 and 25/18 as of the 2026-10-22 archive: from sitrep 150 every
+    # 31/17 and 26/19 as of the 2026-10-27 archive: from sitrep 150 every
     # province bullet prints its census split in a parenthetical, "363
     # patients (127 confirmés et 236 suspects) sont hospitalisés". Ituri's
     # 2026-10-19 row is sitrep 158's "431 patients sont hospitalisés (193
     # confirmés et 238 suspects)"; sitrep 161 prints Ituri's census with no
     # split ("499 patients sont hospitalisés, soit ..."), so 2026-10-22 has
-    # an Ituri row in the total census and none here.
-    assert counts == {"ituri": (30, 16), "nord_kivu": (25, 18)}
+    # an Ituri row in the total census and none here. Sitreps 162-165 print
+    # no split for either province; sitrep 166 prints both, "359 patients
+    # (121 confirmés et 238 suspects) sont hospitalisés" for Ituri and "523
+    # patients (178 confirmés et 345 suspects) sont pris en charge" for
+    # Nord-Kivu -- the same 178 sitrep 161 printed, read from each page.
+    assert counts == {"ituri": (31, 17), "nord_kivu": (26, 19)}
     # The national file is the whole-response summary sentence, which stopped
     # on the same report as the tile -- so nothing national survives the split.
     nat = pl.read_csv(STREAMS / "care_census_confirmed_national.tsv",
