@@ -2998,6 +2998,58 @@ def test_a_pick_url_serving_different_bytes_still_stops_the_build(
         F.main()
 
 
+def test_a_held_report_the_index_renumbers_takes_the_new_number(
+        tmp_path, monkeypatch):
+    """SitRep 162. INSP uploaded the 23 October report as
+    `SITREP_MVEBDB_163_23_10_2026.pdf`; its front page reads "SitRep
+    N°162/MVE-BDBV/23/10/2026", and registers/sitrep_number_overrides.tsv
+    renumbers it. The archive already held it as `sitrep_163_2026-10-23.pdf`.
+    The refetch matched those bytes and kept the held name whole, so the real
+    163 (24 October) made 163 held twice and 162 held never. The held name
+    keeps its date and takes the index's number."""
+    archive = tmp_path / "pdfs"
+    archive.mkdir()
+    (archive / "sitrep_163_2026-10-23.pdf").write_bytes(b"%PDF-162")
+    (archive / "sitrep_163_2026-10-24.pdf").write_bytes(b"%PDF-163")
+    idx = tmp_path / "index.tsv"
+    with idx.open("w", newline="") as fh:
+        w = _csv.DictWriter(fh, fieldnames=["sitrep", "data_date", "url",
+                                            "pick"], delimiter="\t")
+        w.writeheader()
+        w.writerow({"sitrep": "162", "data_date": "2026-10-23", "pick": "yes",
+                    "url": "https://insp.cd/SITREP_MVEBDB_163_23_10_2026.pdf"})
+        w.writerow({"sitrep": "163", "data_date": "2026-10-24", "pick": "yes",
+                    "url": "https://insp.cd/SitRep_MVEBDB_163_24_10_2026.pdf"})
+
+    def fetch(url, dest):
+        dest.write_bytes(b"%PDF-162")
+        return b"%PDF-162"
+
+    monkeypatch.setattr(F, "fetch", fetch)
+    monkeypatch.setattr(F, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(F, "load_external_sitreps", lambda: {})
+    monkeypatch.setattr(F.urllib.request, "urlopen",
+                        lambda req, timeout=None: _Resp(len(b"%PDF-163")),
+                        raising=False)
+    monkeypatch.setattr(sys, "argv", ["f", "--index", str(idx), "--out",
+                                      str(archive), "--manifest",
+                                      str(tmp_path / "m.tsv")])
+    F.main()                                  # the reconciliation closes
+    assert sorted(p.name for p in archive.glob("*.pdf")) == [
+        "sitrep_162_2026-10-23.pdf", "sitrep_163_2026-10-24.pdf"]
+    assert (archive / "sitrep_162_2026-10-23.pdf").read_bytes() == b"%PDF-162"
+
+
+@needs_pdfs
+def test_sitrep_162_is_filed_under_the_number_its_page_prints():
+    import subprocess
+    page = subprocess.run(
+        ["pdftotext", "-l", "1", str(PDFS / "sitrep_162_2026-10-23.pdf"), "-"],
+        capture_output=True, text=True, check=True).stdout
+    assert "SitRep N°162/MVE-BDBV/23/10/2026" in page
+    assert not (PDFS / "sitrep_163_2026-10-23.pdf").exists()
+
+
 @needs_pdfs
 def test_a_substituted_external_pdf_stops_the_build(tmp_path):
     text = EXTERNAL.read_text().replace(

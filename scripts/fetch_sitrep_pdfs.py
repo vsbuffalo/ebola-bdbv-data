@@ -190,8 +190,28 @@ def main() -> None:
         digest = hashlib.sha256(payload).hexdigest()
         if digest in held and held[digest] != dest:
             dest.unlink(missing_ok=True)
-            print(f"  SitRep {r['sitrep']}: already held as "
-                  f"{held[digest].name} (the index dates it {date})")
+            # THE HELD NAME KEEPS ITS DATE, NOT ITS NUMBER. The date in a held
+            # name is the page's; the number is whatever the index said when
+            # the file arrived, and the index's number can be corrected later
+            # by registers/sitrep_number_overrides.tsv. INSP uploaded the
+            # 23 October report as `..._163_...` (front page: "SitRep
+            # N°162/MVE-BDBV/23/10/2026"); keeping the held name whole left it
+            # filed as 163 beside the real 163, and the reconciliation below
+            # found 162 missing and 163 held twice.
+            keep = held[digest]
+            want = _renumbered(keep.name, int(r["sitrep"]))
+            if want != keep.name:
+                if (out / want).exists():
+                    sys.exit(f"SitRep {r['sitrep']}: held as {keep.name}, "
+                             f"which the index renumbers to {want}, but "
+                             f"{want} already exists. Read both front pages.")
+                print(f"  SitRep {r['sitrep']}: held as {keep.name}, "
+                      f"renamed {want} (the index numbers it {r['sitrep']})")
+                keep = keep.rename(out / want)
+                held[digest] = keep
+            else:
+                print(f"  SitRep {r['sitrep']}: already held as "
+                      f"{keep.name} (the index dates it {date})")
             renamed += 1
             continue
         held[digest] = dest
@@ -246,6 +266,12 @@ def main() -> None:
         mf = (args.manifest if args.manifest.is_absolute()
               else REPO_ROOT / args.manifest)
         _write_manifest(out, want_nums, mf)
+
+
+def _renumbered(name: str, sitrep: int) -> str:
+    """`name` with its report number replaced by `sitrep`, its date kept."""
+    _, _, date = name.split("_", 2)
+    return f"sitrep_{sitrep:03d}_{date}"
 
 
 def _write_manifest(out_dir: Path, want_nums: set[int], manifest: Path) -> None:
