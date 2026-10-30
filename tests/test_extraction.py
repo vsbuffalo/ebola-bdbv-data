@@ -1166,6 +1166,26 @@ def test_lab_prose_the_national_headline_is_not_the_last_named_province(
     assert by[province] == want
 
 
+@needs_pdfs
+def test_lab_prose_the_living_dead_split_is_not_a_pair():
+    """The split of the positives into living and dead is a partition, never
+    a sample count, but its numbers form ratios like any others: sitrep 167's
+    Ituri "40 ... positifs (33 vivants et 7 décès) sur 230 ... (17,4%)" was
+    ambiguous between 40/230 and 7/40 and refused. Sitrep 105's Haut-Uélé
+    ("11 positifs (11 vivants et 0 décès) sur 11 ... 100 %") was read as 0/11
+    off the split, and sitrep 162's Haut-Uélé, whose own counts disagree with
+    its rate ("2 positifs (1 vivants et 1 décès) sur 5 ... 20 %"), as 1/5;
+    both now refuse."""
+    import extract_lab_prose as L
+
+    def by(n):
+        return {r["province"]: (r["samples"], r["positives"])
+                for r in L.extract(pdf(n))[0]}
+    assert by(167)["Ituri"] == (230, 40)
+    assert "Haut-Uélé" not in by(105)
+    assert "Haut-Uélé" not in by(162)
+
+
 @needs_lab_prose_build
 def test_lab_prose_no_province_holds_the_national_count():
     """One province cannot account for every confirmed case of a day on
@@ -4129,25 +4149,37 @@ def test_the_confirmed_census_holds_the_observations_the_release_rests_on():
     -- and it is thin, which is the thing a consumer must see before fitting
     it. Ituri and Nord-Kivu are the two provinces the models pin; the split at
     2 August is where the front-page tile stopped and these files became the
-    only route to the quantity."""
+    only route to the quantity.
+
+    The count is pinned through `PINNED_THROUGH`, not over the whole file.
+    The test guards against rows *disappearing* from the record the releases
+    rest on; a report that prints a new split adds a correct row after that
+    date, and counting it failed the daily `test` gate on 2026-10-27 and
+    2026-10-30 with nothing wrong. Moving the date forward is a deliberate
+    act, done with the rows it admits read against their pages."""
+    PINNED_THROUGH = "2026-10-29"
     counts = {}
     for slug in ("ituri", "nord_kivu"):
         t = pl.read_csv(STREAMS / f"care_census_confirmed_{slug}.tsv",
                         separator="\t", infer_schema_length=None)
+        t = t.filter(pl.col("time") <= PINNED_THROUGH)
         counts[slug] = (t.height,
                         t.filter(pl.col("time") > "2026-08-02").height)
-    # 31/17 and 26/19 as of the 2026-10-27 archive: from sitrep 150 every
-    # province bullet prints its census split in a parenthetical, "363
-    # patients (127 confirmés et 236 suspects) sont hospitalisés". Ituri's
-    # 2026-10-19 row is sitrep 158's "431 patients sont hospitalisés (193
-    # confirmés et 238 suspects)"; sitrep 161 prints Ituri's census with no
-    # split ("499 patients sont hospitalisés, soit ..."), so 2026-10-22 has
-    # an Ituri row in the total census and none here. Sitreps 162-165 print
-    # no split for either province; sitrep 166 prints both, "359 patients
-    # (121 confirmés et 238 suspects) sont hospitalisés" for Ituri and "523
-    # patients (178 confirmés et 345 suspects) sont pris en charge" for
-    # Nord-Kivu -- the same 178 sitrep 161 printed, read from each page.
-    assert counts == {"ituri": (31, 17), "nord_kivu": (26, 19)}
+    # 32/18 and 27/20 through 2026-10-29: from sitrep 150 every province
+    # bullet prints its census split in a parenthetical, "363 patients (127
+    # confirmés et 236 suspects) sont hospitalisés". Ituri's 2026-10-19 row is
+    # sitrep 158's "431 patients sont hospitalisés (193 confirmés et 238
+    # suspects)"; sitrep 161 prints Ituri's census with no split ("499
+    # patients sont hospitalisés, soit ..."), so 2026-10-22 has an Ituri row
+    # in the total census and none here. Sitreps 162-165 print no split for
+    # either province; sitrep 166 prints both, "359 patients (121 confirmés
+    # et 238 suspects) sont hospitalisés" for Ituri and "523 patients (178
+    # confirmés et 345 suspects) sont pris en charge" for Nord-Kivu -- the
+    # same 178 sitrep 161 printed, read from each page. Sitrep 167 prints
+    # Nord-Kivu's alone, "508 patients (171 confirmés et 337 suspects)", and
+    # sitrep 168 Ituri's alone, "422 patients (147 confirmés et 275
+    # suspects)".
+    assert counts == {"ituri": (32, 18), "nord_kivu": (27, 20)}
     # The national file is the whole-response summary sentence, which stopped
     # on the same report as the tile -- so nothing national survives the split.
     nat = pl.read_csv(STREAMS / "care_census_confirmed_national.tsv",

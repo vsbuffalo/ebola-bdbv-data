@@ -93,6 +93,14 @@ LAB_WORD = re.compile(r"[ée]chantillons?|pr[ée]l[èe]vements?", re.I)
 DEATH_SPLIT = re.compile(
     r"\d+\s+d[ée]c[èe]s\s+dont\s+\d+\s+communautaires?\s*"
     r"(?:\(\s*[\d,.]+\s*%\s*\))?", re.I)
+# THE LIVING/DEAD SPLIT OF THE POSITIVES IS THE SAME TRAP: "40 nouveaux
+# résultats positifs (33 vivants et 7 décès) sur 230 ... (positivité :
+# 17,4%)" offers (40, 230) -> 17.39 % and (7, 40) -> 17.5 %, both within
+# tolerance, so sitrep 167's Ituri sentence refused as ambiguous and the
+# day's national total lost 230 samples. The split partitions the positives;
+# neither part is ever a sample count, so it leaves the pool too.
+ALIVE_DEAD = re.compile(
+    r"\(\s*\d+\s+vivants?\s+et\s+\d+\s+d[ée]c[èe]s?\s*\)", re.I)
 FLOW_WORD = re.compile(r"nouveaux?|nouvelles?|derni[èe]res?\s+24|du\s+jour", re.I)
 PCT = re.compile(r"(\d{1,2}(?:[.,]\d{1,2})?)\s*%")
 #: The lookahead also refuses `,\d` and `.\d`: a decimal percentage's integer
@@ -235,7 +243,7 @@ def extract(pdf: Path) -> tuple[list[dict], list[dict]]:
         prov = _norm_prov(m.group(1))
         # Harvest from the segment with death-split clauses removed; the
         # stored sentence stays whole so the refusal is auditable.
-        pool = DEATH_SPLIT.sub(" ", seg)
+        pool = ALIVE_DEAD.sub(" ", DEATH_SPLIT.sub(" ", seg))
         pcts = [float(p.replace(",", ".")) for p in PCT.findall(pool)]
         ints = [int(x) for x in INT.findall(pool)]
         # Flow-ness may be stated once for the whole passage ("Au cours des
