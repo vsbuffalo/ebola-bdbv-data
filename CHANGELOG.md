@@ -38,6 +38,18 @@ same as withdrawn: the older tag stays exactly where it is.
 
 ---
 
+## `data/2026-10-29-r0` — 2026-10-30 — daily update
+
+Cut automatically by `scripts/daily_update.py`: every release gate passed (tests, verdict, export quotes, fresh-clone rebuild).
+
+**New data.** Sitreps 167, 168, data date 2026-10-27 → 2026-10-29: 158 confirmed cases and 66 deaths nationally in windows from the previous data date.
+
+**Fixes merged since the last release** (see each pull request for what moved):
+
+- tests, lab: the census pin counts rows through 2026-10-29, not the whole file, and the living/dead split leaves the laboratory reader's pool -- the pin failed the test gate on 2026-10-27 and 2026-10-30 on correct new rows (sitrep 167 Nord-Kivu 171/337, sitrep 168 Ituri 147/275, both read against the page); sitrep 167's Ituri '40 positifs (33 vivants et 7 décès) sur 230 (17,4%)' refused as ambiguous between 40/230 and 7/40, leaving 28 October's national total at 38/258 against the printed 78/488; the same split had licensed 0/11 for sitrep 105 Haut-Uélé (page: 11/11, 100 %) and 1/5 for sitrep 162 Haut-Uélé (page: 2 of 5 at 20 %, self-contradictory), which now refuse; archive-wide no reading changes, three are added and those two are withdrawn
+
+---
+
 ## `data/2026-10-27-r0` — 2026-10-29 — daily update
 
 Cut automatically by `scripts/daily_update.py`: every release gate passed (tests, verdict, export quotes, fresh-clone rebuild).
