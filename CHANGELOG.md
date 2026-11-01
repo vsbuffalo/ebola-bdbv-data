@@ -38,6 +38,16 @@ same as withdrawn: the older tag stays exactly where it is.
 
 ---
 
+## `data/2026-10-30-r1` — 2026-10-31 — daily update
+
+Cut automatically by `scripts/daily_update.py`: every release gate passed (tests, verdict, export quotes, fresh-clone rebuild).
+
+**Fixes merged since the last release** (see each pull request for what moved):
+
+- backlog: register sitrep 169's Ituri death harmonisation, take the day's count from the table when the banner has none, and label a registered deaths spike on the epi curve -- the report moves Ituri's cumulative deaths from 3,436 to 3,750 by harmonisation on a day it states 32 deaths (23 community, 9 treatment centre), so national deaths moved 346 on 2026-10-30; the substitution read the stated count only from the banner's 24-hour breakdown, printed through sitrep 083, so even a registered batch after that passed through whole; deaths_excluding_backlog now reads 32 nationally and 19 in Ituri that day, 314 excluded, and no other row in any place moves
+
+---
+
 ## `data/2026-10-30-r0` — 2026-10-31 — daily update
 
 Cut automatically by `scripts/daily_update.py`: every release gate passed (tests, verdict, export quotes, fresh-clone rebuild).
