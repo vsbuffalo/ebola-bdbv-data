@@ -806,7 +806,29 @@ def draw_epi_curve(inputs: dict[str, Path], out: Path) -> None:
 
     xs, ys, cut = panel(c_hi, c_lo, cases, "cases_national",
                         "confirmed cases per day")
-    panel(d_hi, d_lo, deaths, "deaths_national", "confirmed deaths per day")
+    dxs, dys, dcut = panel(d_hi, d_lo, deaths, "deaths_national",
+                           "confirmed deaths per day")
+
+    # A DEATHS SPIKE THE SOURCE CALLS A HARMONISATION gets the same honesty as
+    # the cases one. Which day it is comes from the register, never from the
+    # size of the bar: sitrep 169's Ituri harmonisation moved national deaths
+    # by 346 on a day the report states 32, and it drew as an ordinary day.
+    batches = pl.read_csv(inputs["batches"], separator="\t",
+                          comment_prefix="#", infer_schema_length=None)
+    dpeak = max(range(len(dys)), key=lambda i: dys[i])
+    pday = deaths["time"][dpeak].strftime("%Y-%m-%d")
+    hit = batches.filter((pl.col("date") == pday)
+                         & pl.col("quantity").is_in(["deaths", "both"])
+                         & pl.col("places").str.contains("national"))
+    if not hit.is_empty():
+        n = int(hit["dropped_national_deaths"][0])
+        d_lo.annotate(f"a harmonisation added {n} earlier deaths\n"
+                      "at once — not a day's deaths",
+                      xy=(dxs[dpeak] - 0.6, dcut * 0.86), xytext=(-230, 0),
+                      textcoords="offset points", ha="left", va="center",
+                      fontsize=9, color="#7a5200",
+                      arrowprops=dict(arrowstyle="->", color="#b98b00",
+                                      linewidth=1.1, shrinkA=3, shrinkB=3))
 
     peak = max(range(len(ys)), key=lambda i: ys[i])
     c_lo.annotate("one report released a backlog of earlier\n"
@@ -4687,7 +4709,8 @@ FIGURES = {
                     "lock": "external.lock"}),
     "epi_curve": (draw_epi_curve,
                   {"cases": "data/build/streams/cases_daily_national.tsv",
-                   "deaths": "data/build/streams/deaths_daily_national.tsv"}),
+                   "deaths": "data/build/streams/deaths_daily_national.tsv",
+                   "batches": "registers/retrospective_batches.tsv"}),
     "zone_spread": (draw_zone_spread,
                     {"geojson": "data/raw/health_zones.geojson",
                      "zone_table": "data/build/series/zone_table.csv"}),

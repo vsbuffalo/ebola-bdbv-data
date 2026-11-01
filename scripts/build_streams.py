@@ -2811,6 +2811,29 @@ def main() -> None:
             note.select("time", pl.col(f"{stem}_notified_{slug}")
                         .cast(pl.Int64).alias("stated")),
             on="time", how="left")
+        # THE BANNER'S 24-HOUR BREAKDOWN STOPPED AFTER SITREP 083, so a batch
+        # registered on a later day found no stated count and was silently
+        # left at the differenced value: sitrep 169's Ituri harmonisation
+        # (346 deaths moved, 32 stated for the day) passed through whole.
+        # Later reports print the day's deaths in the table instead, split
+        # community / treatment centre, and their sum is the same statement:
+        # "32 décès (23 décès communautaires et 9 intra-CTE)". The banner's
+        # figure still wins where both exist.
+        if stem == "deaths":
+            prov = next((p for p, s in STREAM_PROVINCES.items() if s == slug),
+                        None)
+            day = panel.filter(
+                (pl.col("level") == ("national" if prov is None else "province"))
+                & pl.col("deaths_total").is_not_null())
+            if prov is not None:
+                day = day.filter(pl.col("province") == prov)
+            day = (day.group_by("date")
+                   .agg(pl.col("deaths_total").last().cast(pl.Int64)
+                        .alias("printed"))
+                   .rename({"date": "time"}))
+            j = (j.join(day, on="time", how="left")
+                 .with_columns(pl.coalesce("stated", "printed").alias("stated"))
+                 .drop("printed"))
         dates = {d for d, q, places in batches
                  if q in (stem, "both") and slug in places}
         use = (pl.col("time").is_in(sorted(dates))

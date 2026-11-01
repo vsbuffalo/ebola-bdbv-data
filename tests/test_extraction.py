@@ -4764,6 +4764,22 @@ def test_the_excluding_backlog_family_differs_only_where_the_source_says_so():
 
 
 @needs_pdfs
+def test_a_batch_after_the_banner_era_takes_the_tables_day_count():
+    """The banner printed its 24-hour breakdown only through sitrep 083, and
+    the substitution read its stated count from there alone, so sitrep 169's
+    registered Ituri harmonisation was silently left whole: 346 national
+    deaths on 2026-10-30, where the report states 32 for the day ("32 décès
+    (23 décès communautaires et 9 intra-CTE)") and its note moves Ituri's
+    cumulative from 3,436 to 3,750. The table's day total stands in."""
+    for slug, moved, stated in (("national", 346, 32), ("ituri", 333, 19)):
+        a = _published(STREAMS / f"deaths_daily_{slug}.tsv")
+        b = _published(STREAMS / f"deaths_excluding_backlog_{slug}.tsv")
+        row = lambda d: int(d.filter(pl.col("time") == "2026-10-30")
+                            [f"deaths_{slug}"][0])
+        assert row(a) == moved and row(b) == stated
+
+
+@needs_pdfs
 def test_the_22_july_footnote_scope_excludes_haut_uele():
     """The footnote names Ituri and Nord-Kivu. Haut-Uélé's two readings also
     differ that day, by one case and one death, and the source does not say
@@ -4797,12 +4813,14 @@ def test_the_totals_the_register_and_release_notes_claim_are_real():
     # fetch -- it went 5,912 to 6,067 the day two reports landed -- so a test
     # asserting it fails for the right reason at the worst time, on a release.
     # What must not move is how many records the substitution takes out: that
-    # is two fixed historical batches and a change in it is a real defect.
+    # is fixed historical batches and a change in it is a real defect. Deaths
+    # are 174 (2026-07-22) + 10 (2026-08-02) + 314 (2026-10-30, sitrep 169's
+    # Ituri harmonisation, "le nombre total de décès passe de 3436 à 3750").
     assert got["cases"][0] - got["cases"][1] == 272
-    assert got["deaths"][0] - got["deaths"][1] == 184
+    assert got["deaths"][0] - got["deaths"][1] == 498
     reg = FAMILIES.read_text()
     assert "272 national cases excluded" in reg
-    assert "184 national deaths" in reg
+    assert "498 national deaths" in reg
 
 
 # --------------------------------------------------------------------------
