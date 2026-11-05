@@ -1708,7 +1708,17 @@ def test_the_two_stock_series_never_fall():
         for k in seen:
             if got.get(k) is not None:
                 seen[k].append((p.name, got[k]))
+    # A national death count the next report withdrew is not a fall of the
+    # stock: sitrep 169's 5,372 is followed by 170's 5,103, which continues
+    # from 168's 5,026. The register names it; anything else that falls fails.
+    w = pl.read_csv(ROOT / "registers/withdrawn_values.tsv", separator="\t",
+                    comment_prefix="#", infer_schema_length=0)
+    withdrawn = {f"sitrep_{int(r['sitrep']):03d}"
+                 for r in w.iter_rows(named=True)
+                 if r["quantity"] == "cum_deaths" and "national" in r["places"]}
     for k, series in seen.items():
+        if k == "cumul_deaths":
+            series = [x for x in series if x[0][:10] not in withdrawn]
         falls = [(a, b) for a, b in zip(series, series[1:]) if b[1] < a[1]]
         assert not falls, f"{k} falls at {falls}"
     # EVERY report yields both, and the exceptions are named rather than
@@ -2069,11 +2079,12 @@ def _synthetic_panel(path, ituri_cases, ituri_deaths):
 
 
 def _run_build(monkeypatch, panel, out_dir, *extra):
-    """`--window-merges` is pinned to a path that never exists unless a test
-    passes its own via `extra`, so a synthetic panel cannot collide with a
-    real register entry that happens to share a stream and column name --
-    `merge_windows` fails the build on any named row it cannot find, and the
-    real register's rows are dated well outside anything a synthetic panel
+    """`--window-merges` and `--withdrawn` are pinned to paths that never
+    exist unless a test passes its own via `extra`, so a synthetic panel
+    cannot collide with a real register entry that happens to share a stream
+    and column name -- `merge_windows` fails the build on any named row it
+    cannot find, a withdrawal that removes nothing stops it too, and the real
+    registers' rows are dated well outside anything a synthetic panel
     generates."""
     monkeypatch.chdir(ROOT)
     monkeypatch.setattr(sys, "argv", [
@@ -2082,6 +2093,7 @@ def _run_build(monkeypatch, panel, out_dir, *extra):
         "--population", str(ROOT / "data/raw/zone_population.csv"),
         "--out-dir", str(out_dir),
         "--window-merges", str(out_dir.parent / "no_window_merges.tsv"),
+        "--withdrawn", str(out_dir.parent / "no_withdrawn_values.tsv"),
         *extra])
     BS.main()
 
@@ -3965,7 +3977,7 @@ def test_every_hole_in_the_outcome_composition_carries_a_reason():
     status = pl.read_csv(OUT_BUILD / "zone_table_status.csv",
                          infer_schema_length=None)
     gaps = P.outcome_gaps(P.outcome_ledger(zone, banner), status)
-    assert len(gaps) == 10
+    assert len(gaps) == 11
     assert all(g["why"].strip() for g in gaps)
     assert {(g["lo"].isoformat(), g["why"].replace("\n", " ")) for g in gaps} >= {
         ("2026-07-28", "no report published"),
@@ -3977,7 +3989,9 @@ def test_every_hole_in_the_outcome_composition_carries_a_reason():
         ("2026-10-03", "no report published"),
         # 143-147 print the whole table; it is the recovery tile beside it
         # that a highlight bullet makes unreadable
-        ("2026-10-04", "recovery tile not read")}
+        ("2026-10-04", "recovery tile not read"),
+        # sitrep 172 is not in INSP's listing; 171 and 173 are
+        ("2026-11-02", "no report published")}
 
 
 @needs_build
@@ -4764,19 +4778,23 @@ def test_the_excluding_backlog_family_differs_only_where_the_source_says_so():
 
 
 @needs_pdfs
-def test_a_batch_after_the_banner_era_takes_the_tables_day_count():
-    """The banner printed its 24-hour breakdown only through sitrep 083, and
-    the substitution read its stated count from there alone, so sitrep 169's
-    registered Ituri harmonisation was silently left whole: 346 national
-    deaths on 2026-10-30, where the report states 32 for the day ("32 décès
-    (23 décès communautaires et 9 intra-CTE)") and its note moves Ituri's
-    cumulative from 3,436 to 3,750. The table's day total stands in."""
-    for slug, moved, stated in (("national", 346, 32), ("ituri", 333, 19)):
-        a = _published(STREAMS / f"deaths_daily_{slug}.tsv")
-        b = _published(STREAMS / f"deaths_excluding_backlog_{slug}.tsv")
-        row = lambda d: int(d.filter(pl.col("time") == "2026-10-30")
-                            [f"deaths_{slug}"][0])
-        assert row(a) == moved and row(b) == stated
+def test_a_withdrawn_cumulative_widens_the_next_row():
+    """Sitrep 169 printed Ituri's harmonised deaths (3,769; national 5,372)
+    and sitrep 170 continued from sitrep 168's base as though it had not
+    (3,483; 5,103). With 169's value withdrawn there is no 2026-10-30 deaths
+    row in either place, and the 2026-10-31 row covers both days and carries
+    what the continuing series moved: 3,483 - 3,436 = 47 in Ituri and
+    5,103 - 5,026 = 77 nationally. Cases are untouched on both days."""
+    for slug, moved in (("ituri", 47), ("national", 77)):
+        for fam in ("daily", "excluding_backlog"):
+            d = _published(STREAMS / f"deaths_{fam}_{slug}.tsv")
+            assert "2026-10-30" not in d["time"].to_list()
+            r = d.filter(pl.col("time") == "2026-10-31")
+            assert int(r[f"deaths_{slug}"][0]) == moved
+            assert int(r["days_covered"][0]) == 2
+            assert int(r["n_report_days"][0]) == 2
+        c = _published(STREAMS / f"cases_daily_{slug}.tsv")
+        assert {"2026-10-30", "2026-10-31"} <= set(c["time"].to_list())
 
 
 @needs_pdfs
@@ -4814,13 +4832,14 @@ def test_the_totals_the_register_and_release_notes_claim_are_real():
     # asserting it fails for the right reason at the worst time, on a release.
     # What must not move is how many records the substitution takes out: that
     # is fixed historical batches and a change in it is a real defect. Deaths
-    # are 174 (2026-07-22) + 10 (2026-08-02) + 314 (2026-10-30, sitrep 169's
-    # Ituri harmonisation, "le nombre total de décès passe de 3436 à 3750").
+    # are 174 (2026-07-22) + 10 (2026-08-02). Sitrep 169's Ituri
+    # harmonisation is not among them: sitrep 170 withdrew it, so it is in
+    # `withdrawn_values.tsv` and never reaches either family.
     assert got["cases"][0] - got["cases"][1] == 272
-    assert got["deaths"][0] - got["deaths"][1] == 498
+    assert got["deaths"][0] - got["deaths"][1] == 184
     reg = FAMILIES.read_text()
     assert "272 national cases excluded" in reg
-    assert "498 national deaths" in reg
+    assert "184 national deaths" in reg
 
 
 # --------------------------------------------------------------------------
