@@ -1054,6 +1054,72 @@ def load_window_merges(path: Path) -> dict[tuple[str, str], set[str]]:
     return out
 
 
+WITHDRAWN_REGISTER = "registers/withdrawn_values.tsv"
+
+
+def load_withdrawals(path: Path, manifest: Path) -> list[dict]:
+    """Printed cumulatives a later report withdrew, one dict per entry with
+    `places` split into a set. Each entry's hash prefix is checked against the
+    held PDF, so a revised document comes back for a fresh judgement rather
+    than inheriting this one; which values these are and why is
+    `registers/withdrawn_values.tsv` itself.
+    """
+    if not path.exists():
+        return []
+    t = pl.read_csv(path, separator="\t", comment_prefix="#",
+                    infer_schema_length=0)
+    held = {}
+    if manifest.exists():
+        m = pl.read_csv(manifest, separator="\t", infer_schema_length=0)
+        held = dict(zip(m["file"].to_list(), m["sha256"].to_list()))
+    known = {"national", *STREAM_PROVINCES.values()}
+    out = []
+    for r in t.iter_rows(named=True):
+        pdf = f"sitrep_{int(r['sitrep']):03d}_{r['date']}.pdf"
+        if not held.get(pdf, "").startswith(r["sha256_16"]):
+            sys.exit(f"{path}: sitrep {r['sitrep']} is held as "
+                     f"{held.get(pdf, 'nothing')}, not {r['sha256_16']}... -- "
+                     "the document changed, so the withdrawal needs a fresh "
+                     "reading")
+        if r["quantity"] not in ("cum_cases", "cum_deaths"):
+            sys.exit(f"{path}: sitrep {r['sitrep']} names quantity "
+                     f"{r['quantity']!r}, which is not a cumulative")
+        places = {p.strip() for p in r["places"].split(",")}
+        if unknown := places - known:
+            sys.exit(f"{path}: sitrep {r['sitrep']} names places that no "
+                     f"stream covers: {sorted(unknown)}")
+        out.append({**r, "places": places})
+    return out
+
+
+def withdraw(d: pl.DataFrame | None, w: dict, *,
+             national_col: str | None = None) -> tuple[pl.DataFrame | None, int]:
+    """`d` with the entry's quantity nulled on its date for its places, and
+    how many printed values that removed. A frame with a `level` column is
+    matched by province (zone, unassigned and province rows) and by the
+    national level; the front-page tile has no level and names its national
+    column through `national_col`."""
+    col = national_col or w["quantity"]
+    if d is None or col not in d.columns:
+        return d, 0
+    on_day = pl.col("date") == w["date"]
+    if national_col is not None:
+        hit = on_day if "national" in w["places"] else pl.lit(False)
+    else:
+        provs = [p for p, s in STREAM_PROVINCES.items() if s in w["places"]]
+        # The provincial summary prints one row per province and names it in
+        # `zone_reported`; only the zone table carries a `province` column.
+        where = "province" if "province" in d.columns else "zone_reported"
+        hit = on_day & (
+            (pl.col(where).is_in(provs)
+             & pl.col("level").is_in(["zone", "unassigned", "province"]))
+            | ((pl.col("level") == "national")
+               & pl.lit("national" in w["places"])))
+    n = d.filter(hit & pl.col(col).is_not_null()).height
+    return d.with_columns(pl.when(hit).then(None).otherwise(pl.col(col))
+                          .alias(col)), n
+
+
 def stream_facts(path: Path) -> dict:
     """What a published file says about itself: how many rows, how many of
     them carry an observation, which `time` values it spans, and which of its
@@ -2079,6 +2145,15 @@ def main() -> None:
                     help="the register of daily rows deleted rather than "
                          "published as a clamped zero, so the following "
                          "row's window widens to span the merged report days")
+    ap.add_argument("--withdrawn", type=Path,
+                    default=ROOT / WITHDRAWN_REGISTER,
+                    help="the register of printed cumulatives a later report "
+                         "withdrew; each is treated as unobserved, so the "
+                         "next report's daily row spans both days")
+    ap.add_argument("--manifest", type=Path,
+                    default=ROOT / "data/raw/sitrep_pdfs.manifest.tsv",
+                    help="the PDF manifest, against which each withdrawal's "
+                         "hash prefix is checked")
     ap.add_argument("--families", type=Path, default=ROOT / FAMILY_REGISTER,
                     help="the register of what each observation family "
                          "measures; a stream this run writes whose family is "
@@ -2151,6 +2226,29 @@ def main() -> None:
             if args.care and args.care.exists() else None)
     notified = (pl.read_csv(args.notified, infer_schema_length=None)
                 if args.notified and args.notified.exists() else None)
+    # A PRINTED CUMULATIVE A LATER REPORT WITHDREW is unobserved, in every
+    # route that reads it, before anything is differenced. Sitrep 169 printed
+    # Ituri's harmonised deaths (3,769) and sitrep 170 continued from 168's
+    # base as though it had not (3,483), so differencing all three opened a
+    # deficit of 286 that no later row could pay off. With 169's value
+    # removed, 170's row covers both days and carries what the source's
+    # continuing series moved.
+    #: (place slug, quantity) -> the report dates withdrawn for it, so a
+    #: daily row can say how many report days its window absorbed.
+    withdrawn_on: dict[tuple[str, str], set[dt.date]] = {}
+    for w in load_withdrawals(args.withdrawn, args.manifest):
+        panel, a = withdraw(panel, w)
+        summary, b = withdraw(summary, w)
+        prose, c = withdraw(prose, w)
+        banner, e = withdraw(banner, w,
+                             national_col=BANNER_NATIONAL.get(w["quantity"]))
+        if a + b + c + e == 0:
+            sys.exit(f"{args.withdrawn}: sitrep {w['sitrep']} withdraws "
+                     f"{w['quantity']} for {sorted(w['places'])}, but no route "
+                     "printed one -- the entry no longer describes this build")
+        for place in w["places"]:
+            withdrawn_on.setdefault((place, w["quantity"]), set()).add(
+                dt.date.fromisoformat(w["date"]))
     #: (date, quantity, place slugs) per declared retrospective batch. The
     #: place scope is the SOURCE's scope, not wherever the numbers differ: the
     #: 22 July footnote names Ituri and Nord-Kivu, and Haut-Uélé's readings
@@ -2608,13 +2706,24 @@ def main() -> None:
     # here and not in the weekly file: a week whose net is already
     # non-negative needs no correction.
     def emit_daily(name: str, obs: str, cum: pl.DataFrame, reps: pl.Series,
-                   province: str) -> None:
+                   province: str, col: str) -> None:
         d = daily_increments(cum, reps)
         if d.is_empty():
             return
         d = d.with_columns(daily_flags(d["date"], caveat, exceptions, province))
         d = carried(d, name, obs, time_col="date", flags=d["flags"].to_list())
         d = merge_windows(d, name, obs, window_merges)
+        # A withdrawn report day widens the next row's window exactly as a
+        # merged row does: two report days the source published on now feed
+        # one row, so it counts toward `n_report_days` the same way.
+        gone = withdrawn_on.get(
+            (STREAM_PROVINCES.get(province, "national"), col), set())
+        if gone:
+            kept = d["date"].to_list()
+            d = d.with_columns(pl.col("n_merged") + pl.Series(
+                [sum(1 for x in gone if prev < x < cur)
+                 for prev, cur in zip([kept[0]] + kept[:-1], kept)],
+                dtype=pl.Int64))
         emitted = int(d["count"].sum())
         delta = int(cum.filter(pl.col("date").is_in(reps.to_list()))["cum"][-1]
                     - cum.filter(pl.col("date").is_in(reps.to_list()))["cum"][0])
@@ -2658,13 +2767,14 @@ def main() -> None:
                                  & pl.col("level").is_in(["zone", "unassigned"])
                                  & pl.col(col).is_not_null())
                     .select(pl.col("date").str.to_date()).unique()["date"])
-            emit_daily(f"{stem}_daily_{slug}", f"{stem}_{slug}", cum, reps, prov)
+            emit_daily(f"{stem}_daily_{slug}", f"{stem}_{slug}", cum, reps,
+                       prov, col)
     for col, stem in (("cum_cases", "cases"), ("cum_deaths", "deaths")):
         printed = national_printed(panel, summary, prose, col, banner)
         cum = national_cumulative_grid(printed)
         if not cum.is_empty():
             emit_daily(f"{stem}_daily_national", f"{stem}_national", cum,
-                       printed["date"], "national")
+                       printed["date"], "national", col)
 
     # ------------------------------------------------------------------
     # The day's own notification count, published beside the cumulative's
@@ -2812,13 +2922,12 @@ def main() -> None:
                         .cast(pl.Int64).alias("stated")),
             on="time", how="left")
         # THE BANNER'S 24-HOUR BREAKDOWN STOPPED AFTER SITREP 083, so a batch
-        # registered on a later day found no stated count and was silently
-        # left at the differenced value: sitrep 169's Ituri harmonisation
-        # (346 deaths moved, 32 stated for the day) passed through whole.
-        # Later reports print the day's deaths in the table instead, split
-        # community / treatment centre, and their sum is the same statement:
-        # "32 décès (23 décès communautaires et 9 intra-CTE)". The banner's
-        # figure still wins where both exist.
+        # registered on a later day would find no stated count and be
+        # silently left at the differenced value. Later reports print the
+        # day's deaths in the table instead, split community / treatment
+        # centre, and their sum is the same statement: "32 décès (23 décès
+        # communautaires et 9 intra-CTE)". The banner's figure still wins
+        # where both exist.
         if stem == "deaths":
             prov = next((p for p, s in STREAM_PROVINCES.items() if s == slug),
                         None)

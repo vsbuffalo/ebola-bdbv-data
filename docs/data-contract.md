@@ -38,6 +38,13 @@ a nonzero unattributed term is a finding.
   Which days those are is `registers/retrospective_batches.tsv`, quoting the
   source.
 
+A cumulative that a later report silently takes back is a different case: the
+following reports continue from the value before it, as though it had never been
+printed. Those values are listed in `registers/withdrawn_values.tsv` and are not
+used at all, so the next report's daily row covers both days (`days_covered` 2,
+`n_report_days` 2) in every family. Sitrep 169's Ituri death harmonisation
+(3,769, against 3,483 in sitrep 170) is the one case so far.
+
 They measure the same events three ways: fit one. The same caution applies to
 recoveries, which appear in three places in the report, one of which ends early;
 see the `care_exits_recovered` and `cumul_recovered` entries in the dictionary.
