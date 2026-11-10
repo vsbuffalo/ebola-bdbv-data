@@ -1,0 +1,44 @@
+# Printed cumulative values that a LATER report withdraws without saying so.
+#
+# What an entry asserts. On this report the source printed a cumulative for
+# these places that the following reports do not build on: they continue
+# from the value before it, adding their own day's counts, as though this
+# report's value had never been printed. The entry is a reading of the
+# reports' arithmetic, quoted below, and it names the report whose numbers
+# show the withdrawal.
+#
+# What it does. `build_streams.py` treats the named quantity as unobserved for
+# the named places on this report date, in every route that reads it (the
+# zone table, the provincial summary, the prose, the front-page tile). The
+# daily row for that date is then absent rather than a clamped zero, so the
+# next report's row covers both days, and `n_report_days` says it absorbed
+# one. The weekly streams forward-fill across the date as they do for any
+# report that does not print the quantity. Nothing is guessed: the withdrawn
+# value is not replaced by any number, it is simply not used.
+#
+# Why not the other registers. `retrospective_batches.tsv` says a movement
+# holds records belonging to earlier days; here the movement was reversed by
+# the next report, so the records are not back-dated, they are withdrawn.
+# `rejected_routes.tsv` says a route misread a document; here every route
+# reads the page correctly and the page itself is what the source took back.
+# `window_merged_rows.tsv` deletes a clamped-zero row after differencing;
+# here the value is removed before differencing, so no deficit opens at all.
+#
+# Each entry is checked against the build: the SHA-256 prefix must match the
+# held PDF (a revised document returns for a fresh judgement), and the entry
+# must remove at least one printed value (an entry that removes nothing is
+# stale and stops the build).
+#
+# COLUMNS
+#   sitrep        report number whose value is withdrawn
+#   date          its data date
+#   sha256_16     first 16 hex characters of that PDF's SHA-256
+#   quantity      the extraction's value column (cum_cases or cum_deaths)
+#   places        comma-separated stream slugs; a province slug covers its
+#                 zone, unassigned and province rows, `national` the national
+#                 rows and the front-page tile
+#   withdrawn_by  the report(s) whose numbers continue from the earlier base
+#   verified_by   who decided, and when
+#   note          the arithmetic and the source's words
+sitrep	date	sha256_16	quantity	places	withdrawn_by	verified_by	note
+169	2026-10-30	8e2cd47248423d71	cum_deaths	ituri,national	170,171,173	Vince Buffalo, 2026-11-05	Sitrep 169 (faits saillants): "le nombre total de décès passe de 3436 à 3750 ce qui ramène le total général des décès à 5 372"; its Tableau 1 prints Ituri 3 769 and national 5 372. Sitrep 170 prints Ituri 3 483 and national 5 103 with no explanation: 168's 3 436 + 19 (169's day) + 28 (170's day) = 3 483, and 5 026 + 32 + 45 = 5 103, and each of the 28 Ituri zones is likewise 168 plus the two days' flows. Sitrep 171 continues from that base (Ituri 3 483 + 9 = 3 492; national 5 126) and sitrep 173 too (Ituri 3 532; national 5 198). The footnote under Tableau 2 still says the harmonisation took place, so INSP has not said which base is authoritative. Ituri's zone case counts also return to 168's distribution in 170 (Rwampara 1 267 in 169, 1 203 in 170) but no zone stream is published and the province case totals agree (7 346, 7 380, 7 412), so only deaths are listed.
