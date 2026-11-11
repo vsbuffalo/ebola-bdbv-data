@@ -20,6 +20,12 @@ be reconstructed by guesswork:
 Reading the drawn rules removes all three. A cell's row and column are given,
 not inferred; a tall cell is one cell; an empty cell is empty.
 
+WHEN THE RULES STOP
+A table can rule its heading and then print its rows as bare text in the same
+columns (the zone table from sitrep 177). The columns are still the rules';
+only the rows are then taken from the printed lines, under tests strict enough
+that a caption or a paragraph never qualifies (`_continue_unruled`).
+
 WHAT THIS MODULE KNOWS
 Geometry and nothing else -- no French, no epidemiology, no report vocabulary.
 It answers "what tables are on this page, and what is in cell (i, j)". Choosing
@@ -789,6 +795,284 @@ def tables(page, *, min_cols: int = MIN_COLS, min_rows: int = MIN_ROWS,
                          rules=tuple(comp)))
 
     out.sort(key=lambda t: (t.ys[0], t.xs[0]))
+    return _continue_unruled(out, words)
+
+
+#: How far apart two printed lines may be and still be consecutive rows of one
+#: table, measured top to top -- and how far the first such line may sit from
+#: the ruled edge it continues. Rows here are 10-12 pt apart; a wrapped name
+#: adds one line inside a row; the space Word leaves after a table is larger.
+UNRULED_PITCH = 16.0
+
+#: How far a word may overhang its column's edge and still be that column's.
+CELL_SLACK = 2.0
+
+#: Marks a data cell prints for "not reported" or "not applicable". Geometry
+#: needs only to know they are not running text.
+UNREPORTED = {"NA", "ND", "N/A", "N/D", "-", "\u2013", "\u2014", "*"}
+
+
+def _lines(words: list[dict]) -> list[list[dict]]:
+    """Words grouped into printed lines by their tops, top to bottom."""
+    out: list[list[dict]] = []
+    for w in sorted(words, key=lambda w: (w["top"], w["x0"])):
+        if out and w["top"] - out[-1][0]["top"] <= LINE_TOL:
+            out[-1].append(w)
+        else:
+            out.append([w])
+    return out
+
+
+def _continue_unruled(tabs: list[Table], words: list[dict]) -> list[Table]:
+    """Rows a table prints beyond its last drawn rule, read from the text lines.
+
+    A TABLE CAN STOP DRAWING ITS RULES AND KEEP PRINTING ROWS. From sitrep 177
+    the zone table is restyled without gridlines: its heading and first rows
+    are ruled, every row after them is bare text set in the same columns, and
+    the shaded province rows on the next page form small ruled islands in the
+    bare text. Read by rules alone, the ruled rows were kept and everything
+    between them was lost, or -- where a lost row fell inside an island's
+    bounds -- fused into its neighbour: three health zones read as one row of
+    1,269,180 cases.
+
+    The rules still say where the COLUMNS are, so only the rows are taken from
+    the text. A printed line continues a table when it sits within one pitch
+    of the table's ruled edge or of a line already taken, every word on it
+    lies within the table's columns, and it prints a number in a column other
+    than the first -- which is what keeps a caption above or a paragraph below
+    out. A line printing only in the first column is a name too long for it,
+    and joins the adjacent value line whose first column is empty, as one
+    tall cell would. Each line becomes one row; columns come from the table.
+
+    Islands the text has rejoined into one block are then one table again:
+    two tables on a page with the same column edges whose rows now meet are
+    merged.
+
+    Nothing changes on a page whose tables are fully ruled: the words beside
+    such a table are not inside its columns, or carry no number, or are
+    already its cells.
+    """
+    if not tabs:
+        return tabs
+    def inside(w: dict, t: Table) -> bool:
+        mx, my = (w["x0"] + w["x1"]) / 2, (w["top"] + w["bottom"]) / 2
+        return (t.xs[0] - SNAP_X <= mx <= t.xs[-1] + SNAP_X
+                and t.ys[0] - SNAP_Y <= my <= t.ys[-1] + SNAP_Y)
+    free = [w for w in words if not any(inside(w, t) for t in tabs)]
+    lines = _lines(free)
+    taken: set[int] = set()
+    grown: list[tuple[Table, bool]] = []
+
+    for t in tabs:
+        xs = list(t.xs)
+
+        def is_value(k: int) -> bool:
+            return _is_value(lines[k], xs)
+
+        def is_name(k: int) -> bool:
+            return _is_name(lines[k], xs)
+
+        def walk(start: int, step: int, edge: float) -> list[int]:
+            got: list[int] = []
+            k, ref = start, edge
+            while 0 <= k < len(lines) and k not in taken:
+                top = lines[k][0]["top"]
+                if abs(top - ref) > UNRULED_PITCH:
+                    break
+                if is_value(k):
+                    got.append(k)
+                elif is_name(k) and 0 <= k + step < len(lines) and is_value(k + step) \
+                        and abs(lines[k + step][0]["top"] - top) <= UNRULED_PITCH:
+                    got.append(k)
+                elif is_name(k) and got and is_value(got[-1]):
+                    got.append(k)
+                else:
+                    break
+                ref = top
+                k += step
+            return got
+
+        below = next((k for k, l in enumerate(lines) if l[0]["top"] > t.ys[-1]), None)
+        above = max((k for k, l in enumerate(lines) if l[0]["bottom"] < t.ys[0]),
+                    default=None)
+        down = walk(below, 1, t.ys[-1]) if below is not None else []
+        up = walk(above, -1, t.ys[0]) if above is not None else []
+        if not down and not up:
+            grown.append((t, False))
+            continue
+        taken.update(down + up)
+        grown.append((_with_lines(t, sorted(up), down, lines), True))
+
+    return [_split_fused(t, words) for t, _ in _merge_meeting(grown)]
+
+
+def _cols(line: list[dict], xs: list[float]) -> list[int] | None:
+    """Each word's column, or None if any word crosses a column edge.
+
+    Running text crosses the edges; a table's cells do not.
+    """
+    js = []
+    for w in line:
+        j = _bucket(xs, (w["x0"] + w["x1"]) / 2, SNAP_X)
+        if (j is None or w["x0"] < xs[j] - CELL_SLACK
+                or w["x1"] > xs[j + 1] + CELL_SLACK):
+            return None
+        js.append(j)
+    return js
+
+
+def _is_value(line: list[dict], xs: list[float]) -> bool:
+    """A data row: past the first column nothing but numbers and not-reported
+    marks, and at least two numbers -- not a caption, and not a sentence that
+    happens to contain a date."""
+    js = _cols(line, xs)
+    if js is None:
+        return False
+    rest = [w["text"] for w, j in zip(line, js) if j > 0]
+    return (sum(_numeric(t) for t in rest) >= 2
+            and all(_numeric(t) or t in UNREPORTED for t in rest))
+
+
+def _is_name(line: list[dict], xs: list[float]) -> bool:
+    """A label too long for its column, wrapped onto a line of its own."""
+    js = _cols(line, xs)
+    return js is not None and all(j == 0 for j in js) and len(line) <= 3
+
+
+def _split_fused(t: Table, words: list[dict]) -> Table:
+    """`t` with each row that holds several printed data lines split into one
+    row per line.
+
+    A shaded province row is drawn as a small ruled box, and on a page that
+    rules nothing else the box's extent can take in the bare rows printed
+    beside it as a single row -- sitrep 178's `Wapinda 5 1` and `Yakoma 4 0`
+    were read as one zone `Wapinda Yakoma` with 54 cases, because a space is
+    this source's thousands separator.
+
+    Only a row band made of data lines alone is split. A band that also holds
+    a name-only line is one tall row whose label wrapped (sitrep 080's
+    `Boma` / `13 4` / `Mangbetu`), and is left as the rules drew it.
+    """
+    xs = list(t.xs)
+    ys = list(t.ys)
+    new_ys: list[float] = [ys[0]]
+    for i in range(t.nrows):
+        band = [w for w in words
+                if t.xs[0] - SNAP_X <= (w["x0"] + w["x1"]) / 2 <= t.xs[-1] + SNAP_X
+                and ys[i] <= (w["top"] + w["bottom"]) / 2 < ys[i + 1]]
+        lines = _lines(band)
+        # Only a band of data lines and nothing else is fused rows. A band
+        # that also holds a name-only line is one tall row whose label
+        # wrapped, and splitting it would cut the name from its values.
+        vals = lines if all(_is_value(l, xs) for l in lines) else []
+        for a, b in zip(vals, vals[1:]):
+            new_ys.append((max(w["bottom"] for w in a) + min(w["top"] for w in b)) / 2)
+        new_ys.append(ys[i + 1])
+    if len(new_ys) == len(ys):
+        return t
+    cells: dict[tuple[int, int], list[tuple[float, float, str]]] = {}
+    for w in words:
+        mx, my = (w["x0"] + w["x1"]) / 2, (w["top"] + w["bottom"]) / 2
+        if not (xs[0] - SNAP_X <= mx <= xs[-1] + SNAP_X
+                and new_ys[0] <= my < new_ys[-1]):
+            continue
+        i, j = _bucket(new_ys, my, 0.0), _bucket(xs, mx, SNAP_X)
+        if i is None or j is None:
+            continue
+        cells.setdefault((i, j), []).append((w["top"], w["x0"], w["text"]))
+    return Table(t.page, t.xs, tuple(new_ys),
+                 {k: _join(v) for k, v in cells.items()}, rules=t.rules)
+
+
+def _with_lines(t: Table, up: list[int], down: list[int],
+                lines: list[list[dict]]) -> Table:
+    """`t` with the printed lines `up` (above it) and `down` (below) as rows.
+
+    A first-column-only line is part of the row of the value line beside it
+    whose first column is empty, so the two print as one tall cell would.
+    """
+    xs = list(t.xs)
+
+    def col(w: dict) -> int | None:
+        return _bucket(xs, (w["x0"] + w["x1"]) / 2, SNAP_X)
+
+    def rows_of(ks: list[int]) -> list[list[dict]]:
+        # Each group is one row: a value line plus any name-only lines that
+        # wrap above or below it, joined only where its own first cell is empty.
+        groups: list[list[dict]] = []
+        open_name: list[bool] = []      # the value line printed no name
+        pending: list[dict] = []
+        for n, k in enumerate(ks):
+            line = lines[k]
+            if all(col(w) == 0 for w in line):
+                nxt = lines[ks[n + 1]] if n + 1 < len(ks) else None
+                if nxt is not None and not any(col(w) == 0 for w in nxt):
+                    pending.extend(line)            # wraps above its values
+                elif groups and open_name[-1]:
+                    groups[-1].extend(line)         # wraps below its values
+                    open_name[-1] = False
+                else:
+                    groups.append(line)             # a label with no values
+                    open_name.append(False)
+                continue
+            open_name.append(not any(col(w) == 0 for w in line))
+            groups.append(pending + line)
+            pending = []
+        if pending:
+            groups.append(pending)
+            open_name.append(False)
+        return groups
+
+    def as_rows(groups: list[list[dict]]) -> tuple[list[float], dict]:
+        bounds = [min(w["top"] for w in g) - 1.0 for g in groups]
+        bounds.append(max(w["bottom"] for w in groups[-1]) + 1.0)
+        cells: dict[tuple[int, int], list[tuple[float, float, str]]] = {}
+        for i, g in enumerate(groups):
+            for w in g:
+                j = _bucket(xs, (w["x0"] + w["x1"]) / 2, SNAP_X)
+                cells.setdefault((i, j), []).append((w["top"], w["x0"], w["text"]))
+        return bounds, cells
+
+    ys = list(t.ys)
+    cells = dict(t.cells)
+    if up:
+        b, c = as_rows(rows_of(up))
+        b[-1] = min(b[-1], ys[0])
+        n = len(b) - 1
+        cells = {(i + n, j): v for (i, j), v in cells.items()}
+        cells.update({k: _join(v) for k, v in c.items()})
+        ys = b[:-1] + ys
+    if down:
+        b, c = as_rows(rows_of(down))
+        n = len(ys) - 1
+        cells.update({(i + n, j): _join(v) for (i, j), v in c.items()})
+        ys = ys + b[1:]
+    return Table(t.page, t.xs, tuple(ys), cells, rules=t.rules)
+
+
+def _merge_meeting(tabs: list[tuple[Table, bool]]) -> list[tuple[Table, bool]]:
+    """Tables on one page with the same column edges whose rows now meet, as one.
+
+    Only where unruled lines were taken into at least one of the two: two fully
+    ruled tables that happen to share edges stay exactly as the rules drew them.
+    """
+    out: list[tuple[Table, bool]] = []
+    for t, grew in sorted(tabs, key=lambda p: (p[0].ys[0], p[0].xs[0])):
+        if out:
+            prev, pgrew = out[-1]
+            if ((grew or pgrew) and len(prev.xs) == len(t.xs)
+                    and all(abs(a - b) <= SNAP_X for a, b in zip(prev.xs, t.xs))
+                    and -SNAP_Y <= t.ys[0] - prev.ys[-1] <= UNRULED_PITCH):
+                # The band between them, if any, is a row with no ink.
+                ys = (prev.ys + t.ys[1:] if abs(t.ys[0] - prev.ys[-1]) <= SNAP_Y
+                      else prev.ys + t.ys)
+                n = len(ys) - len(t.ys)
+                cells = dict(prev.cells)
+                cells.update({(i + n, j): v for (i, j), v in t.cells.items()})
+                out[-1] = (Table(prev.page, prev.xs, ys, cells,
+                                 rules=prev.rules + t.rules), True)
+                continue
+        out.append((t, grew))
     return out
 
 
