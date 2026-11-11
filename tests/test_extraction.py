@@ -921,6 +921,26 @@ def test_two_rows_with_no_rule_between_them_do_not_become_one_number(n):
 
 
 @needs_pdfs
+@pytest.mark.parametrize("n", [177, 178])
+def test_a_table_printed_without_gridlines_is_read_from_its_lines(n):
+    """From sitrep 177 the zone table rules only its heading, its first rows
+    and the shaded province rows; every other row is bare text in the same
+    columns. Read by rules alone, the bare rows were lost or fused into the
+    ruled box beside them -- Pawa, Rungu and Wamba as one zone of 1,269,180
+    cases, Wapinda 5 and Yakoma 4 as one zone of 54. Every zone is now its own
+    row, a name wrapped over two lines is one name, and the table closes on
+    the national total the page prints."""
+    rows, _ = E.extract(pdf(n))
+    by = {r["zone_reported"]: r for r in rows}
+    assert not [k for k in by if " " in k and k.split()[0] in ("Pawa", "Wapinda")]
+    assert (by["Wapinda"]["cum_cases"], by["Yakoma"]["cum_cases"]) == (5, 4)
+    assert {"Boma Mangbetu", "Makiso-Kisangani", "Wanie-Rukula"} <= by.keys()
+    zones = sum(r["cum_cases"] for r in rows
+                if r["level"] in ("zone", "unassigned") and r["cum_cases"])
+    assert zones == by["Total"]["cum_cases"] == {177: 10920, 178: 10990}[n]
+
+
+@needs_pdfs
 @pytest.mark.parametrize("n", [88, 89, 91, 95, 98])
 def test_a_value_in_a_taller_cell_is_not_split_off_its_own_row(n):
     """The same shading boxes that cut sitrep 098's province rows in half were
