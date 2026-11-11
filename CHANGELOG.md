@@ -38,6 +38,19 @@ same as withdrawn: the older tag stays exactly where it is.
 
 ---
 
+## `data/2026-11-08-r0` — 2026-11-10 — daily update
+
+Cut automatically by `scripts/daily_update.py`: every release gate passed (tests, verdict, export quotes, fresh-clone rebuild).
+
+**New data.** Sitreps 170, 171, 173, 174, 175, 176, 177, 178, data date 2026-10-30 → 2026-11-08: 576 confirmed cases and 251 deaths nationally in windows from the previous data date.
+
+**Fixes merged since the last release** (see each pull request for what moved):
+
+- reader: from sitrep 177 the zone table prints its rows without gridlines, so rows the rules do not mark are read from the printed lines in the ruled columns
+- withdrawn: sitrep 170 withdraws sitrep 169's Ituri death harmonisation, so 169's cumulative deaths for Ituri and national are unobserved and the 31 October row covers both days -- 169 printed Ituri 3,769 (national 5,372) after a harmonisation; 170 printed 3,483 (5,103) without explanation, which is 168's base plus the two days' flows, and 171 (3,492) and 173 (3,532) continue from it; differencing all three opened a deficit of 286 Ituri deaths that no later row could pay off and stopped every release since 1 November. A new register, registers/withdrawn_values.tsv, names the value, keyed on the PDF's SHA-256; build_streams.py nulls it in every route before differencing and counts the absorbed report day in n_report_days. deaths_daily_ituri now reads 47 over 30-31 October and deaths_daily_national 77; the 169 retrospective-batch row is removed (its 314 deaths were withdrawn, not back-dated), so the excluding-backlog families exclude 184 national deaths, not 498. Cases are untouched.
+
+---
+
 ## `data/2026-10-30-r1` — 2026-10-31 — daily update
 
 Cut automatically by `scripts/daily_update.py`: every release gate passed (tests, verdict, export quotes, fresh-clone rebuild).
