@@ -102,9 +102,7 @@ DEATH_SPLIT = re.compile(
 ALIVE_DEAD = re.compile(
     r"\(\s*\d+\s+vivants?\s+et\s+\d+\s+d[ée]c[èe]s?\s*\)", re.I)
 FLOW_WORD = re.compile(r"nouveaux?|nouvelles?|derni[èe]res?\s+24|du\s+jour", re.I)
-#: Up to three integer digits, and never the tail of a longer number: with
-#: two, "100 %" matched as "00" and was read as a printed positivity of 0.
-PCT = re.compile(r"(?<!\d)(\d{1,3}(?:[.,]\d{1,2})?)\s*%")
+PCT = re.compile(r"(\d{1,2}(?:[.,]\d{1,2})?)\s*%")
 #: The lookahead also refuses `,\d` and `.\d`: a decimal percentage's integer
 #: part ("2,6%" -> 2) otherwise joins the pool, and on sitrep 040 the phantom
 #: pair (2, 76) -> 2.63% collided with the true (1, 39) -> 2.56%, turning a

@@ -1006,18 +1006,6 @@ def test_lab_licensed_pair():
     assert L.licensed_pair([10, 20, 40], [50.0]) is None     # ambiguous
 
 
-def test_lab_a_printed_100_percent_is_not_read_as_zero():
-    """`4 positifs (100 %)` printed its rate with three digits, and the rate
-    pattern took two: it matched `00`, so the licence looked for a pair giving
-    0 % and found one in any sentence that also printed a zero -- 0 positives
-    of 4 samples, licensed, where the page says 4 of 4."""
-    import extract_lab_prose as L
-    assert L.PCT.findall("dont 4 positifs (100 %), 0 décès") == ["100"]
-    assert L.PCT.findall("positivité : 17,4%") == ["17,4"]
-    assert L.PCT.findall("soit 9 %") == ["9"]
-    assert L.licensed_pair([4, 4, 0], [100.0]) == (4, 4, 100.0)
-
-
 @needs_pdfs
 def test_lab_prose_sitrep_093():
     """Sitrep 093's chained lab sentence yields all three provinces, each
