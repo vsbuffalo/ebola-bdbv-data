@@ -6,9 +6,14 @@ the baseline colour's fill up its count from the baseline, the other
 colour's fill for the next, background above -- and scored against the observed pixels as a robust cost.
 The argmax over the enumerated lattice is the exact global best; a smeared
 pixel moves one candidate's score by a sliver and can truncate nothing.
-Rows adjacent to a hypothesised boundary carry no weight, because JPEG
-concentrates its damage exactly there: the seven washed rows that amputated
-upstream's 25 July bar sit in the zero-weight band of every candidate.
+The two rows at a hypothesised boundary are not scored as fill or as
+background, because JPEG concentrates its damage exactly there: the seven
+washed rows that amputated upstream's 25 July bar sit in that band of
+every candidate. They are scored for one thing only -- the outline the
+chart draws at every segment's edge must be in one of them (see
+`_fit_lattice`). Where a count puts a boundary is the chart's geometry and
+nothing else: `Calibration.y_zero` (the centre of the baseline axis line)
+plus the count times the scale, rounded once.
 
 Reader two reads the same two quantities out of the chart's *strokes*: every
 segment is outlined darker than either fill, so the bar top and the
@@ -31,6 +36,11 @@ dead under alive, every later render alive under dead. Both readers take the
 order from the calibration, where `detect_stacking` has measured it from the
 render's own two-colour bars or refused the image.
 
+The readers are not blind to the same things, but they are not fully
+independent either: reader one needs an outline to be visible at each
+boundary it proposes, and reader two reads nothing else. A render with no
+outlines defeats both.
+
 Everything here consumes a Calibration and returns integer counts with the
 evidence attached: the fit margin (cost gap between the best and runner-up
 hypothesis), the outline reader's verdict, and the render's resolution in
@@ -49,11 +59,12 @@ from .calibrate import Calibration, CalibrationError, Stacking
 # Robust-cost ceiling: one aberrant pixel can cost at most this much, so no
 # single pixel outvotes a row and no row outvotes a bar.
 COST_CLIP = 90.0
+# Weight of the unscored rows' own colour when two hypotheses tie on
+# everything scored: a whole panel of wrong-colour rows at this weight is
+# under a third of one scored row.
+TIE_WEIGHT = 1e-3
 # The two readers must agree within this many cases on each component.
 AGREE_CASES = 1.0
-# A fit whose runner-up sits closer than this (cost units per case of
-# segment) is not a confident read.
-MIN_MARGIN = 1.0
 # Rows under the panel's top border that reader two never takes for a bar top.
 TOP_BORDER_ROWS = 2
 
@@ -103,6 +114,27 @@ def _background_cost(strip: np.ndarray, band_colour: tuple | None,
     return _row_mean(np.minimum(d, COST_CLIP))
 
 
+def _stroke_mask(strip: np.ndarray) -> np.ndarray:
+    """Pixels that are bar outline: dark *and desaturated*. Darkness alone
+    also selects the red fill (luminance ~95 against the stroke's ~84),
+    which made the "topmost dark run" land mid-cap; the fill's strong
+    red-blue excess is what the stroke never has. Masked (NaN) pixels are
+    not stroke."""
+    lum = strip.mean(axis=2)
+    return (lum < 135) & (strip[:, :, 0] - strip[:, :, 2] < 90) \
+        & (strip[:, :, 0] < 170)
+
+
+def _outline_costs(strip: np.ndarray) -> np.ndarray:
+    """Per-row cost of taking a row for a bar's outline: the share of its
+    seen pixels that are not stroke, in the same units as a row of fill.
+    A row with nothing seen (the band's label) costs nothing."""
+    seen = ~np.isnan(strip).any(axis=2)
+    n = seen.sum(axis=1)
+    hit = (_stroke_mask(strip) & seen).sum(axis=1)
+    return np.where(n > 0, COST_CLIP * (1.0 - hit / np.maximum(n, 1)), 0.0)
+
+
 def _require_stacking(cal: Calibration) -> Stacking:
     if cal.stacking is None:
         raise ValueError("stacking order not measured; run detect_stacking "
@@ -117,7 +149,31 @@ def _fit_lattice(im: np.ndarray, cal: Calibration, slot: int,
     Returns (lower, upper, margin, provisional, objective): the counts of
     the segment at the baseline and of the one above it, the normalised
     margin, and the best hypothesis's raw cost, which detect_stacking
-    compares across the two orders."""
+    compares across the two orders.
+
+    Where a hypothesis puts its boundaries. A count k has its edge at
+    `y_zero + k * c` pixels, and that is rounded once. The lower segment's
+    top is the edge of its own count; the bar's top is the edge of the
+    *total*. Building the top as two rounded segments added together put
+    it up to a pixel from where the chart draws it, and counting from the
+    top edge of row `panel.bottom` instead of the baseline's centre added
+    up to 1.3 px more. At 7 px per case neither matters. At 2.6-3 px per
+    case, with the two rows at each boundary unscored, the candidates a
+    case apart differ by one scored row or none, and a pixel of
+    misplacement chose between them: sitrep 127's 14 June bar (24 alive,
+    20 dead on the image, outline ink ending at row 131) had its 44-case
+    candidate placed at row 132 and its 43-case candidate at 129, and
+    read 43.
+
+    What the boundary rows are scored for. An outline 1.3 px thick always
+    covers most of one of the two rows at a correctly placed boundary, so
+    each boundary a hypothesis proposes -- the bar's top, and the edge
+    between two segments when both are present -- is charged the outline
+    cost of the better of its two rows. Without this a one-case segment
+    can be all boundary: at 2.6 px per case it spans two or three rows,
+    two of them unscored, so adding a case to an empty slot or to the top
+    of a bar could cost nothing and remove a row of background cost. With
+    it, a proposed boundary with no outline pays a full row."""
     p = cal.panel
     c = cal.px_per_case
     centre = cal.x_phase + slot * cal.day_px
@@ -158,17 +214,40 @@ def _fit_lattice(im: np.ndarray, cal: Calibration, slot: int,
         hi2 = np.maximum(hi - 1, lo2)
         return P[hi2] - P[lo2]
 
-    amax = int(R / c)
-    ha = np.round(np.arange(amax + 1) * c).astype(int)      # lower top, px
+    amax = int((R - cal.y_zero) / c)
     a_idx = np.arange(amax + 1)
-    # h2[l, u] = pixel row of the upper segment's top
-    h2 = np.minimum(ha[:, None] + ha[None, :], R)
-    valid = (ha[:, None] + ha[None, :]) <= R + int(c)
+    # edge[k] = rows below the edge of a count of k, measured from the
+    # baseline's centre and rounded once; a count of zero has no edge.
+    edge = np.clip(np.round(cal.y_zero + np.arange(2 * amax + 1) * c),
+                   0, None).astype(int)
+    edge[0] = 0
+    ha = edge[:amax + 1]                                    # lower top, px
+    total = a_idx[:, None] + a_idx[None, :]
+    # h2[l, u] = pixel row of the bar's top, from the total count
+    top = edge[total]
+    h2 = np.minimum(top, R)
+    valid = top <= R + int(c)
 
     cost_lower = rng(PL, np.zeros_like(ha), ha)             # per l
-    cost_upper = rng(PU, np.broadcast_to(ha[:, None], h2.shape), h2)
+    h1 = np.broadcast_to(ha[:, None], h2.shape)
+    cost_upper = rng(PU, h1, h2)
     cost_bg = rng(PB, h2, np.full_like(h2, R))
-    obj = cost_lower[:, None] + cost_upper + cost_bg
+    # The outline: the better of the two rows at each proposed boundary.
+    so = np.concatenate([_outline_costs(strip), [COST_CLIP]])
+
+    def outline(h: np.ndarray) -> np.ndarray:
+        h = np.clip(h, 1, R)
+        return np.minimum(so[h - 1], so[h])
+
+    cost_outline = np.where(total > 0, outline(h2), 0.0) \
+        + np.where((a_idx[:, None] > 0) & (a_idx[None, :] > 0),
+                   outline(h1), 0.0)
+    obj = cost_lower[:, None] + cost_upper + cost_bg + cost_outline
+    # A segment of two rows is all boundary and has no scored row of its
+    # own, so one case alive and one case dead would tie. The tie goes to
+    # the colour of the segment's own rows, boundary rows included, at a
+    # weight too small to move any hypothesis the scored rows separate.
+    obj = obj + TIE_WEIGHT * ((PL[ha] - PL[0])[:, None] + PU[h2] - PU[h1])
     obj = np.where(valid, obj, np.inf)
 
     flat = np.argsort(obj, axis=None)
@@ -196,7 +275,7 @@ def fit_bar(im: np.ndarray, cal: Calibration, slot: int) \
     per-row class costs -- the baseline segment's colour, the other
     colour, background -- so with prefix sums the whole lattice is scored
     as one broadcast; the rows at each hypothesised boundary are excluded
-    by index shift, which is the zero-weight band. Which colour is the
+    from those sums by index shift and scored for the outline instead. Which colour is the
     baseline segment is the render's measured stacking order
     (`cal.stacking`), never assumed."""
     stacking = _require_stacking(cal)
@@ -279,12 +358,7 @@ def edge_bar(im: np.ndarray, cal: Calibration, slot: int) \
     strip = im[p.top + 1: p.bottom, x0:x1 + 1]
     lum = strip.mean(axis=2)
     rgb = strip
-    # The stroke is dark *and desaturated*. Darkness alone also selects the
-    # red fill (luminance ~95 against the stroke's ~84), which made the
-    # "topmost dark run" land mid-cap; the fill's strong red-blue excess is
-    # what the stroke never has.
-    stroke = (lum < 135) & (rgb[:, :, 0] - rgb[:, :, 2] < 90) \
-        & (rgb[:, :, 0] < 170)
+    stroke = _stroke_mask(strip)
     # The panel's top border can fall in the strip's first rows (sitrep
     # 127); no bar reaches it, so those rows are never a bar top.
     stroke[:TOP_BORDER_ROWS] = False
@@ -326,8 +400,10 @@ def edge_bar(im: np.ndarray, cal: Calibration, slot: int) \
     spread = np.percentile(tops_a, 84) - np.percentile(tops_a, 16)
     if spread > max(2.0, AGREE_CASES * c):
         return None
-    total_px = float(np.median(tops_a))
-    inner_px = float(np.median(bounds_a[bounds_a > 0])) \
+    # Heights to here are counted from row `panel.bottom`; a count is the
+    # height above the bars' zero, the baseline's measured centre.
+    total_px = float(np.median(tops_a)) - cal.y_zero
+    inner_px = float(np.median(bounds_a[bounds_a > 0])) - cal.y_zero \
         if (bounds_a > 0).sum() >= max(1, len(bounds_a) // 3) else 0.0
     total = int(round(total_px / c))
     # No internal edge: a one-colour bar, read as the baseline colour.
@@ -352,8 +428,7 @@ def _confident_heights(im: np.ndarray, cal: Calibration) -> np.ndarray:
             continue
         strip = im[p.top + 1: p.bottom, x0:x1 + 1]
         lum = strip.mean(axis=2)
-        stroke = (lum < 135) & (strip[:, :, 0] - strip[:, :, 2] < 90) \
-            & (strip[:, :, 0] < 170)
+        stroke = _stroke_mask(strip)
         tops = []
         for col in range(lum.shape[1]):
             dk = np.where(stroke[:, col])[0]
@@ -380,8 +455,20 @@ def refine_scale(im: np.ndarray, cal: Calibration) -> Calibration:
     confidently measured tops, swept over a narrow window around the
     regression value, recovers the scale to a tenth of a percent. A wrong
     scale cannot minimise the lattice residual -- that is the alarm the
-    design requires (G7)."""
-    heights = _confident_heights(im, cal)
+    design requires (G7).
+
+    The lattice has an origin as well as a pitch, and this fits the pitch
+    only, so the heights must be counted from where the bars' zero really
+    is (`Calibration.y_zero`). Counted from the top edge of row
+    `panel.bottom` they all carry the same offset of up to 1.3 px, and the
+    one free parameter absorbed it: the scale came out 0.2-0.9% small on
+    every render whose baseline centre sits near a pixel below that edge
+    (sitrep 102: 2.7921 against 2.8169 from the y tick marks), and on two
+    it jumped to another minimum altogether (114: +3.9%, which read the
+    chart 255 cases short of its printed total; 154: +1.2%, 179 short).
+    From the measured zero it agrees with the tick marks to within 0.25%
+    on all 60 renders read."""
+    heights = _confident_heights(im, cal) - cal.y_zero
     if len(heights) < 15:
         return cal
     c0 = cal.px_per_case
