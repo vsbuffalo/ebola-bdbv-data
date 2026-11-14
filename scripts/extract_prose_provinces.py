@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import argparse
 import re
-import subprocess
 import sys
 import unicodedata
 from pathlib import Path
@@ -31,6 +30,7 @@ from pathlib import Path
 import polars as pl
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from lib.pdftext import pdftotext  # noqa: E402
 from lib.report_date import FILENAME, report_key
 from lib.archive import held_pdfs, report_skipped  # noqa: E402
 
@@ -59,8 +59,7 @@ def _int(s: str) -> int:
 
 
 def extract(pdf: Path) -> tuple[list[dict], str]:
-    text = subprocess.run(["pdftotext", "-q", "-layout", str(pdf), "-"],
-                          capture_output=True, text=True).stdout
+    text = pdftotext(pdf, "-layout")
     flat = re.sub(r"\s+", " ", text)
     # A NATIONAL TOTAL NAMES NO PROVINCE BEFORE ITS NUMBER. The same sentence
     # shape also writes province subtotals -- sitrep 008 prints "Cumul de cas

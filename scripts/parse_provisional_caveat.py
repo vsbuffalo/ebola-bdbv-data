@@ -61,13 +61,13 @@ from __future__ import annotations
 
 import argparse
 import re
-import subprocess
 import sys
 from pathlib import Path
 
 import polars as pl
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from lib.pdftext import pdftotext  # noqa: E402
 from lib.report_date import FILENAME, report_key
 from lib.archive import held_pdfs, report_skipped  # noqa: E402
 
@@ -168,8 +168,7 @@ def main() -> None:
     for pdf in pdfs:
         if not FILENAME.search(pdf.stem):
             continue
-        text = subprocess.run(["pdftotext", "-q", "-layout", str(pdf), "-"],
-                              capture_output=True, text=True).stdout
+        text = pdftotext(pdf, "-layout")
         num, date = report_key(pdf, text)
         flat = " ".join(text.split())
         best = None

@@ -567,10 +567,8 @@ def test_prose_route_takes_only_what_the_page_states():
 
 def test_prose_route_refuses_a_breakdown_that_does_not_close(monkeypatch):
     """The sentence's own arithmetic is the licence; without it, nothing ships."""
-    import subprocess as sp
     fake = "Cumul des cas confirmés : 100 cas dont 90 en Ituri et 5 au Nord-Kivu."
-    class R: stdout = fake
-    monkeypatch.setattr(PR.subprocess, "run", lambda *a, **k: R())
+    monkeypatch.setattr(PR, "pdftotext", lambda *a: fake)
     rows, st = PR.extract(Path("/dev/null"))
     assert rows == []
     assert st.startswith("breakdown_does_not_close")
@@ -2121,6 +2119,33 @@ def _run_build(monkeypatch, panel, out_dir, *extra):
 needs_pdftotext = pytest.mark.skipif(
     shutil.which("pdftotext") is None,
     reason="pdftotext is not installed; the build records its version")
+
+
+@needs_pdftotext
+def test_a_failed_pdftotext_run_stops_instead_of_reading_as_no_text(tmp_path):
+    """A file poppler cannot open exits non-zero and prints nothing to stdout.
+
+    Every prose extractor records a report whose text holds no matching
+    sentence as a report that said nothing, so an unchecked failed run was
+    indistinguishable from the source's silence. The shared reader raises.
+    """
+    from lib.pdftext import PdfTextError, pdftotext
+    broken = tmp_path / "sitrep_999_2026-01-01.pdf"
+    broken.write_bytes(b"this is not a PDF")
+    with pytest.raises(PdfTextError, match="sitrep_999"):
+        pdftotext(broken, "-layout")
+
+
+@needs_pdftotext
+@needs_pdfs
+def test_the_shared_pdftotext_reader_passes_its_flags_through():
+    """`-layout` and the page extent are the caller's: sitrep 004's front page
+    alone carries its report date, and is shorter than the whole document."""
+    from lib.pdftext import pdftotext
+    front = pdftotext(pdf(4), "-layout", "-f", "1", "-l", "1")
+    whole = pdftotext(pdf(4), "-layout")
+    assert "19 mai 2026" in " ".join(front.split())
+    assert len(front) < len(whole)
 
 
 @needs_pdftotext

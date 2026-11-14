@@ -128,7 +128,6 @@ from __future__ import annotations
 
 import argparse
 import re
-import subprocess
 import sys
 import unicodedata
 from pathlib import Path
@@ -136,6 +135,7 @@ from pathlib import Path
 import polars as pl
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from lib.pdftext import pdftotext  # noqa: E402
 from lib.report_date import FILENAME, report_key
 from lib.archive import held_pdfs, report_skipped  # noqa: E402
 
@@ -1073,8 +1073,7 @@ DISPLACED_BULLETS = re.compile(r"(?:\s*[•●▪])+\s+(?=[a-zà-ÿ])")
 
 
 def extract(pdf: Path) -> tuple[list[dict], list[dict]]:
-    text = subprocess.run(["pdftotext", "-q", str(pdf), "-"],
-                          capture_output=True, text=True).stdout
+    text = pdftotext(pdf)
     flat = re.sub(r"\s+", " ", PAGE_NUMBER.sub("\n\f", text))
     flat = DISPLACED_BULLETS.sub(" ", flat)
     refused: list[dict] = []

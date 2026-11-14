@@ -48,11 +48,11 @@ from __future__ import annotations
 import argparse
 import csv
 import re
-import subprocess
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from lib.pdftext import pdftotext  # noqa: E402
 from lib.report_date import report_key                            # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -168,9 +168,7 @@ def first(m: re.Match | None) -> int | None:
 
 
 def text_of(pdf: Path) -> str:
-    r = subprocess.run(["pdftotext", "-q", str(pdf), "-"],
-                       capture_output=True, text=True)
-    return " ".join(r.stdout.split())
+    return " ".join(pdftotext(pdf).split())
 
 
 def pillar_sections(text: str) -> list[str]:

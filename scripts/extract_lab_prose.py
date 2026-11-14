@@ -61,13 +61,13 @@ from __future__ import annotations
 
 import argparse
 import re
-import subprocess
 import sys
 from pathlib import Path
 
 import polars as pl
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from lib.pdftext import pdftotext  # noqa: E402
 from lib.report_date import FILENAME, report_key
 from lib.archive import held_pdfs, report_skipped  # noqa: E402
 
@@ -193,8 +193,7 @@ def noun_adjacent_pair(text: str) -> tuple[tuple[int, int] | None, str]:
 
 
 def extract(pdf: Path) -> tuple[list[dict], list[dict]]:
-    text = subprocess.run(["pdftotext", "-q", "-layout", str(pdf), "-"],
-                          capture_output=True, text=True).stdout
+    text = pdftotext(pdf, "-layout")
     flat = re.sub(r"\s+", " ", text)
     rows, refused = [], []
     # PROVINCE-ANCHORED SEGMENTS, not sentences. The lab prose defeats every
