@@ -112,9 +112,11 @@ def value_dedup(vintages: list[Vintage]) -> list[tuple[Vintage, list[Vintage]]]:
     Byte-level deduplication happened upstream (one Vintage per decoded
     image); this collapses re-encodes and re-renders: same printed total,
     and at least DEDUP_AGREE of overlapping dates within one case. The
-    earliest survives -- with its full read, not an average -- and the
-    collapsed ones are recorded against it. The 087/088 re-encode pair and
-    the 098/099 re-render pair fall together here."""
+    earliest is named first -- with its full read, not an average -- and
+    the collapsed ones are recorded against it. The 087/088 re-encode pair
+    and the 098/099 re-render pair fall together here. Which member's read
+    is published for the group is settled after the gates have run
+    (`gates.settle_heads`): the earliest one they accept."""
     groups: list[tuple[Vintage, list[Vintage]]] = []
     for v in sorted(vintages, key=lambda v: v.report_date):
         if groups:

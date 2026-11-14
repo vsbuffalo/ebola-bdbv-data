@@ -59,7 +59,7 @@ from lib.onset.readers import (read_bars, refine_scale,               # noqa: E4
                                 detect_stacking)
 from lib.onset.assemble import (Vintage, load_anchors, slot_dates,    # noqa: E402
                                 value_dedup, triangle)
-from lib.onset.gates import judge                                     # noqa: E402
+from lib.onset.gates import settle_heads, stable_total                # noqa: E402
 from lib.onset.proof import draw_proof                                # noqa: E402
 from lib.report_date import FILENAME, report_key                      # noqa: E402
 
@@ -168,15 +168,17 @@ def main() -> None:
     vintages, failures = read_vintages(rows, firsts, images_dir)
 
     # Re-encodes and re-renders of one data snapshot collapse; the gates
-    # then judge the surviving heads in report-date order.
-    groups = value_dedup(list(vintages.values()))
+    # then judge the surviving heads in report-date order. A group's head
+    # is its earliest accepted member (gates.settle_heads); a member that
+    # was tried as head and refused keeps that refusal as its own verdict.
+    groups, verdicts, own = settle_heads(
+        value_dedup(list(vintages.values())))
     head_of: dict[str, str] = {}
     for head, members in groups:
         head_of[head.sha256] = head.sha256
         for mv in members:
             head_of[mv.sha256] = head.sha256
     heads = [head for head, _ in groups]
-    verdicts = judge(heads)
 
     # --- vintages.csv: one row per report, everything joined on.
     out_rows = []
@@ -203,8 +205,7 @@ def main() -> None:
             head_sha = head_of[sha]
             head = next(v for v in heads if v.sha256 == head_sha)
             v = vintages[sha]
-            verdict = verdicts[head_sha]
-            from lib.onset.gates import stable_total
+            verdict = own.get(sha, verdicts[head_sha])
             r.update({
                 "status": verdict.status,
                 "reasons": "; ".join(verdict.reasons),
@@ -258,8 +259,8 @@ def main() -> None:
 
     # --- proof overlays, one per distinct image.
     for head, members in groups:
-        verdict = verdicts[head.sha256]
         for v in [head] + members:
+            verdict = own.get(v.sha256, verdicts[head.sha256])
             img = Image.open(images_dir / v.image_file)
             draw_proof(img, v, verdict.status, verdict.reasons).save(
                 proof_dir / v.image_file)

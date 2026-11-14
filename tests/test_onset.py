@@ -611,3 +611,74 @@ def test_every_read_render_records_its_stacking_order(vintages):
     early = read.filter(pl.col("sitrep") <= 63)["stacking"].unique().to_list()
     later = read.filter(pl.col("sitrep") >= 64)["stacking"].unique().to_list()
     assert early == ["dead_bottom"] and later == ["alive_bottom"]
+
+
+# --------------------------------------------------------------------------
+# Duplicate charts: the read published for a data snapshot is the earliest
+# one the gates accept.
+
+def _vintage(name, report, n, agree=True):
+    """A synthetic read: forty settled onset dates summing to n, uneven
+    from day to day so the alignment gate has a shape to register."""
+    import datetime as dt
+    from types import SimpleNamespace
+    from lib.onset.assemble import Vintage
+    from lib.onset.readers import BarMeasure
+    dates = tuple(dt.date(2026, 5, 1) + dt.timedelta(days=k)
+                  for k in range(40))
+    w = [1 + (7 * k) % 11 for k in range(40)]
+    per = [n * x // sum(w) for x in w]
+    per[0] += n - sum(per)
+    fields = {f: None for f in BarMeasure.__dataclass_fields__}
+    bars = tuple(BarMeasure(**{
+        **fields, "slot": k, "alive": per[k], "dead": 0, "margin": 9.0,
+        "edge_alive": per[k], "edge_dead": 0, "reader_agreement": agree,
+        "provisional": False, "resolution_cases": 0.3})
+        for k in range(40))
+    cal = SimpleNamespace(panel=SimpleNamespace(height=400))
+    return Vintage(sha256=name, image_file=name, sitreps=(1,),
+                   report_date=dt.date.fromisoformat(report), printed_n=n,
+                   calibration=cal, bars=bars, dates=dates)
+
+
+def test_a_duplicate_group_is_headed_by_its_earliest_accepted_member():
+    """Sitreps 154 and 156 print the same n = 7,438 and are one snapshot.
+    154's render is refused; headed by it, the group took 156's clean read
+    down with it."""
+    from lib.onset.gates import settle_heads
+    before = _vintage("before", "2026-08-01", 100)
+    bad = _vintage("bad", "2026-08-02", 120, agree=False)
+    good = _vintage("good", "2026-08-04", 120)
+    later = _vintage("later", "2026-08-05", 120)
+    after = _vintage("after", "2026-08-06", 140)
+    groups, verdicts, own = settle_heads(
+        [(before, []), (bad, [good, later]), (after, [])])
+    head, members = groups[1]
+    assert head is good
+    assert [m.sha256 for m in members] == ["bad", "later"]
+    assert verdicts["good"].status == "accepted"
+    assert own["bad"].status == "refused"
+    assert "G-R" in own["bad"].reasons[0]
+    assert set(own) == {"bad"}
+
+
+def test_a_group_with_no_accepted_member_keeps_its_earliest_as_head():
+    from lib.onset.gates import settle_heads
+    before = _vintage("before", "2026-08-01", 100)
+    bad = _vintage("bad", "2026-08-02", 120, agree=False)
+    worse = _vintage("worse", "2026-08-04", 120, agree=False)
+    groups, verdicts, own = settle_heads([(before, []), (bad, [worse])])
+    head, members = groups[1]
+    assert head is bad and members == [worse]
+    assert verdicts["bad"].status == "refused"
+    assert own["worse"].status == "refused" and "bad" not in own
+
+
+def test_an_accepted_head_is_left_alone():
+    from lib.onset.gates import judge, settle_heads
+    a = _vintage("a", "2026-08-01", 100)
+    b = _vintage("b", "2026-08-03", 120)
+    c = _vintage("c", "2026-08-04", 120, agree=False)
+    groups, verdicts, own = settle_heads([(a, []), (b, [c])])
+    assert groups == [(a, []), (b, [c])]
+    assert verdicts == judge([a, b]) and own == {}

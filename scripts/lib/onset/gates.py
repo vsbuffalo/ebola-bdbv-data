@@ -138,6 +138,59 @@ def _gr_readers(v: Vintage) -> tuple[str | None, bool]:
     return None, False
 
 
+def settle_heads(groups: list[tuple[Vintage, list[Vintage]]]) \
+        -> tuple[list[tuple[Vintage, list[Vintage]]], dict[str, Verdict],
+                 dict[str, Verdict]]:
+    """Choose each duplicate group's head and judge the heads.
+
+    `value_dedup` groups the charts that are one data snapshot and names
+    the earliest as head, before any gate has run. The head's read is the
+    one published for the snapshot, so a group whose earliest read is
+    refused would lose the whole snapshot even when a later re-render of
+    the same chart reads cleanly (sitreps 154 and 156 print the same
+    n = 7,438; 154's render is refused for reader disagreement and 156's
+    is accepted). The head is therefore the group's earliest *accepted*
+    member: while a head is refused and a later member has not been tried,
+    that member takes its place and every head is judged again, because
+    the neighbour gates (G3, G5) read the heads either side. A group with
+    no accepted member keeps its earliest as head, as before.
+
+    The snapshot is then dated by the head's own report: the chart that
+    was read, not the first report that carried the data.
+
+    Returns (groups, verdicts, own): the groups with their settled heads,
+    each group's other charts in report order; the verdict of every head
+    by hash; and, for each member that was tried as head and refused, the
+    verdict it got -- its row in `vintages.csv` records that refusal, not
+    the head's acceptance."""
+    settled = [(h, list(m)) for h, m in groups]
+    own: dict[str, Verdict] = {}
+    while True:
+        verdicts = judge([h for h, _ in settled])
+        swap = None
+        for i, (head, members) in enumerate(settled):
+            if verdicts[head.sha256].status != "refused":
+                continue
+            own[head.sha256] = verdicts[head.sha256]
+            later = [m for m in members if m.sha256 not in own]
+            if later:
+                swap = (i, later[0])
+                break
+            earliest = min([head] + members, key=lambda v: v.report_date)
+            if earliest is not head:
+                swap = (i, earliest)
+                break
+        if swap is None:
+            for head, _ in settled:
+                own.pop(head.sha256, None)
+            return settled, verdicts, own
+        i, new_head = swap
+        head, members = settled[i]
+        rest = sorted([head] + [m for m in members if m is not new_head],
+                      key=lambda v: v.report_date)
+        settled[i] = (new_head, rest)
+
+
 def judge(vintages: list[Vintage]) -> dict[str, Verdict]:
     """Verdicts for a report-date-ordered list of deduplicated vintages."""
     ordered = sorted(vintages, key=lambda v: v.report_date)
