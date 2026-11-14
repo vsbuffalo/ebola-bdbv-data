@@ -567,10 +567,8 @@ def test_prose_route_takes_only_what_the_page_states():
 
 def test_prose_route_refuses_a_breakdown_that_does_not_close(monkeypatch):
     """The sentence's own arithmetic is the licence; without it, nothing ships."""
-    import subprocess as sp
     fake = "Cumul des cas confirmés : 100 cas dont 90 en Ituri et 5 au Nord-Kivu."
-    class R: stdout = fake
-    monkeypatch.setattr(PR.subprocess, "run", lambda *a, **k: R())
+    monkeypatch.setattr(PR, "pdftotext", lambda *a: fake)
     rows, st = PR.extract(Path("/dev/null"))
     assert rows == []
     assert st.startswith("breakdown_does_not_close")
@@ -1008,6 +1006,18 @@ def test_lab_licensed_pair():
     assert L.licensed_pair([10, 20, 40], [50.0]) is None     # ambiguous
 
 
+def test_lab_a_printed_100_percent_is_not_read_as_zero():
+    """`4 positifs (100 %)` printed its rate with three digits, and the rate
+    pattern took two: it matched `00`, so the licence looked for a pair giving
+    0 % and found one in any sentence that also printed a zero -- 0 positives
+    of 4 samples, licensed, where the page says 4 of 4."""
+    import extract_lab_prose as L
+    assert L.PCT.findall("dont 4 positifs (100 %), 0 décès") == ["100"]
+    assert L.PCT.findall("positivité : 17,4%") == ["17,4"]
+    assert L.PCT.findall("soit 9 %") == ["9"]
+    assert L.licensed_pair([4, 4, 0], [100.0]) == (4, 4, 100.0)
+
+
 @needs_pdfs
 def test_lab_prose_sitrep_093():
     """Sitrep 093's chained lab sentence yields all three provinces, each
@@ -1193,16 +1203,17 @@ def test_lab_prose_the_living_dead_split_is_not_a_pair():
     Ituri "40 ... positifs (33 vivants et 7 décès) sur 230 ... (17,4%)" was
     ambiguous between 40/230 and 7/40 and refused. Sitrep 105's Haut-Uélé
     ("11 positifs (11 vivants et 0 décès) sur 11 ... 100 %") was read as 0/11
-    off the split, and sitrep 162's Haut-Uélé, whose own counts disagree with
-    its rate ("2 positifs (1 vivants et 1 décès) sur 5 ... 20 %"), as 1/5;
-    both now refuse."""
+    off the split; with the split out of the pool it reads 11 of 11, which is
+    what its printed 100 % licenses. Sitrep 162's Haut-Uélé, whose own counts
+    disagree with its rate ("2 positifs (1 vivants et 1 décès) sur 5 ...
+    20 %"), was read as 1/5 and refuses: no pair on the page gives 20 %."""
     import extract_lab_prose as L
 
     def by(n):
         return {r["province"]: (r["samples"], r["positives"])
                 for r in L.extract(pdf(n))[0]}
     assert by(167)["Ituri"] == (230, 40)
-    assert "Haut-Uélé" not in by(105)
+    assert by(105)["Haut-Uélé"] == (11, 11)
     assert "Haut-Uélé" not in by(162)
 
 
@@ -1829,6 +1840,29 @@ needs_streams = pytest.mark.skipif(
     reason="the streams are not built; run `make build && make streams`")
 
 
+@needs_streams
+@pytest.mark.parametrize("stream", ["cases_national", "deaths_national"])
+def test_no_published_province_is_also_counted_as_dropped(stream):
+    """The national identity is national = emitted provinces + dropped
+    provinces + orphan pool + unattributed, per weekly bin.
+
+    The dropped term was summed over a fixed list of three provinces that
+    stayed in place after all three were published, so each was subtracted
+    twice and `unattributed` reported minus their movement: bin 22 of the
+    cases identity read national 489, emitted 489, dropped 13, unattributed
+    -13. The dropped term may only hold provinces `meta.json` itself lists as
+    unpublished, and the four terms must add up.
+    """
+    meta = json.loads((STREAMS / "meta.json").read_text())
+    rows = meta["reconciliation"][stream]["vs_province_sum"]
+    assert rows
+    for r in rows:
+        assert (r["emitted_provinces"] + r["dropped_provinces"]
+                + r["orphan_pool"] + r["unattributed"]) == r["national"], r
+    if not meta["dropped_provinces"]:
+        assert all(r["dropped_provinces"] == 0 for r in rows)
+
+
 def _released() -> list[BS.Written]:
     """Every stream file in the release, with how its rows relate to time.
 
@@ -2121,6 +2155,33 @@ def _run_build(monkeypatch, panel, out_dir, *extra):
 needs_pdftotext = pytest.mark.skipif(
     shutil.which("pdftotext") is None,
     reason="pdftotext is not installed; the build records its version")
+
+
+@needs_pdftotext
+def test_a_failed_pdftotext_run_stops_instead_of_reading_as_no_text(tmp_path):
+    """A file poppler cannot open exits non-zero and prints nothing to stdout.
+
+    Every prose extractor records a report whose text holds no matching
+    sentence as a report that said nothing, so an unchecked failed run was
+    indistinguishable from the source's silence. The shared reader raises.
+    """
+    from lib.pdftext import PdfTextError, pdftotext
+    broken = tmp_path / "sitrep_999_2026-01-01.pdf"
+    broken.write_bytes(b"this is not a PDF")
+    with pytest.raises(PdfTextError, match="sitrep_999"):
+        pdftotext(broken, "-layout")
+
+
+@needs_pdftotext
+@needs_pdfs
+def test_the_shared_pdftotext_reader_passes_its_flags_through():
+    """`-layout` and the page extent are the caller's: sitrep 004's front page
+    alone carries its report date, and is shorter than the whole document."""
+    from lib.pdftext import pdftotext
+    front = pdftotext(pdf(4), "-layout", "-f", "1", "-l", "1")
+    whole = pdftotext(pdf(4), "-layout")
+    assert "19 mai 2026" in " ".join(front.split())
+    assert len(front) < len(whole)
 
 
 @needs_pdftotext

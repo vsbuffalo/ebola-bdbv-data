@@ -45,11 +45,12 @@ import csv
 import datetime as dt
 import hashlib
 import re
-import subprocess
 import sys
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
+
+from .pdftext import pdftotext
 
 #: scripts/lib/report_date.py -> parents[2] is the repo root. Derived from this
 #: file's own location, never from the working directory: a register found only
@@ -283,8 +284,7 @@ def report_key(pdf: Path, text: str | None = None) -> tuple[int, str]:
     if not m:
         raise ValueError(f"{pdf.name} does not carry a report number")
     if text is None:
-        text = subprocess.run(["pdftotext", "-q", "-layout", str(pdf), "-"],
-                              capture_output=True, text=True).stdout
+        text = pdftotext(pdf, "-layout")
     rapportage, _ = printed_dates(text)
     if rapportage is None:
         sys.exit(

@@ -81,9 +81,11 @@ they are refused rather than guessed. Every place the source disagrees with
 itself is recorded, and every value is compared with the two other renderings.
 
 **What that does and does not buy.** These checks make reading errors loud; they
-cannot make the source's own counts true, and refusing costs coverage. The onset
-reader currently refuses every chart since 19 September. Read
-`data/build/streams/README.md` and `registers/` before fitting anything.
+cannot make the source's own counts true, and refusing costs coverage. As of
+`data/2026-11-08-r0` the onset reader has accepted no chart after SitRep 158 (19
+October), so the symptom-onset triangle and the reporting-delay table built from
+it stop there. Read `data/build/streams/README.md` and `registers/` before
+fitting anything.
 
 ## Getting the data
 

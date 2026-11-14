@@ -28,13 +28,15 @@ PRODUCES     One row per (report, province), in three groups of columns.
              -- the word the reports' own tables use for the all-provinces
              column -- for the whole-response summary sentence and the
              national contact-follow-up figure.
-FITTED       No. Nothing here is published as an observation stream; this is an
-             extraction into data/build/series/. The confirmed census is the
-             quantity a fit would want -- it separates the rate at which
+FITTED       Not from this file. This is an extraction into
+             data/build/series/; `build_streams.py` publishes the parts of it
+             that stand as observations as the `care_*` streams (census,
+             admissions, exits and how they end), carrying each row's
+             `checks` from the closures below. The confirmed census is the
+             quantity a fit most wants -- it separates the rate at which
              infectious people are confirmed and isolated from the rate at
              which they leave infectiousness unconfirmed, which the case and
-             death series alone cannot -- but publishing it as a stream is a
-             contract change and a separate decision.
+             death series alone cannot.
 VALIDATED BY the passage's own arithmetic, first and mainly. Every check a
              row's numbers make available is run and written into `checks`,
              pass or fail, so a disagreement can be adjudicated from the CSV
@@ -128,7 +130,6 @@ from __future__ import annotations
 
 import argparse
 import re
-import subprocess
 import sys
 import unicodedata
 from pathlib import Path
@@ -136,6 +137,7 @@ from pathlib import Path
 import polars as pl
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from lib.pdftext import pdftotext  # noqa: E402
 from lib.report_date import FILENAME, report_key
 from lib.archive import held_pdfs, report_skipped  # noqa: E402
 
@@ -1073,8 +1075,7 @@ DISPLACED_BULLETS = re.compile(r"(?:\s*[•●▪])+\s+(?=[a-zà-ÿ])")
 
 
 def extract(pdf: Path) -> tuple[list[dict], list[dict]]:
-    text = subprocess.run(["pdftotext", "-q", str(pdf), "-"],
-                          capture_output=True, text=True).stdout
+    text = pdftotext(pdf)
     flat = re.sub(r"\s+", " ", PAGE_NUMBER.sub("\n\f", text))
     flat = DISPLACED_BULLETS.sub(" ", flat)
     refused: list[dict] = []

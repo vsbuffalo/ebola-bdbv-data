@@ -3600,7 +3600,7 @@ def draw_onset_delay(inputs: dict[str, Path], out: Path) -> None:
          .with_columns(frac=pl.col("total") / pl.col("final")))
 
     fig, ax = plt.subplots(figsize=(13.333, 7.5), constrained_layout=True)
-    for _, grp in j.group_by("onset_date"):
+    for _, grp in j.group_by("onset_date", maintain_order=True):
         g = grp.sort("delay")
         ax.plot(g["delay"].to_list(), g["frac"].to_list(),
                 color="#bbbbbb", lw=0.7, alpha=0.6, zorder=2)
@@ -3746,7 +3746,7 @@ def draw_onset_delay_vs_model(inputs: dict[str, Path], out: Path) -> None:
               .filter(pl.col("n") >= 8).sort("bin"))
 
     fig, ax = plt.subplots(figsize=(13.333, 7.5), constrained_layout=True)
-    for _, grp in j.group_by("onset_date"):
+    for _, grp in j.group_by("onset_date", maintain_order=True):
         g = grp.sort("delay")
         ax.plot(g["delay"].to_list(), g["frac"].to_list(),
                 color="#cccccc", lw=0.6, alpha=0.5, zorder=1)
@@ -3859,7 +3859,7 @@ def draw_onset_delay_cohorts(inputs: dict[str, Path], out: Path) -> None:
         c = j.filter(pl.col("month") == month)
         if c.height == 0:
             continue
-        for _, grp in c.group_by("onset_date"):
+        for _, grp in c.group_by("onset_date", maintain_order=True):
             g = grp.sort("delay")
             ax.plot(g["delay"].to_list(), g["frac"].to_list(),
                     color=ink, lw=0.5, alpha=0.25, zorder=1)

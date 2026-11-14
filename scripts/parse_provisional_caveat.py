@@ -2,7 +2,9 @@
 
 SOURCE       The INSP situation report PDFs. PRIMARY, and a statement the
              source makes about ITSELF rather than about the outbreak.
-PRODUCES     One row per report: whether it carries the caveat, which form,
+PRODUCES     One row per report and caveat it carries (a report with none
+             gets one row saying so; a report with two forms gets two):
+             whether it carries the caveat, which form,
              the sentence verbatim, a checked translation, and where on the
              page it sits.
 FITTED       No, and that is a scope decision rather than a gap. It is a
@@ -61,13 +63,13 @@ from __future__ import annotations
 
 import argparse
 import re
-import subprocess
 import sys
 from pathlib import Path
 
 import polars as pl
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from lib.pdftext import pdftotext  # noqa: E402
 from lib.report_date import FILENAME, report_key
 from lib.archive import held_pdfs, report_skipped  # noqa: E402
 
@@ -168,8 +170,7 @@ def main() -> None:
     for pdf in pdfs:
         if not FILENAME.search(pdf.stem):
             continue
-        text = subprocess.run(["pdftotext", "-q", "-layout", str(pdf), "-"],
-                              capture_output=True, text=True).stdout
+        text = pdftotext(pdf, "-layout")
         num, date = report_key(pdf, text)
         flat = " ".join(text.split())
         best = None

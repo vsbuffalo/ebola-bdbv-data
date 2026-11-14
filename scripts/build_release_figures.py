@@ -66,9 +66,18 @@ FIGURES = ("epi_curve", "ascertainment", "ascertainment_provinces",
            "lab_effort", "positivity_provinces")
 
 
-def run(cmd: list[str], **kw) -> None:
-    r = subprocess.run(cmd, cwd=ROOT, **kw)
-    if r.returncode not in (0, 1):        # 1 = a reported gap, not a failure
+#: `aggregate_provinces.py` exits with this when some province-reports print
+#: no total to check against: a reported gap, not a failure. Kept in step with
+#: `EXIT_UNCHECKED` there and with the `build` recipe in the Makefile.
+EXIT_UNCHECKED = 3
+
+
+def run(cmd: list[str], *, ok: tuple[int, ...] = (0,)) -> None:
+    """Run one build step from the repository root, stopping on any exit
+    status not in `ok`. Status 1 is never tolerated: it is what a step exits
+    with when it refuses its inputs or crashes."""
+    r = subprocess.run(cmd, cwd=ROOT)
+    if r.returncode not in ok:
         sys.exit(f"failed ({r.returncode}): {' '.join(cmd)}")
 
 
@@ -135,13 +144,22 @@ def build_distinct(args) -> int:
     print(f"{sum(len(v) for v in groups.values())} published tag(s) share "
           f"{len(groups)} distinct input set(s); building the earliest of each")
     index = []
+    failed: list[tuple[str, str]] = []
     for tags in groups.values():
         first = tags[0]
         one = argparse.Namespace(tag=first, keep_build=args.keep_build,
                                  distinct=False)
         print(f"\n=== {first}" + (f"  (same reports as: {', '.join(tags[1:])})"
                                    if len(tags) > 1 else ""))
-        build_one(one)
+        # One release that cannot be rebuilt must not cost the others, and
+        # must not pass for one that was: it is left out of the index, named
+        # at the end, and the run exits non-zero.
+        try:
+            build_one(one)
+        except SystemExit as stop:
+            print(f"  {first}: not rebuilt -- {stop}", file=sys.stderr)
+            failed.append((first, str(stop)))
+            continue
         index.append((first, tags))
     idx = ROOT / "data/build/figures/INDEX.md"
     idx.parent.mkdir(parents=True, exist_ok=True)
@@ -156,6 +174,12 @@ def build_distinct(args) -> int:
                   + (f" (also {', '.join(rest[1:])})" if len(rest) > 1 else "")
                   + "\n" for f, rest in index))
     print(f"\nindex -> {idx.relative_to(ROOT)}")
+    if failed:
+        print(f"\n{len(failed)} of {len(groups)} input set(s) could not be "
+              "rebuilt, and any figures already under their directories are "
+              "from an earlier run:\n  "
+              + "\n  ".join(t for t, _ in failed), file=sys.stderr)
+        return 1
     return 0
 
 
@@ -188,10 +212,6 @@ def main() -> int:
                           capture_output=True, text=True).stdout.split()
     if tag not in tags:
         sys.exit(f"no such release tag: {tag}")
-
-    work = ROOT / "data/build/releases" / slug(tag)
-    out = ROOT / "data/build/figures" / slug(tag)
-    out.mkdir(parents=True, exist_ok=True)
 
     return build_one(args)
 
@@ -230,7 +250,8 @@ def build_one(args) -> int:
     run([*py, "scripts/aggregate_provinces.py",
          "--panel", str(series / "zone_table.csv"), "--pdfs", pdfs,
          "--exceptions", "registers/reconciliation_exceptions.tsv",
-         "--out", str(series / "province_series.csv")])
+         "--out", str(series / "province_series.csv")],
+        ok=(0, EXIT_UNCHECKED))
     run([*py, "scripts/build_uganda_stream.py",
          "--uganda", "data/raw/uganda_cases.toml",
          "--out", str(streams / "uganda_exports.tsv")])

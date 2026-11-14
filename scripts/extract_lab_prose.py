@@ -61,13 +61,13 @@ from __future__ import annotations
 
 import argparse
 import re
-import subprocess
 import sys
 from pathlib import Path
 
 import polars as pl
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from lib.pdftext import pdftotext  # noqa: E402
 from lib.report_date import FILENAME, report_key
 from lib.archive import held_pdfs, report_skipped  # noqa: E402
 
@@ -102,7 +102,9 @@ DEATH_SPLIT = re.compile(
 ALIVE_DEAD = re.compile(
     r"\(\s*\d+\s+vivants?\s+et\s+\d+\s+d[ée]c[èe]s?\s*\)", re.I)
 FLOW_WORD = re.compile(r"nouveaux?|nouvelles?|derni[èe]res?\s+24|du\s+jour", re.I)
-PCT = re.compile(r"(\d{1,2}(?:[.,]\d{1,2})?)\s*%")
+#: Up to three integer digits, and never the tail of a longer number: with
+#: two, "100 %" matched as "00" and was read as a printed positivity of 0.
+PCT = re.compile(r"(?<!\d)(\d{1,3}(?:[.,]\d{1,2})?)\s*%")
 #: The lookahead also refuses `,\d` and `.\d`: a decimal percentage's integer
 #: part ("2,6%" -> 2) otherwise joins the pool, and on sitrep 040 the phantom
 #: pair (2, 76) -> 2.63% collided with the true (1, 39) -> 2.56%, turning a
@@ -193,8 +195,7 @@ def noun_adjacent_pair(text: str) -> tuple[tuple[int, int] | None, str]:
 
 
 def extract(pdf: Path) -> tuple[list[dict], list[dict]]:
-    text = subprocess.run(["pdftotext", "-q", "-layout", str(pdf), "-"],
-                          capture_output=True, text=True).stdout
+    text = pdftotext(pdf, "-layout")
     flat = re.sub(r"\s+", " ", text)
     rows, refused = [], []
     # PROVINCE-ANCHORED SEGMENTS, not sentences. The lab prose defeats every

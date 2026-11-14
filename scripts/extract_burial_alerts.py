@@ -48,23 +48,16 @@ from __future__ import annotations
 import argparse
 import csv
 import re
-import subprocess
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from lib.archive import held_pdfs, report_skipped  # noqa: E402
+from lib.pdftext import pdftotext  # noqa: E402
 from lib.report_date import report_key                            # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-PROVINCES = {
-    "ituri": "Ituri", "nordkivu": "Nord-Kivu", "sudkivu": "Sud-Kivu",
-    "hautuele": "Haut-Uélé", "basuele": "Bas-Uélé", "tshopo": "Tshopo",
-    "sudubangi": "Sud-Ubangi", "nordubangi": "Nord-Ubangi",
-}
-PROV_RE = re.compile(r"\b(Ituri|Nord[-\s]?Kivu|Sud[-\s]?Kivu"
-                     r"|Haut[-\s]?U[ée]l[ée]|Bas[-\s]?U[ée]l[ée]|Tshopo"
-                     r"|Sud[-\s]?Ubangi|Nord[-\s]?Ubangi)\b", re.I)
 SLUG = {"ituri": "ituri", "nordkivu": "nord_kivu", "sudkivu": "sud_kivu",
         "hautuele": "haut_uele", "basuele": "bas_uele", "tshopo": "tshopo",
         "sudubangi": "sud_ubangi", "nordubangi": "nord_ubangi"}
@@ -168,9 +161,7 @@ def first(m: re.Match | None) -> int | None:
 
 
 def text_of(pdf: Path) -> str:
-    r = subprocess.run(["pdftotext", "-q", str(pdf), "-"],
-                       capture_output=True, text=True)
-    return " ".join(r.stdout.split())
+    return " ".join(pdftotext(pdf).split())
 
 
 def pillar_sections(text: str) -> list[str]:
@@ -294,8 +285,12 @@ def main() -> int:
     args = ap.parse_args()
 
     rows, status = [], []
-    pdfs = sorted((args.pdf_dir if args.pdf_dir.is_absolute()
-                   else REPO_ROOT / args.pdf_dir).glob("sitrep_*.pdf"))
+    # The reports the manifest pins, not whatever the directory holds: a
+    # rebuild of an older tag over a newer archive must read that tag's
+    # reports only, as every other extractor does.
+    pdfs, extra = held_pdfs(args.pdf_dir if args.pdf_dir.is_absolute()
+                            else REPO_ROOT / args.pdf_dir)
+    report_skipped(extra)
     for pdf in pdfs:
         # The page's own `Date de rapportage`, not the filename -- the two
         # disagree on eleven reports and the filename is the unreliable half.

@@ -42,9 +42,11 @@ G3_MIN_AGE_DAYS = 28
 G3_SIGMA = 3.0
 G3_SCATTER_FLOOR = 15.0
 
-# G-R: reader-two disagreement, over the bars where reader two spoke.
+# G-R: reader-two disagreement, over the bars where reader two spoke; and
+# the share of bars it must have measured for the vintage to count as
+# read twice.
 GR_DISAGREE_MAX = 0.25
-GR_SILENT_MAX = 0.8
+GR_SPOKE_MIN = 0.2
 
 
 @dataclass(frozen=True)
@@ -124,7 +126,7 @@ def _g5_alignment(v: Vintage, prev: Vintage | None) -> str | None:
 
 def _gr_readers(v: Vintage) -> tuple[str | None, bool]:
     spoke = [b for b in v.bars if b.edge_alive is not None]
-    if len(spoke) < 0.2 * len(v.bars):
+    if len(spoke) < GR_SPOKE_MIN * len(v.bars):
         return ("G-R: the outline reader measured "
                 f"{len(spoke)}/{len(v.bars)} bars; a single-reader "
                 "vintage", False)

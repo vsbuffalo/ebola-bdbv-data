@@ -13,8 +13,9 @@ from __future__ import annotations
 
 import html
 import re
-import subprocess
 from pathlib import Path
+
+from .pdftext import pdftotext
 
 _SCRIPT = re.compile(r"<(script|style|noscript)\b.*?</\1>", re.I | re.S)
 _TAG = re.compile(r"<[^>]+>")
@@ -30,8 +31,7 @@ def normalise(text: str) -> str:
 def document_text(path: Path) -> str:
     raw = path.read_bytes()
     if raw.startswith(b"%PDF"):
-        text = subprocess.run(["pdftotext", "-q", "-layout", str(path), "-"],
-                              capture_output=True, text=True).stdout
+        text = pdftotext(path, "-layout")
     else:
         text = html.unescape(_TAG.sub(" ", _SCRIPT.sub(" ", raw.decode("utf-8", "replace"))))
     return normalise(text)

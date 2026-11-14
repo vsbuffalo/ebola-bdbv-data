@@ -49,12 +49,11 @@ import json
 import re
 import sys
 import urllib.error
-import urllib.parse
 import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from fetch_sitrep_index import (API, EPIDEMIC_START, QUERY, _BARE, _NUM,
+from fetch_sitrep_index import (API, EPIDEMIC_START, QUERY,
                                 numbering_conflicts, numbering_shifts,
                                 parse_row)
 from lib.provenance import REPO_ROOT, UA, _encode

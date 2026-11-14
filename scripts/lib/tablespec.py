@@ -938,13 +938,3 @@ def select(tables: Iterable, spec: TableSpec) -> Resolved | None:
     if not pages:
         return None
     return Resolved(spec=spec, pages=tuple(pages))
-
-
-def select_any(tables: Iterable, specs: Sequence[TableSpec] = SPECS) -> Resolved | None:
-    """The first spec that resolves against this document."""
-    tabs = list(tables)
-    for spec in specs:
-        got = select(tabs, spec)
-        if got:
-            return got
-    return None

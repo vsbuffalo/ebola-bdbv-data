@@ -31,7 +31,7 @@ The likeliest reason is border screening and travel measures following the May
 Disease Outbreak News and the WHO ministerial briefing of 25 May. Scoring the
 full window would force the model to suppress late Ituri transmission to explain
 the missing late exports -- attributing a border-control effect to transmission.
-So scoring stops at `--last-scored-day`.
+So scoring stops at `--last-scored-date`.
 
 The honest caveat, carried here because it belongs with the data: that cut-off is
 set by the last observed export, not by a known policy date. Measures plausibly

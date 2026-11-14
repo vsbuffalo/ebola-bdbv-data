@@ -111,14 +111,13 @@ from __future__ import annotations
 
 import argparse
 import re
-import subprocess
 import sys
 from pathlib import Path
 
 import polars as pl
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from lib.pdftable import read as read_tables
+from lib.pdftext import pdftotext  # noqa: E402
 from lib.report_date import FILENAME, report_key
 from lib.archive import held_pdfs, report_skipped  # noqa: E402
 from extract_zone_table import to_int
@@ -464,9 +463,7 @@ def extract(pdf: Path) -> tuple[dict, list[str], dict]:
     # report (page 6 to 9 depending on vintage), so the two routes read
     # different extents of the same document.
     def _text(*extent: str) -> str:
-        return subprocess.run(["pdftotext", "-q", "-layout", *extent,
-                               str(pdf), "-"],
-                              capture_output=True, text=True).stdout
+        return pdftotext(pdf, "-layout", *extent)
     lines = _text("-f", "1", "-l", "1").splitlines()
     all_lines = _text().splitlines()
     out: dict[str, int] = {}
