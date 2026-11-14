@@ -40,6 +40,18 @@ SERIES = ROOT / "data/build/series"
 STREAMS = ROOT / "data/build/streams"
 
 
+#: The files the blocking checks read, and the target that writes each. One
+#: per gate: the report count, the series' newest day, the province
+#: reconciliation, the streams' newest day and the streams' own totals.
+REQUIRED = (
+    (SERIES / "zone_table_status.csv", "build"),
+    (SERIES / "zone_table.csv", "build"),
+    (SERIES / "province_series_reconciliation.csv", "build"),
+    (STREAMS / "cases_daily_national.tsv", "streams"),
+    (STREAMS / "meta.json", "streams"),
+)
+
+
 def newest_observation(path: Path) -> str:
     """The last day a published flow stream observes.
 
@@ -88,6 +100,15 @@ def collect() -> tuple[list[str], list[str], list[str], dict[str, str]]:
     source: list[str] = []
     reader: list[str] = []
     facts: dict[str, str] = {}
+
+    # A file this verdict reads and does not find is a gate that did not run,
+    # and a gate that did not run has not passed. Every check below skips an
+    # absent file, so without this an empty data/build -- or one where a step
+    # stopped before writing -- sorted nothing into BLOCKING and printed GO.
+    for path, target in REQUIRED:
+        if not path.exists():
+            blocking.append(f"{path.relative_to(ROOT)} has not been built, so "
+                            f"what it gates is unchecked — run `make {target}`")
 
     # Is this build even current? Nothing in the Makefile makes `figures`
     # depend on `streams`, or `streams` on `build` -- they are phony targets a
@@ -154,8 +175,15 @@ def collect() -> tuple[list[str], list[str], list[str], dict[str, str]]:
     rec = SERIES / "province_series_reconciliation.csv"
     if rec.exists():
         r = pl.read_csv(rec, infer_schema_length=20000)
-        if "status" in r.columns:
-            dis = r.filter(pl.col("status") == "disagrees").height
+        # `reconciled` is the column `aggregate_provinces.py` writes, and
+        # `fails` its value for a sum that disagrees with the printed row and
+        # carries no verified exception. A file without the column is itself
+        # blocking: the check would otherwise pass by reading nothing.
+        if "reconciled" not in r.columns:
+            blocking.append(f"{rec.name} has no `reconciled` column, so the "
+                            "province totals cannot be checked")
+        else:
+            dis = r.filter(pl.col("reconciled") == "fails").height
             facts["province reconciliations"] = str(r.height)
             if dis:
                 blocking.append(f"{dis} province total(s) disagree with the sum "
