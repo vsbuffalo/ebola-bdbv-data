@@ -10,7 +10,9 @@ triple-checked against the detected geometry.
 
 What it produces, all under `data/build/onset/`:
   vintages.csv    one row per report: identity, calibration (including the
-                  measured stacking order and its vote), read totals,
+                  measured stacking order and its vote), read totals, the
+                  share of bars the two readers agree on (within one case,
+                  and exactly),
                   printed-total reconciliation, deduplication, and a gate
                   verdict with its reasons. Refusals are rows, not absences.
   snapshots.csv   the levels: one row per (distinct image, onset date) with
@@ -195,7 +197,8 @@ def main() -> None:
                       "read_dead": None, "n_not_read": None,
                       "stable_total": None,
                       "px_per_case": None, "day_px": None, "y_step": None,
-                      "agreement": None, "stacking": None,
+                      "agreement": None, "agreement_exact": None,
+                      "stacking": None,
                       "stacking_votes": None})
         elif sha in failures:
             r.update({"status": "refused", "reasons": failures[sha],
@@ -204,7 +207,8 @@ def main() -> None:
                       "read_dead": None, "n_not_read": None,
                       "stable_total": None,
                       "px_per_case": None, "day_px": None, "y_step": None,
-                      "agreement": None, "stacking": None,
+                      "agreement": None, "agreement_exact": None,
+                      "stacking": None,
                       "stacking_votes": None})
         else:
             head_sha = head_of[sha]
@@ -228,6 +232,12 @@ def main() -> None:
                 "y_step": v.calibration.y_step,
                 "agreement": round(
                     sum(b.reader_agreement for b in v.bars if b.read)
+                    / max(1, sum(b.read for b in v.bars)), 3),
+                # The share of read bars on which the two readers give the
+                # same alive and dead counts. `agreement` allows one case
+                # either way and is what the gate uses; this does not.
+                "agreement_exact": round(
+                    sum(b.reader_exact for b in v.bars if b.read)
                     / max(1, sum(b.read for b in v.bars)), 3),
                 # Which colour the render stacks at the baseline, and the
                 # two-colour bars' vote that measured it (readers.
@@ -255,6 +265,7 @@ def main() -> None:
                 "not_read": b.not_read,
                 "provisional": b.provisional,
                 "reader_agreement": b.reader_agreement if b.read else None,
+                "reader_exact": b.reader_exact if b.read else None,
                 "margin": round(b.margin, 2) if b.read else None,
                 "resolution_cases": round(b.resolution_cases, 4),
                 "status": verdict.status,

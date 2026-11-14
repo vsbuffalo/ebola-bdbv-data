@@ -77,9 +77,13 @@ class BarMeasure:
     margin: float | None   # cost gap, best to second-best (a, d)
     edge_alive: int | None     # reader two's counts; None where it refused
     edge_dead: int | None
-    reader_agreement: bool
+    reader_agreement: bool     # the two readers within AGREE_CASES
     provisional: bool      # inside the "donnees potentiellement incompletes" band
     resolution_cases: float
+    # The two readers give the same alive and the same dead count. Recorded
+    # beside `reader_agreement`, which the reader-disagreement gate uses
+    # and which, at one case of tolerance, cannot see a one-case error.
+    reader_exact: bool = False
     # Why the slot carries no count, where it does not. A slot that is not
     # read is unobserved on this chart -- not zero, and not a refusal of
     # the chart.
@@ -563,14 +567,15 @@ def read_bars(im: np.ndarray, cal: Calibration) -> list[BarMeasure]:
         a1, d1, margin, prov = fit_bar(im, cal, slot)
         edge = edge_bar(im, cal, slot)
         if edge is None:
-            agree = False
+            agree = exact = False
             ea = ed = None
         else:
             ea, ed = edge
             agree = (abs(a1 - ea) <= max(AGREE_CASES, res)
                      and abs(d1 - ed) <= max(AGREE_CASES, res))
+            exact = (a1, d1) == (ea, ed)
         out.append(BarMeasure(slot=slot, alive=a1, dead=d1, margin=margin,
                               edge_alive=ea, edge_dead=ed,
                               reader_agreement=agree, provisional=prov,
-                              resolution_cases=res))
+                              resolution_cases=res, reader_exact=exact))
     return out

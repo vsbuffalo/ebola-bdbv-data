@@ -914,3 +914,38 @@ def test_the_triangle_skips_a_date_either_chart_did_not_read():
     assert b.dates[3].isoformat() not in {r["onset_date"] for r in rows}
     assert b.total == 120 - _vintage("b", "2026-08-03", 120).bars[3].alive
     assert b.n_not_read == 1
+
+
+# --------------------------------------------------------------------------
+# Exact agreement is recorded beside the gate's one-case agreement.
+
+def test_exact_agreement_is_stricter_than_the_gates():
+    """`reader_agreement` allows a case either way on each count, so a
+    one-case error in either reader cannot clear it; `reader_exact` is the
+    two readers giving the same pair."""
+    from lib.onset.calibrate import calibrate
+    from lib.onset.readers import detect_stacking, read_bars, refine_scale
+    im = _image(127)
+    bars = [b for b in read_bars(im, detect_stacking(
+        im, refine_scale(im, calibrate(im)))) if b.read]
+    for b in bars:
+        same = (b.alive, b.dead) == (b.edge_alive, b.edge_dead)
+        assert b.reader_exact == same
+        assert b.reader_agreement or not b.reader_exact
+    assert sum(b.reader_exact for b in bars) \
+        < sum(b.reader_agreement for b in bars)
+
+
+@needs_build
+def test_exact_agreement_is_published_and_the_gate_is_unchanged(vintages,
+                                                                snapshots):
+    import polars as pl
+    from lib.onset import gates, readers
+    assert readers.AGREE_CASES == 1.0 and gates.GR_DISAGREE_MAX == 0.25
+    read = vintages.filter(pl.col("read_total").is_not_null())
+    assert (read["agreement_exact"] <= read["agreement"]).all()
+    s = snapshots.filter(pl.col("not_read").is_null())
+    assert s.filter(pl.col("reader_exact")
+                    & ~pl.col("reader_agreement")).height == 0
+    assert snapshots.filter(pl.col("not_read").is_not_null()
+                            )["reader_exact"].null_count() > 0
