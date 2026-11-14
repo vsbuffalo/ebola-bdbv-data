@@ -1,0 +1,24 @@
+# Pairs of consecutive onset charts between which the source redrew bars
+# lower.
+#
+# What an entry asserts. Between these two charts the source lowered the bars
+# of settled onset dates and kept them lower in every later chart: cases were
+# withdrawn from those dates, not misread by us. The evidence is the chart's
+# own printed total (`n = ...` in its title), which is independent of our
+# reader, and the bars read against the image.
+#
+# What it does. `build_reporting_delay.py` counts a fall between the named
+# charts as `n_withdrawn_by_source` and resets each fallen bar's highest
+# reading to its new height, so growth after the redraw counts as arrivals
+# again. A fall between any other pair is a dip: it is recorded as
+# `n_dip_ignored` and changes nothing else. Without an entry here a real
+# withdrawal would hold back every later arrival on the same onset date
+# until the bar passed its old height.
+#
+# An entry must name two charts that are consecutive among the accepted ones.
+# If the reader later accepts a chart between them the build stops, and the
+# entry is rewritten against the pair the falls then sit in.
+#
+# `verified_by` says who read the bars against the image and when.
+sitrep_from	sitrep_to	sha12_from	sha12_to	printed_n_from	printed_n_to	verified_by	note
+113	115	513c1550bbf6	213609a2845e	5096	5069	Claude, 2026-11-13; not yet checked by a person	The chart's printed total falls by 27, its only fall between accepted charts. The April-June bars drop and stay down: 12 June 42 to 29, 16 June 42 to 29, 14 June 55 to 44; 13 May, 17 May and 10 June rise by 6 to 9. 22 of the 25 largest falls in the triangle are in this pair, and epiforecasts' reading of the same two images shows the same falls. The national cumulative confirmed count does not fall on these dates.

@@ -2938,6 +2938,78 @@ def test_the_delay_distribution_is_a_distribution():
         assert s["cumulative_share"].is_sorted(), m
 
 
+def _triangle(*cells):
+    """A triangle for one onset date: (chart from, chart to, change)."""
+    import polars as pl
+    return pl.DataFrame([
+        {"onset_date": "2026-06-12", "report_date_from": f"2026-09-{i + 1:02d}",
+         "report_date_to": f"2026-09-{i + 2:02d}", "sha12_from": a,
+         "sha12_to": b, "delay_days": 80 + i, "d_alive": d, "d_dead": 0,
+         "d_total": d} for i, (a, b, d) in enumerate(cells)])
+
+
+def test_a_dip_and_its_regain_are_recorded_and_not_counted():
+    """A bar read 12, 11, 12 is one case misread in the middle chart. Keeping
+    the rise and dropping the fall, as the table once did, reports a case
+    arriving at the third chart's delay that the curve already held."""
+    t = BRD.account(_triangle(("a", "b", 12), ("b", "c", -1), ("c", "d", 1),
+                              ("d", "e", 2)), set())
+    got = [(r["arrived"], r["dip_ignored"], r["regain_ignored"],
+            r["withdrawn_by_source"]) for r in t.iter_rows(named=True)]
+    assert got == [(12, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (2, 0, 0, 0)]
+
+
+def test_a_rise_past_an_earlier_height_counts_only_the_part_above_it():
+    t = BRD.account(_triangle(("a", "b", 10), ("b", "c", -3), ("c", "d", 5)),
+                    set())
+    last = t.row(2, named=True)
+    assert (last["arrived"], last["regain_ignored"]) == (2, 3)
+
+
+def test_a_registered_redraw_lets_later_growth_count_again():
+    """After the source lowers a bar, cases added to it are arrivals. Left as
+    a dip, the fall would hold them back until the bar passed its old
+    height."""
+    cells = (("a", "b", 42), ("b", "c", -13), ("c", "d", 4))
+    as_dip = BRD.account(_triangle(*cells), set())
+    as_redraw = BRD.account(_triangle(*cells), {("b", "c")})
+    assert as_dip.row(2, named=True)["arrived"] == 0
+    assert as_redraw.row(1, named=True)["withdrawn_by_source"] == 13
+    assert as_redraw.row(2, named=True)["arrived"] == 4
+
+
+def test_a_redraw_entry_must_name_consecutive_charts(tmp_path):
+    reg = tmp_path / "onset_redraws.tsv"
+    head = ("sitrep_from\tsitrep_to\tsha12_from\tsha12_to\tprinted_n_from\t"
+            "printed_n_to\tverified_by\tnote\n")
+    t = _triangle(("a", "b", 5), ("b", "c", -2))
+    reg.write_text("# a comment\n" + head + "1\t2\tb\tc\t9\t7\tx\ty\n")
+    assert BRD.load_redraws(reg, t) == {("b", "c")}
+    reg.write_text(head + "1\t3\ta\tc\t9\t7\tx\ty\n")
+    with pytest.raises(SystemExit):
+        BRD.load_redraws(reg, t)
+    reg.write_text(head + "1\t9\tb\tz\t9\t7\tx\ty\n")
+    assert BRD.load_redraws(reg, t) == set(), "a chart this build has not reached"
+
+
+@needs_pdfs
+def test_every_movement_of_the_triangle_is_in_one_of_the_four_counts():
+    """What the table does not count it still carries: arrivals plus regains,
+    less dips and withdrawals, is the triangle's whole movement."""
+    import polars as pl
+    tri = pl.read_csv(ROOT / "data/build/onset/triangle.csv",
+                      infer_schema_length=20000)
+    d = pl.read_csv(ROOT / "data/build/series/reporting_delay.csv")
+    cells = pl.read_csv(ROOT / "data/build/series/reporting_delay_cells.csv")
+    for table, cols in ((d, ("n", "n_regain_ignored", "n_dip_ignored",
+                             "n_withdrawn_by_source")),
+                        (cells, ("arrived", "regain_ignored", "dip_ignored",
+                                 "withdrawn_by_source"))):
+        a, r, dip, w = (int(table[c].sum()) for c in cols)
+        assert a + r - dip - w == int(tri["d_total"].sum())
+    assert int(cells["dip_ignored"].sum()) > 0
+
+
 # --------------------------------------------------------------------------
 # The safe-burial pillar's alert ledger
 #

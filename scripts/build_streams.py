@@ -1972,7 +1972,13 @@ REFERENCE_TABLES = {
     "reporting_delay.tsv": (
         "data/build/series/reporting_delay.csv",
         "Onset-to-report delay distribution per onset-month cohort, as share "
-        "and cumulative share by delay in days. Convolve with this rather than "
+        "and cumulative share by delay in days. `n` counts cases whose onset "
+        "date's bar rose above the highest it had been read. Movements not "
+        "counted are carried beside it at the same delay: `n_dip_ignored` (the "
+        "bar read lower than in the previous chart, mostly one-case reading "
+        "error), `n_regain_ignored` (the bar rose back towards a height it had "
+        "already reached) and `n_withdrawn_by_source` (falls in a redraw named "
+        "in registers/onset_redraws.tsv). Convolve with this rather than "
         "shifting by a mean; meta['reporting_delay'] carries the summary and "
         "names the cohort that is settled."),
     "export_cases.tsv": (
