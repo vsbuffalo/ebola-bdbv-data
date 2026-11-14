@@ -2,7 +2,9 @@
 
 SOURCE       The INSP situation report PDFs. PRIMARY, and a statement the
              source makes about ITSELF rather than about the outbreak.
-PRODUCES     One row per report: whether it carries the caveat, which form,
+PRODUCES     One row per report and caveat it carries (a report with none
+             gets one row saying so; a report with two forms gets two):
+             whether it carries the caveat, which form,
              the sentence verbatim, a checked translation, and where on the
              page it sits.
 FITTED       No, and that is a scope decision rather than a gap. It is a
