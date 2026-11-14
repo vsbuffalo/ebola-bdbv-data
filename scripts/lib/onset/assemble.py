@@ -11,8 +11,9 @@ are one observation of the epidemic.
 
 The triangle is derived, never primary: increments between consecutive
 surviving vintages, clipped to the intersection of the two axis extents --
-dates one figure does not plot are unobserved, not zero -- and refusing to
-span a vintage the gates did not accept.
+dates one figure does not plot, or plots under a line the reader cannot see
+through, are unobserved, not zero -- and refusing to span a vintage the
+gates did not accept.
 """
 
 from __future__ import annotations
@@ -99,11 +100,21 @@ class Vintage:
     dates: tuple[dt.date, ...]        # one per slot
 
     def series(self) -> dict[dt.date, tuple[int, int]]:
-        return {d: (b.alive, b.dead) for d, b in zip(self.dates, self.bars)}
+        """The counts by onset date, over the dates this chart was read
+        on. A slot that was not read (`BarMeasure.not_read`) is absent, so
+        everything built from two charts' common dates -- deduplication,
+        the alignment gate, the triangle -- leaves it out instead of
+        differencing it as zero."""
+        return {d: (b.alive, b.dead)
+                for d, b in zip(self.dates, self.bars) if b.read}
 
     @property
     def total(self) -> int:
-        return sum(b.alive + b.dead for b in self.bars)
+        return sum(b.alive + b.dead for b in self.bars if b.read)
+
+    @property
+    def n_not_read(self) -> int:
+        return sum(not b.read for b in self.bars)
 
 
 def value_dedup(vintages: list[Vintage]) -> list[tuple[Vintage, list[Vintage]]]:

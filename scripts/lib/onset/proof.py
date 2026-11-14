@@ -35,6 +35,11 @@ def draw_proof(img: Image.Image, v: Vintage, status: str,
     for bar, date in zip(v.bars, v.dates):
         x0 = cal.x_phase + bar.slot * cal.day_px - 0.45 * cal.day_px
         x1 = x0 + 0.9 * cal.day_px
+        if not bar.read:
+            # Not read: a flag the full height of the panel, and no outline.
+            d.line([x0, p.top + 2, x0, p.bottom], fill=INK_FLAG, width=1)
+            d.line([x1, p.top + 2, x1, p.bottom], fill=INK_FLAG, width=1)
+            continue
         top_total = p.bottom - (bar.alive + bar.dead) * c
         # The split line sits on the baseline segment's top, which is the
         # dead segment's where the render stacks dead first (059-062).

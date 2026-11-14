@@ -180,7 +180,7 @@ def test_render_invariance_on_the_087_088_pair():
         im = np.asarray(Image.open(f).convert("RGB")).astype(float)
         cal = detect_stacking(im, refine_scale(im, calibrate(im)))
         bars = read_bars(im, cal)
-        totals.append(sum(b.alive + b.dead for b in bars))
+        totals.append(sum(b.alive + b.dead for b in bars if b.read))
     assert abs(totals[0] - totals[1]) <= 10, \
         f"the same chart read {totals[0]} and {totals[1]}; " \
         "upstream's reader lost 184 cases here"
@@ -597,7 +597,9 @@ def test_normal_order_renders_are_unchanged_in_kind(vintages):
     import polars as pl
     row = vintages.filter(pl.col("sitrep") == 64)
     assert row["stacking"][0] == "alive_bottom"
-    assert row["read_total"][0] == 2064
+    # Its printed 2,064 less the one date it does not read: 14 May, 10
+    # cases, under the dashed line.
+    assert row["read_total"][0] == 2054 and row["n_not_read"][0] == 1
     assert 400 <= row["read_dead"][0] <= 700
 
 
@@ -798,26 +800,30 @@ def test_an_empty_date_on_a_gridline_reads_empty(snapshots, sitrep, onset):
 def test_charts_before_92_keep_their_printed_totals(vintages):
     """The large renders (4 to 8 px per case) read within two cases of
     their printed n before the zero and rounding were corrected, and the
-    correction must not cost them that."""
+    correction must not cost them that. Each now leaves one date unread --
+    14 May, under the dashed line, which held 10 or 11 cases on every one
+    of these charts -- so each is short by that bar and no more."""
     import polars as pl
     old = vintages.filter((pl.col("sitrep") < 92)
                           & pl.col("printed_n").is_not_null()
                           & pl.col("read_total").is_not_null())
     assert old.height >= 20
+    assert set(old["n_not_read"].to_list()) == {1}
     off = {r["sitrep"]: r["read_total"] - r["printed_n"]
            for r in old.iter_rows(named=True)
-           if abs(r["read_total"] - r["printed_n"]) > 2}
+           if not -12 <= r["read_total"] - r["printed_n"] <= -8}
     assert not off, f"read total minus printed n: {off}"
 
 
 @needs_build
 def test_sitrep_114_is_read(vintages):
     """Refused for reading 255 short of its printed 5,119 while its scale
-    sat 3.9% high; from the measured zero it reads within 0.2%."""
+    sat 3.9% high; from the measured zero it reads 17 short, about 10 of
+    them the date under the dashed line that it does not read."""
     import polars as pl
     row = vintages.filter(pl.col("sitrep") == 114)
     assert row["status"][0] == "accepted"
-    assert abs(row["read_total"][0] - 5119) <= 0.002 * 5119
+    assert -0.004 * 5119 <= row["read_total"][0] - 5119 <= 0
 
 
 @needs_build
@@ -830,3 +836,81 @@ def test_156_stands_for_the_snapshot_154_first_carried(vintages):
     assert v[154]["status"] == "refused" and "G-R" in v[154]["reasons"]
     assert v[154]["dedup_head"] == v[156]["dedup_head"] \
         == v[156]["decoded_sha256"][:12]
+
+
+# --------------------------------------------------------------------------
+# The date under the dashed line is not read.
+
+@pytest.mark.parametrize("sitrep", [60, 72, 87, 98, 113, 127, 129, 149, 159])
+def test_the_dashed_line_is_found_on_14_may_and_nowhere_else(sitrep):
+    """The source's "Premier resultat positif" line: pure red in the
+    lossless renders (60, 72, 98), the dead fill's red after JPEG, and pale
+    where it covers half a column (129, 149). Sitrep 73's rotated band
+    label and 128's annotation lettering are red runs up a column too, at
+    uneven spacings, and must not be taken for it."""
+    import datetime as dt
+    import numpy as np
+    from lib.onset.assemble import load_anchors, slot_dates
+    from lib.onset.calibrate import calibrate
+    from lib.onset.readers import (NOT_READ_DASHED_LINE, detect_stacking,
+                                   read_bars, refine_scale)
+    images = sorted((ONSET / "images").glob(f"*-{sitrep:03d}-*.png"))
+    im = _image(sitrep)
+    cal = detect_stacking(im, refine_scale(im, calibrate(im)))
+    dates = slot_dates(cal, load_anchors()[images[0].stem[-12:]])
+    bars = read_bars(im, cal)
+    unread = [d for b, d in zip(bars, dates) if not b.read]
+    assert unread == [dt.date(2026, 5, 14)]
+    bar = bars[dates.index(dt.date(2026, 5, 14))]
+    assert bar.alive is None and bar.dead is None
+    assert bar.not_read == NOT_READ_DASHED_LINE
+
+
+def test_a_dashed_line_is_told_from_a_bar_and_from_lettering():
+    import numpy as np
+    from lib.onset.readers import dashed_line_columns
+    _, cal = _drawn_bar(3.0, -0.3, 10, 12)
+    im = np.full((320, 40, 3), 255.0)
+    p = cal.panel
+    red = (198., 40., 47.)
+    for top in range(p.top + 2, p.bottom - 6, 15):     # dashes: 6 on, 9 off
+        im[top: top + 6, 10] = red
+    im[p.bottom - 120: p.bottom, 20] = red              # a tall dead bar
+    for top in (20, 23, 31, 60, 64, 110, 290):          # lettering
+        im[top: top + 2, 30] = red
+    cols = np.where(dashed_line_columns(im, cal))[0].tolist()
+    assert cols == [10]
+
+
+@needs_build
+def test_a_date_that_was_not_read_is_never_differenced(snapshots):
+    """Not read is unobserved on that chart: empty counts with the reason
+    beside them in snapshots.csv, left out of the chart's read total, and
+    no row in the triangle -- where a zero would have been a bar falling
+    to nothing and rising again."""
+    import polars as pl
+    unread = snapshots.filter(pl.col("not_read").is_not_null())
+    assert unread.height > 0
+    assert set(unread["onset_date"].to_list()) == {"2026-05-14"}
+    for col in ("alive", "dead", "total"):
+        assert unread[col].null_count() == unread.height
+    read = snapshots.filter(pl.col("not_read").is_null())
+    assert read["total"].null_count() == 0
+    tri = pl.read_csv(ONSET / "triangle.csv", infer_schema_length=100000)
+    assert tri.filter(pl.col("onset_date") == "2026-05-14").height == 0
+    assert tri["d_total"].null_count() == 0
+
+
+def test_the_triangle_skips_a_date_either_chart_did_not_read():
+    import dataclasses
+    from lib.onset.assemble import triangle
+    a = _vintage("a", "2026-08-01", 100)
+    b = _vintage("b", "2026-08-03", 120)
+    gap = dataclasses.replace(b.bars[3], alive=None, dead=None,
+                              not_read="test")
+    b = dataclasses.replace(b, bars=b.bars[:3] + (gap,) + b.bars[4:])
+    rows = triangle([a, b])
+    assert len(rows) == 39
+    assert b.dates[3].isoformat() not in {r["onset_date"] for r in rows}
+    assert b.total == 120 - _vintage("b", "2026-08-03", 120).bars[3].alive
+    assert b.n_not_read == 1

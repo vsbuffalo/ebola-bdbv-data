@@ -3487,8 +3487,13 @@ def draw_onset_vintages(inputs: dict[str, Path], out: Path) -> None:
     bars are printed faded because the source itself does not yet believe
     them.
     """
-    snap = (pl.read_csv(inputs["snapshots"], try_parse_dates=True)
-            .filter(pl.col("status") != "refused"))
+    # A date a chart was not read on (empty counts, reason in `not_read`)
+    # is drawn as a gap in that chart's line, not as zero.
+    snap = (pl.read_csv(inputs["snapshots"], try_parse_dates=True,
+                        infer_schema_length=None)
+            .filter(pl.col("status") != "refused")
+            .with_columns(pl.col("alive", "dead", "total")
+                          .cast(pl.Float64).fill_null(float("nan"))))
     reports = sorted(snap["report_date"].unique().to_list())
     last = reports[-1]
 

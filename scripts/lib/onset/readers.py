@@ -72,14 +72,26 @@ TOP_BORDER_ROWS = 2
 @dataclass(frozen=True)
 class BarMeasure:
     slot: int              # bar index from the left edge of the axis
-    alive: int
-    dead: int
-    margin: float          # cost gap, best to second-best (a, d)
+    alive: int | None      # None, with `dead`, where the slot was not read
+    dead: int | None
+    margin: float | None   # cost gap, best to second-best (a, d)
     edge_alive: int | None     # reader two's counts; None where it refused
     edge_dead: int | None
     reader_agreement: bool
     provisional: bool      # inside the "donnees potentiellement incompletes" band
     resolution_cases: float
+    # Why the slot carries no count, where it does not. A slot that is not
+    # read is unobserved on this chart -- not zero, and not a refusal of
+    # the chart.
+    not_read: str | None = None
+
+    @property
+    def read(self) -> bool:
+        return self.not_read is None
+
+
+NOT_READ_DASHED_LINE = ("a red dashed vertical line runs through this "
+                        "date's columns")
 
 
 def _class_costs(strip: np.ndarray, colour: tuple | None) -> np.ndarray:
@@ -481,12 +493,73 @@ def refine_scale(im: np.ndarray, cal: Calibration) -> Calibration:
     return dataclasses.replace(cal, px_per_case=float(best_c))
 
 
+# The dashed line. Its ink is red -- the red channel exceeds both others by
+# at least this much. That is loose on purpose: the line is pure red in the
+# lossless renders, the dead fill's red after JPEG, and paler still where it
+# covers half a column in the small renders (154, 69, 76 in sitrep 129),
+# and the colour is not what identifies it. What does is the spacing: the
+# starts of the red runs up one column are even -- successive starts within
+# this share of their median spacing -- and the evenly spaced stretch
+# covers at least this share of the panel's height. A bar is one run; the
+# annotation's lettering and the band's rotated label are a few runs at
+# uneven spacings. On the 62 renders read at sitrep 159 this marks 14 May
+# on every one and no other date.
+DASH_RED_EXCESS = 50.0
+DASH_SPACING_TOLERANCE = 0.2
+DASH_MIN_EXTENT = 0.5
+
+
+def dashed_line_columns(im: np.ndarray, cal: Calibration) -> np.ndarray:
+    """Image columns a red vertical dashed line runs up.
+
+    The source marks the date of the first laboratory confirmation
+    ("Premier resultat positif", 14 May) with a dashed vertical red line
+    from the baseline to the top of the panel, drawn over that date's bar.
+    A dash is about two cases tall and a gap about three, at a phase that
+    changes with every render's scale, so on the columns it crosses a dash
+    reads as dead cases and a gap as background or as a break in the alive
+    segment: the date read 8 + 2, 4 + 6, 5 + 8, 4 + 9, 1 + 6 and 4 + 4
+    across the archive. Nothing in the column says which red is bar and
+    which is line.
+
+    Returns a boolean per image column. `read_bars` does not read a slot
+    any of whose columns is one."""
+    p = cal.panel
+    region = im[p.top + 1: p.bottom, :]
+    red = region[:, :, 0] - region[:, :, 1:].max(axis=2) > DASH_RED_EXCESS
+    starts = red & ~np.vstack([np.zeros((1, red.shape[1]), bool), red[:-1]])
+    out = np.zeros(im.shape[1], dtype=bool)
+    for x in range(p.left + 1, p.right):
+        rows = np.where(starts[:, x])[0]
+        if len(rows) < 4:
+            continue
+        gaps = np.diff(rows)
+        period = float(np.median(gaps))
+        even = np.abs(gaps - period) <= DASH_SPACING_TOLERANCE * period
+        out[x] = even.sum() * period >= DASH_MIN_EXTENT * red.shape[0]
+    return out
+
+
 def read_bars(im: np.ndarray, cal: Calibration) -> list[BarMeasure]:
     _require_stacking(cal)
     out = []
     res = 1.0 / cal.px_per_case
+    line = dashed_line_columns(im, cal)
     im = cal.see_through_band(im)
+    p = cal.panel
     for slot in range(cal.n_slots):
+        centre = cal.x_phase + slot * cal.day_px
+        half = max(1.0, 0.32 * cal.day_px)
+        x0 = max(int(np.ceil(centre - half)), p.left + 1)
+        x1 = min(int(np.floor(centre + half)), p.right - 1)
+        if line[x0:x1 + 1].any():
+            out.append(BarMeasure(
+                slot=slot, alive=None, dead=None, margin=None,
+                edge_alive=None, edge_dead=None, reader_agreement=False,
+                provisional=(cal.band_left is not None
+                             and centre >= cal.band_left),
+                resolution_cases=res, not_read=NOT_READ_DASHED_LINE))
+            continue
         a1, d1, margin, prov = fit_bar(im, cal, slot)
         edge = edge_bar(im, cal, slot)
         if edge is None:

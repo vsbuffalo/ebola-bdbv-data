@@ -58,7 +58,7 @@ class Verdict:
 def stable_total(v: Vintage) -> int:
     cutoff = v.report_date - dt.timedelta(days=G3_MIN_AGE_DAYS)
     return sum(b.alive + b.dead
-               for b, d in zip(v.bars, v.dates) if d <= cutoff)
+               for b, d in zip(v.bars, v.dates) if d <= cutoff and b.read)
 
 
 def _g1_render(v: Vintage, window: list[Vintage]) -> str | None:
@@ -74,7 +74,9 @@ def _g1_render(v: Vintage, window: list[Vintage]) -> str | None:
 
 
 def _g2_printed_n(v: Vintage) -> tuple[str | None, bool]:
-    """(reason, is_refusal)."""
+    """(reason, is_refusal). The read total leaves out any slot that was
+    not read, so a chart with one carries that bar's cases as shortfall:
+    the date under the dashed line holds 8 to 13 cases on every chart."""
     if v.printed_n is None:
         return "G2: no printed total on this render; reconciliation " \
                "cannot run", False
@@ -125,10 +127,11 @@ def _g5_alignment(v: Vintage, prev: Vintage | None) -> str | None:
 
 
 def _gr_readers(v: Vintage) -> tuple[str | None, bool]:
-    spoke = [b for b in v.bars if b.edge_alive is not None]
-    if len(spoke) < GR_SPOKE_MIN * len(v.bars):
+    read = [b for b in v.bars if b.read]
+    spoke = [b for b in read if b.edge_alive is not None]
+    if len(spoke) < GR_SPOKE_MIN * len(read):
         return ("G-R: the outline reader measured "
-                f"{len(spoke)}/{len(v.bars)} bars; a single-reader "
+                f"{len(spoke)}/{len(read)} bars; a single-reader "
                 "vintage", False)
     dis = [b for b in spoke if not b.reader_agreement]
     frac = len(dis) / len(spoke)
