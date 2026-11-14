@@ -1827,6 +1827,29 @@ needs_streams = pytest.mark.skipif(
     reason="the streams are not built; run `make build && make streams`")
 
 
+@needs_streams
+@pytest.mark.parametrize("stream", ["cases_national", "deaths_national"])
+def test_no_published_province_is_also_counted_as_dropped(stream):
+    """The national identity is national = emitted provinces + dropped
+    provinces + orphan pool + unattributed, per weekly bin.
+
+    The dropped term was summed over a fixed list of three provinces that
+    stayed in place after all three were published, so each was subtracted
+    twice and `unattributed` reported minus their movement: bin 22 of the
+    cases identity read national 489, emitted 489, dropped 13, unattributed
+    -13. The dropped term may only hold provinces `meta.json` itself lists as
+    unpublished, and the four terms must add up.
+    """
+    meta = json.loads((STREAMS / "meta.json").read_text())
+    rows = meta["reconciliation"][stream]["vs_province_sum"]
+    assert rows
+    for r in rows:
+        assert (r["emitted_provinces"] + r["dropped_provinces"]
+                + r["orphan_pool"] + r["unattributed"]) == r["national"], r
+    if not meta["dropped_provinces"]:
+        assert all(r["dropped_provinces"] == 0 for r in rows)
+
+
 def _released() -> list[BS.Written]:
     """Every stream file in the release, with how its rows relate to time.
 

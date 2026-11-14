@@ -63,8 +63,11 @@ Ituri and Nord-Kivu carry ~96% of confirmed cases and are the streams the
 models pin. Haut-Uele has grown to ~140 cases -- no longer the quarter of a
 percent it was when the two-province decision was made -- so its streams are
 now BUILT as well, and taking them into a likelihood is a modelling decision
-recorded there, not here. Tshopo, Sud-Kivu and Bas-Uele remain dropped, and
-the count each carried is written into the meta file.
+recorded there, not here. Tshopo, Sud-Kivu, Bas-Uele, Sud-Ubangi and
+Nord-Ubangi are built on the same terms. A province the source reports cases
+for and this file does not publish must be named in
+`registers/excluded_places.tsv`; the count each such province carries is
+written into the meta file.
 """
 
 from __future__ import annotations
@@ -668,8 +671,9 @@ def stream_places() -> dict[str, str]:
 
     Derived from the provinces streams are built for, so adding one adds its
     place here too. `national` is every province the source reports, which is
-    NOT the sum of the province streams: three small provinces and the rows
-    the source has not attributed are deliberately outside them.
+    NOT the sum of the province streams: the rows the source has not
+    attributed, and any province named in `registers/excluded_places.tsv`,
+    are outside them.
     """
     return {slug: prov for prov, slug in STREAM_PROVINCES.items()} | {
         "national": "DRC, all provinces"}
@@ -1633,11 +1637,6 @@ def ascertainment(panel: pl.DataFrame,
     return weekly, vs
 
 
-#: The provinces whose streams are NOT emitted; their per-bin movement is the
-#: named remainder in the national-vs-provinces reconciliation below.
-DROPPED_PROVINCES = ("Tshopo", "Sud-Kivu", "Bas-Uélé")
-
-
 #: The front-page dashboard tile as a LAST-RESORT source for a national
 #: cumulative, keyed by the column it can supply.
 #:
@@ -1665,9 +1664,9 @@ def national_printed(panel: pl.DataFrame, summary: pl.DataFrame | None,
     """The printed national cumulative, one value per report date, coalesced
     zone route -> provincial summary -> prose -> front-page tile -- the same
     precedence the national comparison uses. BUILT FROM THE PRINTED ROWS, not
-    by summing the emitted province streams: those deliberately exclude three
-    small provinces and whatever the source has not attributed, and a national
-    series must not inherit that exclusion.
+    by summing the emitted province streams: those exclude whatever the source
+    has not attributed and any province the exclusion register names, and a
+    national series must not inherit that exclusion.
     """
     sources: list[pl.DataFrame | None] = [panel, summary, prose]
     tile = BANNER_NATIONAL.get(col)
@@ -2493,8 +2492,8 @@ def main() -> None:
 
     # ------------------------------------------------------------------
     # NATIONAL STREAMS, from the printed national rows -- never from summing
-    # the emitted province streams, which deliberately exclude the three
-    # small provinces and the unattributed pool. Same gates: emitted must
+    # the emitted province streams, which exclude the unattributed pool and
+    # any province the exclusion register names. Same gates: emitted must
     # equal the printed cumulative's movement exactly. And the relationship
     # to the province streams is CHECKED, not assumed: per bin,
     #   national = emitted provinces + dropped provinces + orphan pool
@@ -2576,8 +2575,16 @@ def main() -> None:
         psum = psum.with_columns(
             pl.sum_horizontal([pl.col(c).fill_null(0) for c in prov_names])
             .alias("provinces"))
+        # The provinces whose streams are not emitted are the ones the panel
+        # carries cases for and STREAM_PROVINCES does not name -- `dropped`,
+        # computed above for the exclusion gate. Their per-bin movement is
+        # the named remainder. Taken from there rather than from a list kept
+        # beside STREAM_PROVINCES: when Tshopo, Sud-Kivu and Bas-Uélé were
+        # published the list still named them, so each was subtracted from
+        # the national row twice, once as an emitted stream and once as a
+        # dropped province, and `unattributed` came out at minus their sum.
         dropped_w = None
-        for dprov in DROPPED_PROVINCES:
+        for dprov in sorted(dropped["province"].to_list()):
             dcum = daily_cumulative(panel, dprov, col)
             if dcum.is_empty():
                 continue
