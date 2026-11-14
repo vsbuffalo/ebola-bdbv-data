@@ -38,6 +38,28 @@ same as withdrawn: the older tag stays exactly where it is.
 
 ---
 
+## `data/2026-11-08-r1` — 2026-11-13 — daily update
+
+Cut automatically by `scripts/daily_update.py`: every release gate passed (tests, verdict, export quotes, fresh-clone rebuild).
+
+**Fixes merged since the last release** (see each pull request for what moved):
+
+- lab prose: a printed 100 % is read as 100, not 0 -- the rate pattern took two integer digits, so '100 %' matched as '00', no pair on the page gave 0 %, and the sentence refused. Two sentences in the archive print it: sitrep 105's Haut-Uélé ('11 nouveaux résultats positifs (11 vivants et 0 décès) sur 11 échantillons analysés (positivité est de 100 %)') now reads 11 of 11, and sitrep 119's Sud-Ubangi ('1 nouveau résultat positif (1 décès) sur l'échantillon analysé (positivité : 100,0%)') reads 1 of 1, which publishes a laboratory stream for Sud-Ubangi with that one row. The test that pinned 105's refusal now pins 11 of 11
+- streams: the national identity in meta.json no longer subtracts Tshopo, Sud-Kivu and Bas-Uélé twice -- DROPPED_PROVINCES still named them after all three were published, so each bin's unattributed term came out at minus their movement and hid the real residue (bin 21 of cases: national 492, provinces 490, reported -11). The dropped term is now taken from the provinces the panel carries and STREAM_PROVINCES does not. Changes meta.json reconciliation.{cases,deaths}_national.vs_province_sum only; no stream file moves
+- figures: the three onset-delay figures draw their curves in a fixed order -- each looped over an unordered group_by, so the semi-transparent curves were layered differently on every run and three draws from identical inputs gave three different PNGs; with maintain_order each figure is byte-identical across runs
+- docstrings: three statements the code no longer matches -- the care extraction said nothing in it is published as a stream, and build_streams.py publishes the care_* families from it; the caveat file is one row per report and caveat (171 rows for 170 reports), not one per report; the Uganda stream's flag is --last-scored-date
+- dead code: remove select_any, SNAP, an unused import in the banner extractor and two unused province tables in the burial extractor -- select_any lost its last caller in c588c03 and SNAP never had one; none is referenced in scripts/, tests/ or analysis/
+- Revert the lab-prose 100 % change: it alters built data against a pinned test -- sitrep 105's Haut-Uélé sentence prints '11 positifs (11 vivants et 0 décès) sur 11 ... 100 %', and test_lab_prose_the_living_dead_split_is_not_a_pair requires that sentence to refuse; reading 100 as 100 licenses it as 11 of 11. The previous commit's claim that no sentence in the archive prints 100 % was wrong. Whether that row should be published is a decision about the data, left to its owner
+- lab prose: a printed 100 % is read as 100, not 0 -- the rate pattern took two integer digits, so '(100 %)' matched as '00' and a sentence that also printed a zero licensed 0 positives of its samples; no sentence in the archive prints 100 %, so no built value moves
+- build: a refusal in the province aggregation stops the build -- its 'some reports print no total' status was exit 1, which is also what Python exits with for every raise SystemExit(message) and every traceback, so the recipe's '|| [ $? -eq 1 ]' let a stale exception register or an unknown province through with the previous run's series still on disk. The reported gap is now exit 3 and exit 1 stops like any other step. build_release_figures.py tolerated exit 1 from every step; it now tolerates only the gap, from the one step that has it, and --distinct names the releases that could not be rebuilt and exits non-zero. --allow-unchecked exits 2 above its limit, as its help says
+- onset, check: the single-reader gate tests a named threshold, and the upstream check drops three imports it never used -- GR_SILENT_MAX (0.8) was declared beside the gate while the gate compared against a literal 0.2; the constant is now GR_SPOKE_MIN, the number the comparison uses, so the arithmetic is unchanged
+- burial alerts: read the reports the manifest pins, not the directory -- this was the one extractor still globbing sitrep_*.pdf, so a rebuild of an older tag over a newer archive would have put later reports into burial_alerts.csv with no message; output on the current archive is byte-identical
+- verdict: the province-reconciliation check read a column the file does not have, and a missing file passed every gate -- it filtered `status == disagrees` where aggregate_provinces.py writes `reconciled == fails`, so it could not fire on any input; and each check skips a file it cannot find, so an empty data/build printed GO. Both are now blocking, with tests on made-up builds
+- extractors: read pdftotext through one checked call -- nine call sites took stdout without looking at the exit status, so a run that failed once printed nothing and the report was recorded as saying nothing; lib/pdftext.py raises on a non-zero exit, naming the file
+- registers: describe the five registers the README did not list -- retrospective_batches, excluded_places, lab_capacity_events, onset_axis_anchors and released_tags each have a header saying what a row asserts, but the table a reader starts from named ten of the fifteen files
+
+---
+
 ## `data/2026-11-08-r0` — 2026-11-10 — daily update
 
 Cut automatically by `scripts/daily_update.py`: every release gate passed (tests, verdict, export quotes, fresh-clone rebuild).
