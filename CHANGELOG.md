@@ -38,6 +38,16 @@ same as withdrawn: the older tag stays exactly where it is.
 
 ---
 
+## `data/2026-11-08-r2` — 2026-11-14 — daily update
+
+Cut automatically by `scripts/daily_update.py`: every release gate passed (tests, verdict, export quotes, fresh-clone rebuild).
+
+**Fixes merged since the last release** (see each pull request for what moved):
+
+- reporting delay: a bar that dips and comes back is recorded, not counted as a late arrival -- the table kept every rise of the onset triangle and dropped every fall, so a bar read 12, 11, 12 added a case at the third chart's delay; most falls are the reader placing a bar's top one case low in the small renders. A case now counts when its bar rises above the highest it has been read, and what is not counted is carried at the same delay in three new columns of reference/reporting_delay.tsv: n_dip_ignored, n_regain_ignored and n_withdrawn_by_source. registers/onset_redraws.tsv names the one pair of charts (sitreps 113 and 115, printed n 5,096 to 5,069) where the source redrew bars lower; a fall there is a withdrawal and resets the bar's highest reading. n falls from 6,535 to 6,044; the August cohort's 90th percentile from 26 to 20 days, July's from 39 to 25. Not breaking: columns are added, none renamed
+
+---
+
 ## `data/2026-11-08-r1` — 2026-11-13 — daily update
 
 Cut automatically by `scripts/daily_update.py`: every release gate passed (tests, verdict, export quotes, fresh-clone rebuild).
