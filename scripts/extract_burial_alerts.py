@@ -58,14 +58,6 @@ from lib.report_date import report_key                            # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-PROVINCES = {
-    "ituri": "Ituri", "nordkivu": "Nord-Kivu", "sudkivu": "Sud-Kivu",
-    "hautuele": "Haut-Uélé", "basuele": "Bas-Uélé", "tshopo": "Tshopo",
-    "sudubangi": "Sud-Ubangi", "nordubangi": "Nord-Ubangi",
-}
-PROV_RE = re.compile(r"\b(Ituri|Nord[-\s]?Kivu|Sud[-\s]?Kivu"
-                     r"|Haut[-\s]?U[ée]l[ée]|Bas[-\s]?U[ée]l[ée]|Tshopo"
-                     r"|Sud[-\s]?Ubangi|Nord[-\s]?Ubangi)\b", re.I)
 SLUG = {"ituri": "ituri", "nordkivu": "nord_kivu", "sudkivu": "sud_kivu",
         "hautuele": "haut_uele", "basuele": "bas_uele", "tshopo": "tshopo",
         "sudubangi": "sud_ubangi", "nordubangi": "nord_ubangi"}

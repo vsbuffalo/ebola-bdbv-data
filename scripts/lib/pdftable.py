@@ -118,7 +118,6 @@ logging.getLogger("pdfminer.pdffont").addFilter(FONT_BBOX)
 
 SNAP_X = 6.0
 SNAP_Y = 2.5
-SNAP = SNAP_X          # backstop for containment tests
 TOUCH = 3.0
 MIN_RULE = 2.0        # a rectangle shorter than this in both axes is not a rule
 MIN_COLS = 2
