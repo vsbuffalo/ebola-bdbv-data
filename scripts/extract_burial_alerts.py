@@ -52,6 +52,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from lib.archive import held_pdfs, report_skipped  # noqa: E402
 from lib.pdftext import pdftotext  # noqa: E402
 from lib.report_date import report_key                            # noqa: E402
 
@@ -292,8 +293,12 @@ def main() -> int:
     args = ap.parse_args()
 
     rows, status = [], []
-    pdfs = sorted((args.pdf_dir if args.pdf_dir.is_absolute()
-                   else REPO_ROOT / args.pdf_dir).glob("sitrep_*.pdf"))
+    # The reports the manifest pins, not whatever the directory holds: a
+    # rebuild of an older tag over a newer archive must read that tag's
+    # reports only, as every other extractor does.
+    pdfs, extra = held_pdfs(args.pdf_dir if args.pdf_dir.is_absolute()
+                            else REPO_ROOT / args.pdf_dir)
+    report_skipped(extra)
     for pdf in pdfs:
         # The page's own `Date de rapportage`, not the filename -- the two
         # disagree on eleven reports and the filename is the unreliable half.
