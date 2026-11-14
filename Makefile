@@ -443,7 +443,9 @@ onset:
 	# the epidemic's early history, not a reporting delay.
 	uv run python scripts/build_reporting_delay.py \
 		--triangle data/build/onset/triangle.csv \
+		--redraws registers/onset_redraws.tsv \
 		--out data/build/series/reporting_delay.csv \
+		--cells data/build/series/reporting_delay_cells.csv \
 		--summary data/build/series/reporting_delay.json
 	# THE TRIANGLE, DRAWN: every vintage on one axis (the fan closing is
 	# the reporting process completing) and the empirical delay shape
