@@ -10,11 +10,16 @@ triple-checked against the detected geometry.
 
 What it produces, all under `data/build/onset/`:
   vintages.csv    one row per report: identity, calibration (including the
-                  measured stacking order and its vote), read totals,
+                  measured stacking order and its vote), read totals, the
+                  share of bars the two readers agree on (within one case,
+                  and exactly),
                   printed-total reconciliation, deduplication, and a gate
                   verdict with its reasons. Refusals are rows, not absences.
   snapshots.csv   the levels: one row per (distinct image, onset date) with
                   alive and dead counts, flags, and the render's resolution.
+                  A date the reader could not read on that image has empty
+                  counts and its reason in `not_read`; it is unobserved
+                  there, not zero.
   triangle.csv    derived, never primary: increments between consecutive
                   accepted deduplicated vintages on the intersection of
                   their axis extents, both endpoints named on every row.
@@ -28,9 +33,11 @@ derives the onset-to-report delay table from triangle.csv
 `streams/reference/reporting_delay.tsv` and `meta['reporting_delay']`, which
 downstream models convolve with. A misread bar here is a wrong delay there.
 
-Validated by: the figure's own printed total (the 53 distinct accepted
-renders that print one reconcile from -0.70% to +0.09%, median -0.19%, as
-of sitrep 159), cross-vintage monotonicity and alignment gates
+Validated by: the figure's own printed total (the accepted renders that
+print one read from 0.59% to 0.19% short of it, median 0.32%, as of sitrep
+159; every one leaves out the date under the dashed line, 7 to 13 cases,
+and with that bar's last reading added back they run from -0.48% to
++0.09%), cross-vintage monotonicity and alignment gates
 over all of history on every run, and the design's regression fixtures in
 tests/test_onset.py. Design: notes/2026-08-28-onset-digitiser-design.md;
 measured failure modes it answers:
@@ -59,7 +66,7 @@ from lib.onset.readers import (read_bars, refine_scale,               # noqa: E4
                                 detect_stacking)
 from lib.onset.assemble import (Vintage, load_anchors, slot_dates,    # noqa: E402
                                 value_dedup, triangle)
-from lib.onset.gates import judge                                     # noqa: E402
+from lib.onset.gates import settle_heads, stable_total                # noqa: E402
 from lib.onset.proof import draw_proof                                # noqa: E402
 from lib.report_date import FILENAME, report_key                      # noqa: E402
 
@@ -168,15 +175,17 @@ def main() -> None:
     vintages, failures = read_vintages(rows, firsts, images_dir)
 
     # Re-encodes and re-renders of one data snapshot collapse; the gates
-    # then judge the surviving heads in report-date order.
-    groups = value_dedup(list(vintages.values()))
+    # then judge the surviving heads in report-date order. A group's head
+    # is its earliest accepted member (gates.settle_heads); a member that
+    # was tried as head and refused keeps that refusal as its own verdict.
+    groups, verdicts, own = settle_heads(
+        value_dedup(list(vintages.values())))
     head_of: dict[str, str] = {}
     for head, members in groups:
         head_of[head.sha256] = head.sha256
         for mv in members:
             head_of[mv.sha256] = head.sha256
     heads = [head for head, _ in groups]
-    verdicts = judge(heads)
 
     # --- vintages.csv: one row per report, everything joined on.
     out_rows = []
@@ -187,38 +196,51 @@ def main() -> None:
             r.update({"status": "refused", "reasons": row["evidence"],
                       "dedup_head": None, "printed_n": None,
                       "read_total": None, "read_alive": None,
-                      "read_dead": None, "stable_total": None,
+                      "read_dead": None, "n_not_read": None,
+                      "stable_total": None,
                       "px_per_case": None, "day_px": None, "y_step": None,
-                      "agreement": None, "stacking": None,
+                      "agreement": None, "agreement_exact": None,
+                      "stacking": None,
                       "stacking_votes": None})
         elif sha in failures:
             r.update({"status": "refused", "reasons": failures[sha],
                       "dedup_head": None, "printed_n": None,
                       "read_total": None, "read_alive": None,
-                      "read_dead": None, "stable_total": None,
+                      "read_dead": None, "n_not_read": None,
+                      "stable_total": None,
                       "px_per_case": None, "day_px": None, "y_step": None,
-                      "agreement": None, "stacking": None,
+                      "agreement": None, "agreement_exact": None,
+                      "stacking": None,
                       "stacking_votes": None})
         else:
             head_sha = head_of[sha]
             head = next(v for v in heads if v.sha256 == head_sha)
             v = vintages[sha]
-            verdict = verdicts[head_sha]
-            from lib.onset.gates import stable_total
+            verdict = own.get(sha, verdicts[head_sha])
             r.update({
                 "status": verdict.status,
                 "reasons": "; ".join(verdict.reasons),
                 "dedup_head": head_sha[:12],
                 "printed_n": v.printed_n,
                 "read_total": v.total,
-                "read_alive": sum(b.alive for b in v.bars),
-                "read_dead": sum(b.dead for b in v.bars),
+                "read_alive": sum(b.alive for b in v.bars if b.read),
+                "read_dead": sum(b.dead for b in v.bars if b.read),
+                # Slots carrying no count on this image (the date under
+                # the dashed line); read_total leaves them out.
+                "n_not_read": v.n_not_read,
                 "stable_total": stable_total(v),
                 "px_per_case": round(v.calibration.px_per_case, 4),
                 "day_px": round(v.calibration.day_px, 3),
                 "y_step": v.calibration.y_step,
                 "agreement": round(
-                    sum(b.reader_agreement for b in v.bars) / len(v.bars), 3),
+                    sum(b.reader_agreement for b in v.bars if b.read)
+                    / max(1, sum(b.read for b in v.bars)), 3),
+                # The share of read bars on which the two readers give the
+                # same alive and dead counts. `agreement` allows one case
+                # either way and is what the gate uses; this does not.
+                "agreement_exact": round(
+                    sum(b.reader_exact for b in v.bars if b.read)
+                    / max(1, sum(b.read for b in v.bars)), 3),
                 # Which colour the render stacks at the baseline, and the
                 # two-colour bars' vote that measured it (readers.
                 # detect_stacking); a split vote is a refusal upstream.
@@ -241,10 +263,12 @@ def main() -> None:
                 "sha12": head.sha256[:12],
                 "onset_date": d.isoformat(),
                 "alive": b.alive, "dead": b.dead,
-                "total": b.alive + b.dead,
+                "total": b.alive + b.dead if b.read else None,
+                "not_read": b.not_read,
                 "provisional": b.provisional,
-                "reader_agreement": b.reader_agreement,
-                "margin": round(b.margin, 2),
+                "reader_agreement": b.reader_agreement if b.read else None,
+                "reader_exact": b.reader_exact if b.read else None,
+                "margin": round(b.margin, 2) if b.read else None,
                 "resolution_cases": round(b.resolution_cases, 4),
                 "status": verdict.status,
             })
@@ -258,8 +282,8 @@ def main() -> None:
 
     # --- proof overlays, one per distinct image.
     for head, members in groups:
-        verdict = verdicts[head.sha256]
         for v in [head] + members:
+            verdict = own.get(v.sha256, verdicts[head.sha256])
             img = Image.open(images_dir / v.image_file)
             draw_proof(img, v, verdict.status, verdict.reasons).save(
                 proof_dir / v.image_file)

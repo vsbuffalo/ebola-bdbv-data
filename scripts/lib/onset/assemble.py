@@ -11,8 +11,9 @@ are one observation of the epidemic.
 
 The triangle is derived, never primary: increments between consecutive
 surviving vintages, clipped to the intersection of the two axis extents --
-dates one figure does not plot are unobserved, not zero -- and refusing to
-span a vintage the gates did not accept.
+dates one figure does not plot, or plots under a line the reader cannot see
+through, are unobserved, not zero -- and refusing to span a vintage the
+gates did not accept.
 """
 
 from __future__ import annotations
@@ -99,11 +100,21 @@ class Vintage:
     dates: tuple[dt.date, ...]        # one per slot
 
     def series(self) -> dict[dt.date, tuple[int, int]]:
-        return {d: (b.alive, b.dead) for d, b in zip(self.dates, self.bars)}
+        """The counts by onset date, over the dates this chart was read
+        on. A slot that was not read (`BarMeasure.not_read`) is absent, so
+        everything built from two charts' common dates -- deduplication,
+        the alignment gate, the triangle -- leaves it out instead of
+        differencing it as zero."""
+        return {d: (b.alive, b.dead)
+                for d, b in zip(self.dates, self.bars) if b.read}
 
     @property
     def total(self) -> int:
-        return sum(b.alive + b.dead for b in self.bars)
+        return sum(b.alive + b.dead for b in self.bars if b.read)
+
+    @property
+    def n_not_read(self) -> int:
+        return sum(not b.read for b in self.bars)
 
 
 def value_dedup(vintages: list[Vintage]) -> list[tuple[Vintage, list[Vintage]]]:
@@ -112,9 +123,11 @@ def value_dedup(vintages: list[Vintage]) -> list[tuple[Vintage, list[Vintage]]]:
     Byte-level deduplication happened upstream (one Vintage per decoded
     image); this collapses re-encodes and re-renders: same printed total,
     and at least DEDUP_AGREE of overlapping dates within one case. The
-    earliest survives -- with its full read, not an average -- and the
-    collapsed ones are recorded against it. The 087/088 re-encode pair and
-    the 098/099 re-render pair fall together here."""
+    earliest is named first -- with its full read, not an average -- and
+    the collapsed ones are recorded against it. The 087/088 re-encode pair
+    and the 098/099 re-render pair fall together here. Which member's read
+    is published for the group is settled after the gates have run
+    (`gates.settle_heads`): the earliest one they accept."""
     groups: list[tuple[Vintage, list[Vintage]]] = []
     for v in sorted(vintages, key=lambda v: v.report_date):
         if groups:

@@ -140,6 +140,12 @@ class Calibration:
     # until then, and the bar readers will not run on None.
     stacking: Stacking | None = None
     stacking_evidence: str | None = None   # the vote that decided it
+    # Where the bars' zero sits, in pixels above the top edge of row
+    # `panel.bottom` (negative: below it). `panel.bottom` is the first row
+    # of the baseline axis line; the bars grow from that line's centre,
+    # which `baseline_zero` measures. Every height either reader converts
+    # to cases is taken from here.
+    y_zero: float = 0.0
 
     def see_through_band(self, im: np.ndarray) -> np.ndarray:
         return see_through_band(im, self.panel, self.palette,
@@ -258,6 +264,52 @@ def find_panel(im: np.ndarray) -> Panel:
         raise CalibrationError("no top border and no content above baseline")
     return Panel(left=left, top=int(content.min()), right=right, bottom=base,
                  top_from_border=False)
+
+
+# Columns clear of bars, ticks and gridlines that the baseline's centre is
+# measured on; fewer than this refuses the figure.
+ZERO_MIN_COLUMNS = 20
+# Rows either side of `panel.bottom` the axis line may occupy.
+ZERO_REACH = 2
+
+
+def baseline_zero(im: np.ndarray, panel: Panel) -> float:
+    """The bars' zero: the centre of the baseline axis line, sub-pixel.
+
+    Returned as a height in the readers' own coordinate -- pixels above the
+    top edge of row `panel.bottom`, so a line centred below that edge gives
+    a negative number.
+
+    `find_panel` puts `panel.bottom` on the first row of the line, but the
+    line is one to two pixels thick and falls on the pixel grid differently
+    in every render: its centre lies anywhere from 0.0 to 1.3 px below the
+    top edge of that row across the archive (sitrep 087: 0.07; 127: 0.31;
+    064: 1.18). The bars are drawn from the centre -- it is where the y
+    axis's own zero tick sits, to about 0.2 px on every render checked --
+    so a height counted from the row's edge is short by that much. At
+    7 px per case that is a seventh of a case; at 2.6 it is nearly half of
+    one, enough to put a bar's top on the wrong side of a rounding.
+
+    Measured as the darkness-weighted mean row over the columns where
+    nothing but the line is drawn: white for three rows above its reach and
+    two below, which excludes every bar, tick mark and gridline."""
+    b = panel.bottom
+    if b + ZERO_REACH + 3 > im.shape[0] or b - ZERO_REACH - 3 < 0:
+        raise CalibrationError("baseline too close to the image edge to "
+                               "measure its centre")
+    lum = im.mean(axis=2)
+    xs = np.arange(panel.left + 3, panel.right - 2)
+    above = lum[b - ZERO_REACH - 3: b - ZERO_REACH, xs].min(axis=0)
+    below = lum[b + ZERO_REACH + 1: b + ZERO_REACH + 3, xs].min(axis=0)
+    cols = xs[(above > 240) & (below > 240)]
+    if len(cols) < ZERO_MIN_COLUMNS:
+        raise CalibrationError(
+            f"baseline centre not measurable: {len(cols)} column(s) clear "
+            f"of bars and ticks, need {ZERO_MIN_COLUMNS}")
+    rows = np.arange(b - ZERO_REACH, b + ZERO_REACH + 1)
+    dark = (255.0 - lum[rows][:, cols]).mean(axis=1)
+    centre = float((rows + 0.5) @ dark / dark.sum())   # edge coordinate
+    return b - centre
 
 
 # ---------------------------------------------------------------------------
@@ -847,4 +899,4 @@ def calibrate(im: np.ndarray) -> Calibration:
                        px_per_case=px_per_case, y_step=y_step,
                        y_labels=y_labels, printed_n=printed_n,
                        band_left=band_left, band_right=band_right,
-                       tick_xs=tick_xs)
+                       tick_xs=tick_xs, y_zero=baseline_zero(im, panel))

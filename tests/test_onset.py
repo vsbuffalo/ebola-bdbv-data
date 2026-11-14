@@ -93,11 +93,10 @@ def test_printed_totals_read_exactly(vintages):
 def test_reads_reconcile_with_their_own_titles(vintages):
     """Only over ACCEPTED reads. `read_total`/`printed_n` both being present
     used to imply a trustworthy digitisation, because every earlier refusal
-    was decided before digitisation ran (no anchor row, ticks off grid). 114
-    is the first vintage the checksum gate itself refuses -- it digitises,
-    reads a total, and misses its own printed count by 261 -- so a row can
-    now carry both columns and still be exactly the bad read this test is
-    checking for. Scoping to accepted rows keeps the assertion about what it
+    was decided before digitisation ran (no anchor row, ticks off grid). A
+    read the gates refuse after digitising (138, 153 and 154, for reader
+    disagreement) carries both columns too, so a row can hold both and
+    still be exactly the bad read this test is checking for. Scoping to accepted rows keeps the assertion about what it
     was written to assert: agreement among the reads this build actually
     trusts, not among every number this build computed on the way to
     deciding whether to trust it.
@@ -181,7 +180,7 @@ def test_render_invariance_on_the_087_088_pair():
         im = np.asarray(Image.open(f).convert("RGB")).astype(float)
         cal = detect_stacking(im, refine_scale(im, calibrate(im)))
         bars = read_bars(im, cal)
-        totals.append(sum(b.alive + b.dead for b in bars))
+        totals.append(sum(b.alive + b.dead for b in bars if b.read))
     assert abs(totals[0] - totals[1]) <= 10, \
         f"the same chart read {totals[0]} and {totals[1]}; " \
         "upstream's reader lost 184 cases here"
@@ -212,10 +211,9 @@ def test_the_25_july_bar(snapshots):
 @needs_build
 def test_stable_regions_never_fall(vintages):
     """Only over ACCEPTED reads, for the same reason as the title-checksum
-    test above: 114's `stable_total` is a real number computed from a read
-    the checksum gate went on to refuse, and comparing across a known-bad
-    read is not evidence about the pipeline's monotonicity -- it is the same
-    261-case shortfall reappearing under a different column."""
+    test above: a refused read's `stable_total` is a real number computed
+    from a read the gates went on to refuse, and comparing across a
+    known-bad read is not evidence about the pipeline's monotonicity."""
     import polars as pl
     heads = (vintages.filter(pl.col("stable_total").is_not_null()
                              & (pl.col("status") != "refused"))
@@ -303,19 +301,16 @@ KNOWN_REFUSED = {
     109: "detected ticks",
     110: "no anchor row",
     111: "printed n not found in the title",
-    114: "short of printed",
     135: "y axis unreadable",
     138: "readers disagree",
     141: "detected ticks",
     146: "printed n not found in the title",
-    149: "exceeds printed",
     150: "no zero label at the baseline",
     151: "printed n not found in the title",
     152: "printed n not found in the title",
     153: "readers disagree",
     154: "readers disagree",
     155: "readers disagree",
-    159: "readers disagree",
 }
 
 #: Reports after the last one this register was written against. The daily
@@ -434,14 +429,17 @@ def test_the_zero_label_against_a_grey_axis_is_read(vintages):
 def test_sitrep_159_reads_within_its_printed_total(vintages):
     # Its first slot sat on the grey axis and read 98 cases from the line
     # alone (+0.64% over printed n, a G2 refusal). With slots required to
-    # clear the border it reads -0.65%, inside G2, and is refused only by
-    # the reader-agreement gate.
+    # clear the border it reads inside G2. It prints the same n = 7,660 as
+    # 158 and, read from the baseline's centre, agrees with 158 bar for
+    # bar: one data snapshot, published from 158's render.
     import polars as pl
     from lib.onset import gates
     row = vintages.filter(pl.col("sitrep") == 159)
     n, got = row["printed_n"][0], row["read_total"][0]
     assert -gates.G2_UNDER * n <= got - n <= gates.G2_OVER * n
-    assert row["reasons"][0].startswith("G-R:")
+    head = vintages.filter(pl.col("sitrep") == 158)["dedup_head"][0]
+    assert row["dedup_head"][0] == head
+    assert not row["decoded_sha256"][0].startswith(head)
 
 
 @needs_build
@@ -599,7 +597,9 @@ def test_normal_order_renders_are_unchanged_in_kind(vintages):
     import polars as pl
     row = vintages.filter(pl.col("sitrep") == 64)
     assert row["stacking"][0] == "alive_bottom"
-    assert row["read_total"][0] == 2064
+    # Its printed 2,064 less the one date it does not read: 14 May, 10
+    # cases, under the dashed line.
+    assert row["read_total"][0] == 2054 and row["n_not_read"][0] == 1
     assert 400 <= row["read_dead"][0] <= 700
 
 
@@ -611,3 +611,341 @@ def test_every_read_render_records_its_stacking_order(vintages):
     early = read.filter(pl.col("sitrep") <= 63)["stacking"].unique().to_list()
     later = read.filter(pl.col("sitrep") >= 64)["stacking"].unique().to_list()
     assert early == ["dead_bottom"] and later == ["alive_bottom"]
+
+
+# --------------------------------------------------------------------------
+# Duplicate charts: the read published for a data snapshot is the earliest
+# one the gates accept.
+
+def _vintage(name, report, n, agree=True):
+    """A synthetic read: forty settled onset dates summing to n, uneven
+    from day to day so the alignment gate has a shape to register."""
+    import datetime as dt
+    from types import SimpleNamespace
+    from lib.onset.assemble import Vintage
+    from lib.onset.readers import BarMeasure
+    dates = tuple(dt.date(2026, 5, 1) + dt.timedelta(days=k)
+                  for k in range(40))
+    w = [1 + (7 * k) % 11 for k in range(40)]
+    per = [n * x // sum(w) for x in w]
+    per[0] += n - sum(per)
+    fields = {f: None for f in BarMeasure.__dataclass_fields__}
+    bars = tuple(BarMeasure(**{
+        **fields, "slot": k, "alive": per[k], "dead": 0, "margin": 9.0,
+        "edge_alive": per[k], "edge_dead": 0, "reader_agreement": agree,
+        "provisional": False, "resolution_cases": 0.3})
+        for k in range(40))
+    cal = SimpleNamespace(panel=SimpleNamespace(height=400))
+    return Vintage(sha256=name, image_file=name, sitreps=(1,),
+                   report_date=dt.date.fromisoformat(report), printed_n=n,
+                   calibration=cal, bars=bars, dates=dates)
+
+
+def test_a_duplicate_group_is_headed_by_its_earliest_accepted_member():
+    """Sitreps 154 and 156 print the same n = 7,438 and are one snapshot.
+    154's render is refused; headed by it, the group took 156's clean read
+    down with it."""
+    from lib.onset.gates import settle_heads
+    before = _vintage("before", "2026-08-01", 100)
+    bad = _vintage("bad", "2026-08-02", 120, agree=False)
+    good = _vintage("good", "2026-08-04", 120)
+    later = _vintage("later", "2026-08-05", 120)
+    after = _vintage("after", "2026-08-06", 140)
+    groups, verdicts, own = settle_heads(
+        [(before, []), (bad, [good, later]), (after, [])])
+    head, members = groups[1]
+    assert head is good
+    assert [m.sha256 for m in members] == ["bad", "later"]
+    assert verdicts["good"].status == "accepted"
+    assert own["bad"].status == "refused"
+    assert "G-R" in own["bad"].reasons[0]
+    assert set(own) == {"bad"}
+
+
+def test_a_group_with_no_accepted_member_keeps_its_earliest_as_head():
+    from lib.onset.gates import settle_heads
+    before = _vintage("before", "2026-08-01", 100)
+    bad = _vintage("bad", "2026-08-02", 120, agree=False)
+    worse = _vintage("worse", "2026-08-04", 120, agree=False)
+    groups, verdicts, own = settle_heads([(before, []), (bad, [worse])])
+    head, members = groups[1]
+    assert head is bad and members == [worse]
+    assert verdicts["bad"].status == "refused"
+    assert own["worse"].status == "refused" and "bad" not in own
+
+
+def test_an_accepted_head_is_left_alone():
+    from lib.onset.gates import judge, settle_heads
+    a = _vintage("a", "2026-08-01", 100)
+    b = _vintage("b", "2026-08-03", 120)
+    c = _vintage("c", "2026-08-04", 120, agree=False)
+    groups, verdicts, own = settle_heads([(a, []), (b, [c])])
+    assert groups == [(a, []), (b, [c])]
+    assert verdicts == judge([a, b]) and own == {}
+
+
+# --------------------------------------------------------------------------
+# Where a count puts a boundary: from the baseline's centre, rounded once,
+# with the outline in one of the two rows there.
+
+@pytest.mark.parametrize("sitrep,zero", [(64, -1.18), (87, -0.07),
+                                         (127, -0.31)])
+def test_the_bars_zero_is_the_centre_of_the_baseline(sitrep, zero):
+    """`panel.bottom` is the first row of the axis line; the bars grow from
+    its centre, which sits 1.2 px lower in 064 (a two-row line), 0.3 px in
+    127 and at the row's own edge in 087."""
+    from lib.onset.calibrate import baseline_zero, find_panel
+    im = _image(sitrep)
+    assert baseline_zero(im, find_panel(im)) == pytest.approx(zero, abs=0.1)
+
+
+@pytest.mark.parametrize("sitrep,from_ticks", [(102, 2.8169), (112, 2.5927),
+                                               (114, 2.9887), (154, 2.6582)])
+def test_the_scale_is_refined_from_the_measured_zero(sitrep, from_ticks):
+    """Fitted from the top edge of row `panel.bottom`, the scale absorbed
+    the baseline's offset: 0.88% small on 102, 0.71% on 112, and at another
+    minimum altogether on 114 (+3.9%) and 154 (+1.2%), the two charts that
+    read 255 and 179 cases short. `from_ticks` is the scale given by the
+    y axis's own tick marks on each render, measured once by hand."""
+    from lib.onset.calibrate import calibrate
+    from lib.onset.readers import refine_scale
+    im = _image(sitrep)
+    got = refine_scale(im, calibrate(im)).px_per_case
+    assert got == pytest.approx(from_ticks, rel=0.003)
+
+
+def _drawn_bar(c, zero, alive, dead):
+    """One slot of a chart as the source draws it: fills from the
+    baseline's centre, a 1.3 px outline centred on every segment edge and
+    antialiased into the rows it partly covers."""
+    import numpy as np
+    from lib.onset.calibrate import Calibration, Palette, Panel, Stacking
+    blue, red, ink = (190., 228., 241.), (198., 40., 47.), (60., 40., 45.)
+    panel = Panel(left=2, top=5, right=37, bottom=300, top_from_border=True)
+    im = np.full((320, 40, 3), 255.0)
+    im[panel.bottom, panel.left:panel.right + 1] = (50., 50., 50.)
+    edges = [zero + alive * c] if alive else []
+    if dead:
+        edges.append(zero + (alive + dead) * c)
+    top = zero + (alive + dead) * c
+    for i in range(panel.bottom - panel.top - 1):
+        mid = i + 0.5
+        fill = (np.array(blue) if mid < zero + alive * c
+                else np.array(red) if mid < top else np.full(3, 255.0))
+        cover = sum(max(0.0, min(i + 1, e + 0.65) - max(i, e - 0.65))
+                    for e in edges)
+        cover = min(1.0, cover)
+        im[panel.bottom - 1 - i, 17:24] = \
+            cover * np.array(ink) + (1 - cover) * fill
+    cal = Calibration(
+        panel=panel, palette=Palette(alive=blue, dead=red, band=None,
+                                     transmission=None),
+        day_px=6.0, x_phase=20.0, n_slots=1, px_per_case=c, y_step=25,
+        y_labels=(), printed_n=None, band_left=None, band_right=None,
+        tick_xs=(), stacking=Stacking.ALIVE_BOTTOM, y_zero=zero)
+    return im, cal
+
+
+@pytest.mark.parametrize("c,zero", [(2.6, -0.9), (2.6, -0.1), (2.98, -0.3),
+                                    (3.3, -1.2), (6.9, -1.2)])
+def test_a_drawn_bar_reads_back_at_every_small_count(c, zero):
+    """Every (alive, dead) from an empty slot to 14 + 14, drawn at the
+    scales and baseline offsets of the small renders and of one large one,
+    reads back exactly. At 2.6 px per case a one-case segment is two or
+    three rows, most of them outline: placed by two roundings from the
+    row's edge, or with nothing asked of the boundary rows, a case could
+    be added or dropped for the price of no row at all."""
+    from lib.onset.readers import fit_bar
+    wrong = []
+    for alive in range(15):
+        for dead in range(15):
+            im, cal = _drawn_bar(c, zero, alive, dead)
+            got = fit_bar(im, cal, 0)[:2]
+            if got != (alive, dead):
+                wrong.append(((alive, dead), got))
+    assert not wrong, f"{len(wrong)} of 225 drawn bars misread: {wrong[:8]}"
+
+
+@needs_build
+@pytest.mark.parametrize("onset,alive,dead", [("2026-06-14", 24, 20),
+                                               ("2026-06-13", 16, 11)])
+def test_sitrep_127_mid_june_bars(snapshots, onset, alive, dead):
+    """14 June is 24 alive and 20 dead on the image (outline ink ending at
+    row 131 above the baseline at 2.98 px per case) and read 24 + 19: its
+    44-case top was placed at row 72 + 60 = 132 and its 43-case top at
+    72 + 57 = 129. 13 June, the bar beside it, was read correctly before
+    and must stay so."""
+    import polars as pl
+    bar = snapshots.filter((pl.col("sitrep") == 127)
+                           & (pl.col("onset_date") == onset))
+    assert (bar["alive"][0], bar["dead"][0]) == (alive, dead)
+
+
+@needs_build
+@pytest.mark.parametrize("sitrep,onset", [(128, "2026-04-27"),
+                                           (116, "2026-05-04"),
+                                           (103, "2026-05-04")])
+def test_an_empty_date_on_a_gridline_reads_empty(snapshots, sitrep, onset):
+    """Three dates the image shows as a dotted gridline and a tick, read as
+    1 + 1, 1 + 0 and 2 + 1 cases: a one-case bar was charged for one row
+    of fill and excused three rows of gridline grey and neighbouring-bar
+    halo as background. A bar now has to show its outline."""
+    import polars as pl
+    bar = snapshots.filter((pl.col("sitrep") == sitrep)
+                           & (pl.col("onset_date") == onset))
+    assert (bar["alive"][0], bar["dead"][0]) == (0, 0)
+
+
+@needs_build
+def test_charts_before_92_keep_their_printed_totals(vintages):
+    """The large renders (4 to 8 px per case) read within two cases of
+    their printed n before the zero and rounding were corrected, and the
+    correction must not cost them that. Each now leaves one date unread --
+    14 May, under the dashed line, which held 10 or 11 cases on every one
+    of these charts -- so each is short by that bar and no more."""
+    import polars as pl
+    old = vintages.filter((pl.col("sitrep") < 92)
+                          & pl.col("printed_n").is_not_null()
+                          & pl.col("read_total").is_not_null())
+    assert old.height >= 20
+    assert set(old["n_not_read"].to_list()) == {1}
+    off = {r["sitrep"]: r["read_total"] - r["printed_n"]
+           for r in old.iter_rows(named=True)
+           if not -12 <= r["read_total"] - r["printed_n"] <= -8}
+    assert not off, f"read total minus printed n: {off}"
+
+
+@needs_build
+def test_sitrep_114_is_read(vintages):
+    """Refused for reading 255 short of its printed 5,119 while its scale
+    sat 3.9% high; from the measured zero it reads 17 short, about 10 of
+    them the date under the dashed line that it does not read."""
+    import polars as pl
+    row = vintages.filter(pl.col("sitrep") == 114)
+    assert row["status"][0] == "accepted"
+    assert -0.004 * 5119 <= row["read_total"][0] - 5119 <= 0
+
+
+@needs_build
+def test_156_stands_for_the_snapshot_154_first_carried(vintages):
+    import polars as pl
+    v = {r["sitrep"]: r for r in vintages.filter(
+        pl.col("sitrep").is_in([154, 156])).iter_rows(named=True)}
+    assert v[154]["printed_n"] == v[156]["printed_n"] == 7438
+    assert v[156]["status"] == "accepted"
+    assert v[154]["status"] == "refused" and "G-R" in v[154]["reasons"]
+    assert v[154]["dedup_head"] == v[156]["dedup_head"] \
+        == v[156]["decoded_sha256"][:12]
+
+
+# --------------------------------------------------------------------------
+# The date under the dashed line is not read.
+
+@pytest.mark.parametrize("sitrep", [60, 72, 87, 98, 113, 127, 129, 149, 159])
+def test_the_dashed_line_is_found_on_14_may_and_nowhere_else(sitrep):
+    """The source's "Premier resultat positif" line: pure red in the
+    lossless renders (60, 72, 98), the dead fill's red after JPEG, and pale
+    where it covers half a column (129, 149). Sitrep 73's rotated band
+    label and 128's annotation lettering are red runs up a column too, at
+    uneven spacings, and must not be taken for it."""
+    import datetime as dt
+    import numpy as np
+    from lib.onset.assemble import load_anchors, slot_dates
+    from lib.onset.calibrate import calibrate
+    from lib.onset.readers import (NOT_READ_DASHED_LINE, detect_stacking,
+                                   read_bars, refine_scale)
+    images = sorted((ONSET / "images").glob(f"*-{sitrep:03d}-*.png"))
+    im = _image(sitrep)
+    cal = detect_stacking(im, refine_scale(im, calibrate(im)))
+    dates = slot_dates(cal, load_anchors()[images[0].stem[-12:]])
+    bars = read_bars(im, cal)
+    unread = [d for b, d in zip(bars, dates) if not b.read]
+    assert unread == [dt.date(2026, 5, 14)]
+    bar = bars[dates.index(dt.date(2026, 5, 14))]
+    assert bar.alive is None and bar.dead is None
+    assert bar.not_read == NOT_READ_DASHED_LINE
+
+
+def test_a_dashed_line_is_told_from_a_bar_and_from_lettering():
+    import numpy as np
+    from lib.onset.readers import dashed_line_columns
+    _, cal = _drawn_bar(3.0, -0.3, 10, 12)
+    im = np.full((320, 40, 3), 255.0)
+    p = cal.panel
+    red = (198., 40., 47.)
+    for top in range(p.top + 2, p.bottom - 6, 15):     # dashes: 6 on, 9 off
+        im[top: top + 6, 10] = red
+    im[p.bottom - 120: p.bottom, 20] = red              # a tall dead bar
+    for top in (20, 23, 31, 60, 64, 110, 290):          # lettering
+        im[top: top + 2, 30] = red
+    cols = np.where(dashed_line_columns(im, cal))[0].tolist()
+    assert cols == [10]
+
+
+@needs_build
+def test_a_date_that_was_not_read_is_never_differenced(snapshots):
+    """Not read is unobserved on that chart: empty counts with the reason
+    beside them in snapshots.csv, left out of the chart's read total, and
+    no row in the triangle -- where a zero would have been a bar falling
+    to nothing and rising again."""
+    import polars as pl
+    unread = snapshots.filter(pl.col("not_read").is_not_null())
+    assert unread.height > 0
+    assert set(unread["onset_date"].to_list()) == {"2026-05-14"}
+    for col in ("alive", "dead", "total"):
+        assert unread[col].null_count() == unread.height
+    read = snapshots.filter(pl.col("not_read").is_null())
+    assert read["total"].null_count() == 0
+    tri = pl.read_csv(ONSET / "triangle.csv", infer_schema_length=100000)
+    assert tri.filter(pl.col("onset_date") == "2026-05-14").height == 0
+    assert tri["d_total"].null_count() == 0
+
+
+def test_the_triangle_skips_a_date_either_chart_did_not_read():
+    import dataclasses
+    from lib.onset.assemble import triangle
+    a = _vintage("a", "2026-08-01", 100)
+    b = _vintage("b", "2026-08-03", 120)
+    gap = dataclasses.replace(b.bars[3], alive=None, dead=None,
+                              not_read="test")
+    b = dataclasses.replace(b, bars=b.bars[:3] + (gap,) + b.bars[4:])
+    rows = triangle([a, b])
+    assert len(rows) == 39
+    assert b.dates[3].isoformat() not in {r["onset_date"] for r in rows}
+    assert b.total == 120 - _vintage("b", "2026-08-03", 120).bars[3].alive
+    assert b.n_not_read == 1
+
+
+# --------------------------------------------------------------------------
+# Exact agreement is recorded beside the gate's one-case agreement.
+
+def test_exact_agreement_is_stricter_than_the_gates():
+    """`reader_agreement` allows a case either way on each count, so a
+    one-case error in either reader cannot clear it; `reader_exact` is the
+    two readers giving the same pair."""
+    from lib.onset.calibrate import calibrate
+    from lib.onset.readers import detect_stacking, read_bars, refine_scale
+    im = _image(127)
+    bars = [b for b in read_bars(im, detect_stacking(
+        im, refine_scale(im, calibrate(im)))) if b.read]
+    for b in bars:
+        same = (b.alive, b.dead) == (b.edge_alive, b.edge_dead)
+        assert b.reader_exact == same
+        assert b.reader_agreement or not b.reader_exact
+    assert sum(b.reader_exact for b in bars) \
+        < sum(b.reader_agreement for b in bars)
+
+
+@needs_build
+def test_exact_agreement_is_published_and_the_gate_is_unchanged(vintages,
+                                                                snapshots):
+    import polars as pl
+    from lib.onset import gates, readers
+    assert readers.AGREE_CASES == 1.0 and gates.GR_DISAGREE_MAX == 0.25
+    read = vintages.filter(pl.col("read_total").is_not_null())
+    assert (read["agreement_exact"] <= read["agreement"]).all()
+    s = snapshots.filter(pl.col("not_read").is_null())
+    assert s.filter(pl.col("reader_exact")
+                    & ~pl.col("reader_agreement")).height == 0
+    assert snapshots.filter(pl.col("not_read").is_not_null()
+                            )["reader_exact"].null_count() > 0

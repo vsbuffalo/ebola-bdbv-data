@@ -58,7 +58,7 @@ class Verdict:
 def stable_total(v: Vintage) -> int:
     cutoff = v.report_date - dt.timedelta(days=G3_MIN_AGE_DAYS)
     return sum(b.alive + b.dead
-               for b, d in zip(v.bars, v.dates) if d <= cutoff)
+               for b, d in zip(v.bars, v.dates) if d <= cutoff and b.read)
 
 
 def _g1_render(v: Vintage, window: list[Vintage]) -> str | None:
@@ -74,7 +74,9 @@ def _g1_render(v: Vintage, window: list[Vintage]) -> str | None:
 
 
 def _g2_printed_n(v: Vintage) -> tuple[str | None, bool]:
-    """(reason, is_refusal)."""
+    """(reason, is_refusal). The read total leaves out any slot that was
+    not read, so a chart with one carries that bar's cases as shortfall:
+    the date under the dashed line holds 7 to 13 cases on every chart."""
     if v.printed_n is None:
         return "G2: no printed total on this render; reconciliation " \
                "cannot run", False
@@ -125,10 +127,11 @@ def _g5_alignment(v: Vintage, prev: Vintage | None) -> str | None:
 
 
 def _gr_readers(v: Vintage) -> tuple[str | None, bool]:
-    spoke = [b for b in v.bars if b.edge_alive is not None]
-    if len(spoke) < GR_SPOKE_MIN * len(v.bars):
+    read = [b for b in v.bars if b.read]
+    spoke = [b for b in read if b.edge_alive is not None]
+    if len(spoke) < GR_SPOKE_MIN * len(read):
         return ("G-R: the outline reader measured "
-                f"{len(spoke)}/{len(v.bars)} bars; a single-reader "
+                f"{len(spoke)}/{len(read)} bars; a single-reader "
                 "vintage", False)
     dis = [b for b in spoke if not b.reader_agreement]
     frac = len(dis) / len(spoke)
@@ -136,6 +139,59 @@ def _gr_readers(v: Vintage) -> tuple[str | None, bool]:
         return (f"G-R: readers disagree on {len(dis)}/{len(spoke)} "
                 "measured bars", True)
     return None, False
+
+
+def settle_heads(groups: list[tuple[Vintage, list[Vintage]]]) \
+        -> tuple[list[tuple[Vintage, list[Vintage]]], dict[str, Verdict],
+                 dict[str, Verdict]]:
+    """Choose each duplicate group's head and judge the heads.
+
+    `value_dedup` groups the charts that are one data snapshot and names
+    the earliest as head, before any gate has run. The head's read is the
+    one published for the snapshot, so a group whose earliest read is
+    refused would lose the whole snapshot even when a later re-render of
+    the same chart reads cleanly (sitreps 154 and 156 print the same
+    n = 7,438; 154's render is refused for reader disagreement and 156's
+    is accepted). The head is therefore the group's earliest *accepted*
+    member: while a head is refused and a later member has not been tried,
+    that member takes its place and every head is judged again, because
+    the neighbour gates (G3, G5) read the heads either side. A group with
+    no accepted member keeps its earliest as head, as before.
+
+    The snapshot is then dated by the head's own report: the chart that
+    was read, not the first report that carried the data.
+
+    Returns (groups, verdicts, own): the groups with their settled heads,
+    each group's other charts in report order; the verdict of every head
+    by hash; and, for each member that was tried as head and refused, the
+    verdict it got -- its row in `vintages.csv` records that refusal, not
+    the head's acceptance."""
+    settled = [(h, list(m)) for h, m in groups]
+    own: dict[str, Verdict] = {}
+    while True:
+        verdicts = judge([h for h, _ in settled])
+        swap = None
+        for i, (head, members) in enumerate(settled):
+            if verdicts[head.sha256].status != "refused":
+                continue
+            own[head.sha256] = verdicts[head.sha256]
+            later = [m for m in members if m.sha256 not in own]
+            if later:
+                swap = (i, later[0])
+                break
+            earliest = min([head] + members, key=lambda v: v.report_date)
+            if earliest is not head:
+                swap = (i, earliest)
+                break
+        if swap is None:
+            for head, _ in settled:
+                own.pop(head.sha256, None)
+            return settled, verdicts, own
+        i, new_head = swap
+        head, members = settled[i]
+        rest = sorted([head] + [m for m in members if m is not new_head],
+                      key=lambda v: v.report_date)
+        settled[i] = (new_head, rest)
 
 
 def judge(vintages: list[Vintage]) -> dict[str, Verdict]:
