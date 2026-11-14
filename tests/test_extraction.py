@@ -1006,6 +1006,18 @@ def test_lab_licensed_pair():
     assert L.licensed_pair([10, 20, 40], [50.0]) is None     # ambiguous
 
 
+def test_lab_a_printed_100_percent_is_not_read_as_zero():
+    """`4 positifs (100 %)` printed its rate with three digits, and the rate
+    pattern took two: it matched `00`, so the licence looked for a pair giving
+    0 % and found one in any sentence that also printed a zero -- 0 positives
+    of 4 samples, licensed, where the page says 4 of 4."""
+    import extract_lab_prose as L
+    assert L.PCT.findall("dont 4 positifs (100 %), 0 décès") == ["100"]
+    assert L.PCT.findall("positivité : 17,4%") == ["17,4"]
+    assert L.PCT.findall("soit 9 %") == ["9"]
+    assert L.licensed_pair([4, 4, 0], [100.0]) == (4, 4, 100.0)
+
+
 @needs_pdfs
 def test_lab_prose_sitrep_093():
     """Sitrep 093's chained lab sentence yields all three provinces, each
@@ -1191,16 +1203,17 @@ def test_lab_prose_the_living_dead_split_is_not_a_pair():
     Ituri "40 ... positifs (33 vivants et 7 décès) sur 230 ... (17,4%)" was
     ambiguous between 40/230 and 7/40 and refused. Sitrep 105's Haut-Uélé
     ("11 positifs (11 vivants et 0 décès) sur 11 ... 100 %") was read as 0/11
-    off the split, and sitrep 162's Haut-Uélé, whose own counts disagree with
-    its rate ("2 positifs (1 vivants et 1 décès) sur 5 ... 20 %"), as 1/5;
-    both now refuse."""
+    off the split; with the split out of the pool it reads 11 of 11, which is
+    what its printed 100 % licenses. Sitrep 162's Haut-Uélé, whose own counts
+    disagree with its rate ("2 positifs (1 vivants et 1 décès) sur 5 ...
+    20 %"), was read as 1/5 and refuses: no pair on the page gives 20 %."""
     import extract_lab_prose as L
 
     def by(n):
         return {r["province"]: (r["samples"], r["positives"])
                 for r in L.extract(pdf(n))[0]}
     assert by(167)["Ituri"] == (230, 40)
-    assert "Haut-Uélé" not in by(105)
+    assert by(105)["Haut-Uélé"] == (11, 11)
     assert "Haut-Uélé" not in by(162)
 
 
