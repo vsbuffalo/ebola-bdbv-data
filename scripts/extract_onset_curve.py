@@ -33,9 +33,11 @@ derives the onset-to-report delay table from triangle.csv
 `streams/reference/reporting_delay.tsv` and `meta['reporting_delay']`, which
 downstream models convolve with. A misread bar here is a wrong delay there.
 
-Validated by: the figure's own printed total (the 53 distinct accepted
-renders that print one reconcile from -0.70% to +0.09%, median -0.19%, as
-of sitrep 159), cross-vintage monotonicity and alignment gates
+Validated by: the figure's own printed total (the accepted renders that
+print one read from 0.59% to 0.19% short of it, median 0.32%, as of sitrep
+159; every one leaves out the date under the dashed line, 7 to 13 cases,
+and with that bar's last reading added back they run from -0.48% to
++0.09%), cross-vintage monotonicity and alignment gates
 over all of history on every run, and the design's regression fixtures in
 tests/test_onset.py. Design: notes/2026-08-28-onset-digitiser-design.md;
 measured failure modes it answers:

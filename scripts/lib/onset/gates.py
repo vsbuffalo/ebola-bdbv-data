@@ -76,7 +76,7 @@ def _g1_render(v: Vintage, window: list[Vintage]) -> str | None:
 def _g2_printed_n(v: Vintage) -> tuple[str | None, bool]:
     """(reason, is_refusal). The read total leaves out any slot that was
     not read, so a chart with one carries that bar's cases as shortfall:
-    the date under the dashed line holds 8 to 13 cases on every chart."""
+    the date under the dashed line holds 7 to 13 cases on every chart."""
     if v.printed_n is None:
         return "G2: no printed total on this render; reconciliation " \
                "cannot run", False
