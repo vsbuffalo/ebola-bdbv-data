@@ -8,22 +8,23 @@ Democratic Republic of the Congo (DRC), extracted from the national public
 health institute's (INSP) daily situation reports — down to the health zone,
 with every number checked against the page that printed it.
 
-**Website:** <https://vsbuffalo.github.io/ebola-bdbv-data/>: every release, its notes and its figures.
+**Website:** <https://vsbuffalo.github.io/ebola-bdbv-data/>: every release, its
+notes and its figures.
 
 **How to cite:** Buffalo, V. (2026). *ebola-bdbv-data*. Zenodo.
-<https://doi.org/10.5281/zenodo.23581463>. GitHub's "Cite this repository" button gives the same
-in other formats. Please name the release tag you used, such as
-`data/2026-10-20-r0`, so anyone can rebuild exactly the data you had; each tag
-also has its own DOI on Zenodo.
+<https://doi.org/10.5281/zenodo.23581463>. GitHub's "Cite this repository"
+button gives the same in other formats. Please name the release tag you used,
+such as `data/2026-10-20-r0`, so anyone can rebuild exactly the data you had;
+each tag also has its own DOI on Zenodo.
 
-**Found a problem?** Please [open an
-issue](https://github.com/vsbuffalo/ebola-bdbv-data/issues) for any extracted
-value that looks suspect; I'd rather check a false positive than miss a real
-error.
+**Found a problem?** Please
+[open an issue](https://github.com/vsbuffalo/ebola-bdbv-data/issues) for any
+extracted value that looks suspect; I'd rather check a false positive than miss
+a real error.
 
 **Using these data?** I'd love to hear about it. Knowing who relies on this
-helps me gauge usage and decide where my time goes: new features, rewriting
-the LLM-written documentation by hand so it reads better, and so on.
+helps me gauge usage and decide where my time goes: new features, rewriting the
+LLM-written documentation by hand so it reads better, and so on.
 
 ## About this repository
 
@@ -81,9 +82,11 @@ they are refused rather than guessed. Every place the source disagrees with
 itself is recorded, and every value is compared with the two other renderings.
 
 **What that does and does not buy.** These checks make reading errors loud; they
-cannot make the source's own counts true, and refusing costs coverage. The onset
-reader currently refuses every chart since 19 September. Read
-`data/build/streams/README.md` and `registers/` before fitting anything.
+cannot make the source's own counts true, and refusing costs coverage. As of
+`data/2026-11-08-r0` the onset reader has accepted no chart after SitRep 158 (19
+October), so the symptom-onset triangle and the reporting-delay table built from
+it stop there. Read `data/build/streams/README.md` and `registers/` before
+fitting anything.
 
 ## Getting the data
 
@@ -134,8 +137,9 @@ it parsed, and a number the books reject gets investigated, not repaired.
   hash manifest; every build artefact has a `make` rule; a rebuild is
   byte-identical.
 
-For the short, non-technical version of why this was built the way it was,
-see [how this was built](docs/engineering.md). The details live in three pages: [how the extraction works](docs/extraction.md),
+For the short, non-technical version of why this was built the way it was, see
+[how this was built](docs/engineering.md). The details live in three pages:
+[how the extraction works](docs/extraction.md),
 [how it is validated](docs/validation.md), and
 [the data contract](docs/data-contract.md) — what the stream files guarantee to
 downstream models, and the traps (three readings of one case count, `NA` versus
@@ -254,7 +258,7 @@ it. This issue doesn't pause anything, because only a release can close it.
 
 The code (`scripts/`, `tests/`, the `Makefile` and the site build) is under the
 [MIT licence](LICENSE). The extracted data (everything this pipeline produces,
-and the registers under `registers/`) are under
-[CC BY 4.0](LICENSE-data): use them for anything, including commercially, as
-long as you credit this work (see *How to cite* above). The licences cover this
-extraction, not INSP's situation reports themselves, which remain INSP's.
+and the registers under `registers/`) are under [CC BY 4.0](LICENSE-data): use
+them for anything, including commercially, as long as you credit this work (see
+*How to cite* above). The licences cover this extraction, not INSP's situation
+reports themselves, which remain INSP's.
