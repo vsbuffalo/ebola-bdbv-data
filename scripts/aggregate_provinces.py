@@ -23,9 +23,17 @@ Every discrepancy is a finding about the extraction or about the report, and
 neither is something to average away. The exit codes distinguish them:
 
     0   every province in every report reconciles
-    1   some reports could not be checked -- the page printed no total to
+    3   some reports could not be checked -- the page printed no total to
         compare against. Not a failure; a gap in the evidence, reported.
     2   a province total disagrees with the sum of its parts. STOP AND LOOK.
+    1   this step refused to run or crashed: a stale or malformed register, a
+        place outside the closed province set, an uncaught error. Nothing
+        was written, so the series on disk are whatever an earlier run left.
+
+The reported gap has a code of its own because 1 is what Python exits with
+for `raise SystemExit("message")` and for any traceback. While the gap also
+used 1, the callers that tolerate the gap tolerated every refusal in this
+file with it.
 
 Nothing is silently dropped, clipped or repaired. A province that does not
 reconcile is still written out, flagged, so the disagreement is visible to
@@ -41,6 +49,10 @@ import sys
 from pathlib import Path
 
 import polars as pl
+
+#: Exit status for "some province-reports print no total to check against".
+#: Callers that tolerate the gap test for exactly this value.
+EXIT_UNCHECKED = 3
 
 #: Register paths resolve against the REPOSITORY, not the working directory.
 #: With CWD-relative defaults, running this step from any other directory made
@@ -594,9 +606,9 @@ def main() -> None:
     if args.allow_unchecked is not None and unchecked > args.allow_unchecked:
         print(f"\n{unchecked} province-reports could not be checked, above the "
               f"declared limit of {args.allow_unchecked}.", file=sys.stderr)
-        sys.exit(1)
+        sys.exit(2)
     if unchecked:
-        sys.exit(1)
+        sys.exit(EXIT_UNCHECKED)
 
 
 if __name__ == "__main__":

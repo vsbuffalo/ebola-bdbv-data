@@ -199,13 +199,15 @@ build:
 	uv run python scripts/extract_daily_notified.py \
 		--pdfs data/raw/sitrep_pdfs --quiet \
 		--out data/build/series/daily_notified.csv
-	# exit 1 = some reports print no total to check against (a reported gap
+	# exit 3 = some reports print no total to check against (a reported gap
 	# in the evidence, not a failure); exit 2 = a total disagrees, stop.
+	# Exit 1 is a refusal or a crash and stops the build like any other
+	# step's: it is what Python exits with for a message or a traceback.
 	uv run python scripts/aggregate_provinces.py \
 		--panel data/build/series/zone_table.csv \
 		--pdfs data/raw/sitrep_pdfs \
 		--exceptions registers/reconciliation_exceptions.tsv \
-		--out data/build/series/province_series.csv || [ $$? -eq 1 ]
+		--out data/build/series/province_series.csv || [ $$? -eq 3 ]
 	# sibling outputs of the steps above:
 	#   data/build/series/zone_table_status.csv
 	#   data/build/series/zone_table_letality.csv
