@@ -81,9 +81,11 @@ Half-open means `[window_start, window_stop)` covers every calendar day from
 without overlapping — the BED convention for genomic intervals, for the same
 reasons. So `window_stop` is **one day after the day the source spoke**: a
 report stating figures for 13 July closes a window at 14 July. Anything dating
-an observation should read `window_start`, or `window_stop` minus a day;
-`scripts/lib/streams.py` does this in one place for everything in this
-repository.
+an observation should read `window_stop` minus a day, never `window_start`: the
+two agree only on a one-day row, and on a wider one `window_start` is the day
+after the *previous* report (the 31 October row of `deaths_daily_ituri` runs
+from 30 October to 1 November). `scripts/lib/streams.py` does this in one place
+for everything in this repository.
 
 Why both ends are stated: when a row's window was inferred from the gap to the
 row before it, deleting an interior row silently widened its neighbour — the
