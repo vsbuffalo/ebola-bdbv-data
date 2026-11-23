@@ -109,3 +109,12 @@ def test_every_exclusion_row_matches_its_own_example_and_accepts_no_report():
         assert x.pattern.search(x.example)
         hits = [r["filename"] for r in rows if x.pattern.search(r["filename"])]
         assert not hits, (x.series, hits)
+
+
+def test_a_comparison_source_two_days_ahead_is_a_lead_and_one_day_is_not():
+    """Replays 12 November: INRB-UMIE through the 11th, we through the 8th."""
+    from check_upstream import comparison_leads
+    leads = comparison_leads("2026-11-08", {"INRB": "2026-11-11",
+                                            "scan": "2026-11-09",
+                                            "down": None})
+    assert leads == [("INRB", "2026-11-11", 3)]

@@ -156,6 +156,62 @@ def uploads_since(entries: list[dict], since: str,
     return lines
 
 
+# A SECOND OPINION ON WHETHER WE ARE BEHIND, from parties that read the same
+# reports by other means. Both comparison sources transcribe INSP's situation
+# reports independently of our scraper, so they do not share its failure
+# modes: when INSP renamed the series at 179, INRB-UMIE had report 179 by
+# 10 November 23:05 UTC and was three data days ahead of us by 12 November.
+# ONLY THEIR NEWEST DATE IS READ, at their current head, never their numbers
+# and never the pinned commit: they remain comparison sources, checked against
+# and never built from, and reading the head moves no pin (external.lock).
+#: source -> (file at its head, 0-based column holding the data date). Only
+#: that column is read: the scan's free-text `notes` column mentions dates past
+#: the report's own, and reading the newest date anywhere in the file would
+#: raise a lead that is not there.
+COMPARISON_HEADS = {
+    "INRB-UMIE transcription": (     # headerless: country, date, cumulative
+        "https://raw.githubusercontent.com/INRB-UMIE/BDBV2026-Data/main/"
+        "build/long/insp_sitrep__national_cumulative_confirmed_cases.csv", 1),
+    "epiforecasts scan": (           # header: sitrep, report_date, ...
+        "https://raw.githubusercontent.com/epiforecasts/BVDOutbreakSize/main/"
+        "data/insp_sitrep_scanned.csv", 1),
+}
+#: Data days a comparison source may lead our newest held report before the
+#: check calls the source CHANGED. Each publishes within a day of INSP's upload,
+#: and so do we when nothing is broken, so one day is ordinary and two is not.
+LEAD_DAYS = 2
+_ISO_DATE = re.compile(r"20\d{2}-\d{2}-\d{2}")
+
+
+def newest_date_at(url: str, column: int) -> str | None:
+    """The latest ISO date in `column` of the CSV at `url`; None if it cannot
+    be fetched or the column holds none. Unreachable is UNVERIFIED, never 'not
+    ahead'."""
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": UA})
+        with urllib.request.urlopen(req, timeout=30) as r:
+            text = r.read().decode("utf-8-sig", errors="replace")
+    except Exception:
+        return None
+    dates = [row[column] for row in csv.reader(text.splitlines())
+             if len(row) > column and _ISO_DATE.fullmatch(row[column])]
+    return max(dates, default=None)
+
+
+def comparison_leads(ours: str, theirs: dict[str, str | None],
+                     lead_days: int = LEAD_DAYS) -> list[tuple[str, str, int]]:
+    """(source, its newest date, days ahead of `ours`) for every comparison
+    source at least `lead_days` data days ahead of our newest held report."""
+    import datetime as dt
+    out = []
+    for name, d in theirs.items():
+        if d and ours:
+            ahead = (dt.date.fromisoformat(d) - dt.date.fromisoformat(ours)).days
+            if ahead >= lead_days:
+                out.append((name, d, ahead))
+    return out
+
+
 def _committed(index: Path) -> tuple[set[int], dict[str, str]]:
     """Report numbers in the committed index, and each pick's filename -> URL."""
     nums, urls = set(), {}
@@ -448,6 +504,25 @@ def main() -> None:
             f"      Read each. A situation report means `parse_row` in "
             f"scripts/fetch_sitrep_index.py must learn its name; anything else "
             f"gets a row, with its reason, in registers/upstream_exclusions.tsv.")
+
+    ours = max((r["data_date"] for r in csv.DictReader(
+        (ln for ln in args.index.open() if not ln.startswith("#")), delimiter="\t")
+        if r.get("pick") == "yes" and r["data_date"]), default="")
+    theirs = {name: newest_date_at(url, col)
+              for name, (url, col) in COMPARISON_HEADS.items()}
+    if leads := comparison_leads(ours, theirs):
+        verdict = CHANGED
+        findings.append(
+            "a comparison source holds data we do not: "
+            + "; ".join(f"{n} through {d}, {a} data days past our {ours}"
+                        for n, d, a in leads)
+            + "\n      They read the same INSP reports by other means, so INSP has "
+              "published reports this check cannot see. Find where on insp.cd "
+              "they are; do not build from the comparison source.")
+    if unreached := [n for n, d in theirs.items() if d is None]:
+        findings.append(
+            f"comparison source(s) not reached, so whether they lead us is "
+            f"UNVERIFIED: {', '.join(unreached)}")
 
     new = sorted(listed - have_nums)
     if new:
