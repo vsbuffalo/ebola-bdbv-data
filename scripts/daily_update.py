@@ -33,10 +33,13 @@ the newest released data is a day old or more: it opens one `no-update` issue,
 comments on it each run with the reason, and closes it when a release with a
 new report goes out. It does not pause releases -- a release is what closes it.
 
-Notification is GitHub's, via `.github/workflows/daily-status.yml`: an issue
-this script opens under your own login does not notify you, so the workflow
-@-mentions the owner from the bot account, and fails (turning the README badge
-red) while any gate failure is open.
+Notification is twofold. GitHub's, via `.github/workflows/daily-status.yml`:
+an issue this script opens under your own login does not notify you, so the
+workflow @-mentions the owner from the bot account, and fails (turning the
+README badge red) while any gate failure is open. And one email (`alert`) at
+each transition that needs a person: a gate failure or crash opening, and the
+source falling silent for more than `SILENCE_DAYS` days, sent once per silence
+with the check's list of every PDF uploaded since and how each was judged.
 
 A clean run touches only the files a refresh rewrites -- the committed index
 and manifest, the committed figures -- plus the CHANGELOG stub and the tag
@@ -94,6 +97,16 @@ LABELS = {"gate-failure": ("b60205", "The daily update stopped on a gate"),
 #: Days the newest released data may age before a run without a new report
 #: files a `no-update` issue. INSP has published one report per data day.
 STALE_DAYS = 1
+#: Days without a situation-report upload after which the check exits 4 and a
+#: run emails the evidence once per silence. INSP uploads a report a day, often
+#: 12-30 hours after its data date, so one day of silence is ordinary and two
+#: is not. A silence never starts the fixing agent: the agent has no network
+#: and cannot look at the site, and the silence it could fix -- a renamed
+#: series -- is a refused, unexplained PDF, which the check reports as exit 2.
+SILENCE_DAYS = 2
+SILENCE_STATE = LOGS / ".silence_alerted"
+CHECK = ["uv", "run", "python", "scripts/check_upstream.py",
+         "--stale-days", str(SILENCE_DAYS)]
 
 
 def agent_command(prompt: str) -> list[str]:
@@ -151,6 +164,23 @@ class Run:
             self.say("(dry run, not run) " + " ".join(cmd))
             return ""
         return self.sh(cmd, check=True).stdout.strip()
+
+
+def alert(run: Run, subject: str, body: str) -> None:
+    """Email the maintainer once, at a transition that needs a person: a gate
+    failure or crash opening, or the source falling silent. Issue comments
+    alone are not that -- a no-update issue gathered 26 of them over thirteen
+    days in November without anyone acting. A failed send is logged, never
+    raised: the run's bookkeeping must not be what stops it."""
+    if run.dry:
+        run.say(f"(dry run, not sent) alert: {subject}")
+        return
+    try:
+        from daily_summary import send
+        send(f"ebola-bdbv-data: {subject}", body)
+        run.say(f"alert sent: {subject}")
+    except Exception as e:
+        run.say(f"could not send the alert ({subject}): {e}")
 
 
 def tail(text: str, n: int = 60) -> str:
@@ -260,6 +290,8 @@ def file_failure(run: Run, step: str, output: str, reports: list[str]) -> str:
                       f"Daily update {dt.date.today()}: `{step}` failed",
                       "--label", "gate-failure", "--label", "priority: high",
                       "--body", body])
+    alert(run, f"daily update stopped at `{step}`; releases paused",
+          f"{url or '(dry run)'}\n\n{body}")
     return url.rsplit("/", 1)[-1] if url else "0"
 
 
@@ -448,7 +480,7 @@ def main() -> int:
 
     LOGS.mkdir(exist_ok=True)
     run = Run(args.dry_run, LOGS / f"daily_{dt.date.today()}.log")
-    if LOCK.exists() and time.time() - LOCK.stat().st_mtime < 12 * 3600:
+    if lock_held():
         run.say("another daily run holds the lock; stopping")
         return 0
     LOCK.write_text(str(os.getpid()))
@@ -504,6 +536,7 @@ def file_crash(run: Run, err: BaseException) -> None:
                     "--body", body])
     except Exception as e:                    # the network may be what failed
         run.say(f"could not file the crash issue: {e}")
+    alert(run, "daily update crashed; releases paused", body)
 
 
 def file_notices(run: Run, check_output: str) -> None:
@@ -582,6 +615,46 @@ def flag_no_update(run: Run, reason: str | None) -> None:
                 "this. Releases are not paused by this issue.\n\n" + line])
 
 
+def alert_silence(run: Run, check_output: str) -> str | None:
+    """Email the check's evidence the first time a silence is seen, and return
+    it; None on every later run of the same silence. A silence is named by the
+    date of the newest situation-report upload, which only a new report moves,
+    so a new report ends it and the next silence alerts afresh."""
+    m = re.search(r"newest sitrep upload (\d{4}-\d{2}-\d{2})", check_output)
+    if not m:
+        return None
+    newest = m.group(1)
+    seen = SILENCE_STATE.read_text().strip() if SILENCE_STATE.exists() else ""
+    if seen == newest:
+        return None
+    evidence = tail(check_output, 40)
+    alert(run, f"INSP has uploaded no situation report since {newest}",
+          "The check found nothing it cannot explain, so this is a pause, or "
+          "a change the check cannot see (a report moved off the media "
+          "library, or uploaded as something other than a PDF). Look at "
+          "insp.cd.\n\n```\n" + evidence + "\n```")
+    if not run.dry:
+        SILENCE_STATE.write_text(newest + "\n")
+    return evidence
+
+
+def lock_held() -> bool:
+    """True while another run holds the lock. A lock whose process has died
+    -- a run killed by a signal skips its `finally` -- is released here rather
+    than refusing every run for the next twelve hours."""
+    if not LOCK.exists():
+        return False
+    if time.time() - LOCK.stat().st_mtime >= 12 * 3600:
+        return False
+    try:
+        os.kill(int(LOCK.read_text().strip()), 0)
+    except (ValueError, ProcessLookupError):
+        return False
+    except PermissionError:                   # alive, and someone else's
+        return True
+    return True
+
+
 def update(run: Run, args) -> str | None:
     """One daily run. None when it released a new report; otherwise why not."""
     if git(run, "branch", "--show-current") != "main":
@@ -598,11 +671,11 @@ def update(run: Run, args) -> str | None:
         run.remote(["gh", "issue", "comment", blocking[0], "--body",
                     f"Daily run {dt.date.today()}: paused while this is open."])
         # Still look, so the no-update issue says what the pause is holding back.
-        check = run.sh(["uv", "run", "python", "scripts/check_upstream.py"])
+        check = run.sh(CHECK)
         return (f"releases paused by gate failure #{blocking[0]}. INSP now:\n\n"
                 f"```\n{tail(check.stdout, 25)}\n```")
 
-    check = run.sh(["uv", "run", "python", "scripts/check_upstream.py"])
+    check = run.sh(CHECK)
     file_notices(run, check.stdout)
     prev = last_tag(run)
     merged = [s for s in git(run, "log", "--format=%s", f"{prev}..HEAD",
@@ -613,8 +686,12 @@ def update(run: Run, args) -> str | None:
         return "INSP's site was unreachable."
     if check.returncode in (0, 4) and not merged:
         run.say("current, and nothing merged since the last release")
+        if check.returncode == 4 and (evidence := alert_silence(run, check.stdout)):
+            return ("INSP has published no situation report for more than "
+                    f"{SILENCE_DAYS} days, and every PDF it has uploaded "
+                    f"since is explained. What it uploaded:\n\n```\n{evidence}\n```")
         return ("INSP has published no report we do not hold"
-                + (" and has gone quiet (check exit 4)." if check.returncode == 4
+                + (" and is still silent (check exit 4)." if check.returncode == 4
                    else "."))
 
     branch = f"daily/{dt.date.today()}"

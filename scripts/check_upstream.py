@@ -51,6 +51,7 @@ import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
+from typing import NamedTuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fetch_sitrep_index import (API, EPIDEMIC_START, QUERY, _EXCLUDE,
@@ -77,17 +78,82 @@ def _fetch(start: str) -> list[dict]:
     return out
 
 
-def refused_sitrep_like(entries: list[dict]) -> list[str]:
-    """Filenames of uploads since EPIDEMIC_START that are PDFs named with
-    `sitrep`, were not excluded on purpose, and that `parse_row` refused."""
+EXCLUSIONS = REPO_ROOT / "registers/upstream_exclusions.tsv"
+
+
+class Exclusion(NamedTuple):
+    pattern: re.Pattern
+    series: str
+    reason: str
+    example: str
+
+
+class Explanation(NamedTuple):
+    """Why a PDF on the site is, or is not, a report we fetch.
+
+    `kind` is "accepted" (`parse_row` took it as a situation report of this
+    epidemic), "excluded" (refused, and either the fetch's `_EXCLUDE` or a row
+    of registers/upstream_exclusions.tsv names the series it belongs to), or
+    "unexplained" (refused, and nothing says why -- the state that hid reports
+    179-190 for thirteen days)."""
+    kind: str
+    reason: str
+
+
+def load_exclusions(path: Path = EXCLUSIONS) -> list[Exclusion]:
+    """The register's rows. A row whose own `example` its pattern does not
+    match is a broken row, and the register is refused whole: a pattern that
+    matches nothing it was written for explains nothing, and one that matches
+    the wrong thing would hide reports."""
     out = []
-    for e in entries:
-        name = e.get("source_url", "").rsplit("/", 1)[-1]
-        if (name.lower().endswith(".pdf") and "sitrep" in name.lower()
-                and e.get("date", "")[:10] >= EPIDEMIC_START
-                and not _EXCLUDE.search(name) and parse_row(e) is None):
-            out.append(name)
+    with path.open(newline="") as f:
+        lines = [ln for ln in f if not ln.startswith("#")]
+    for row in csv.DictReader(lines, delimiter="\t"):
+        pat = re.compile(row["pattern"], re.I)
+        if not pat.search(row["example"]):
+            raise ValueError(f"{path.name}: pattern {row['pattern']!r} does not "
+                             f"match its own example {row['example']!r}")
+        out.append(Exclusion(pat, row["series"], row["reason"], row["example"]))
     return out
+
+
+def explain(entry: dict, exclusions: list[Exclusion]) -> Explanation:
+    name = entry.get("source_url", "").rsplit("/", 1)[-1]
+    if parse_row(entry) is not None:
+        return Explanation("accepted", "a situation report of this epidemic")
+    if m := _EXCLUDE.search(name):
+        return Explanation("excluded", f"fetch `_EXCLUDE` ({m.group(0)})")
+    for x in exclusions:
+        if x.pattern.search(name):
+            return Explanation("excluded", x.series)
+    return Explanation("unexplained", "no rule accepts or excludes it")
+
+
+def window_pdfs(entries: list[dict]) -> list[dict]:
+    """PDF uploads since EPIDEMIC_START, the only files any rule here judges."""
+    return [e for e in entries
+            if e.get("source_url", "").lower().endswith(".pdf")
+            and e.get("date", "")[:10] >= EPIDEMIC_START]
+
+
+def unexplained_pdfs(entries: list[dict], exclusions: list[Exclusion]) -> list[str]:
+    return [e["source_url"].rsplit("/", 1)[-1] for e in window_pdfs(entries)
+            if explain(e, exclusions).kind == "unexplained"]
+
+
+def uploads_since(entries: list[dict], since: str,
+                  exclusions: list[Exclusion]) -> list[str]:
+    """One line per PDF uploaded after `since`, with how it was judged. This is
+    the evidence a silent source needs: with it, "INSP paused" and "INSP
+    renamed the series" are a minute's read apart; without it, a reader --
+    and the fixing agent, which has no network -- cannot tell them apart."""
+    lines = []
+    for e in window_pdfs(entries):
+        if e["date"][:10] > since:
+            x = explain(e, exclusions)
+            lines.append(f"{e['date'][:10]}  {x.kind:<11}  "
+                         f"{e['source_url'].rsplit('/', 1)[-1]}  ({x.reason})")
+    return lines
 
 
 def _committed(index: Path) -> tuple[set[int], dict[str, str]]:
@@ -361,20 +427,27 @@ def main() -> None:
             f"is invisible to every rule here. Read its front page and record "
             f"it in registers/sitrep_number_overrides.tsv.")
 
-    # A FILE NAMED AS A SITUATION REPORT THAT OUR PREDICATE REFUSED. This is
-    # the alarm the 179-190 rename needed: the predicate refused every one of
-    # them, so `unclassified` above never saw them, and the only symptom was
-    # the staleness clock -- which reads the same as INSP pausing. Refusals the
-    # exclusion list makes deliberately (the Ituri provincial reports, other
-    # diseases) are not alarms; any other `sitrep`-named PDF is.
-    if refused := refused_sitrep_like(entries):
+    # EVERY PDF ON THE SITE MUST BE EXPLAINED. The filename predicate is an
+    # allowlist on a site we do not control, and a refusal makes no noise: in
+    # November the series dropped `MVE` from its names at report 179, the
+    # predicate refused all twelve reports through 190, and the only symptom
+    # was the staleness clock below -- which reads the same as INSP pausing.
+    # So a refused PDF that neither the fetch's `_EXCLUDE` nor a row of
+    # registers/upstream_exclusions.tsv accounts for is a CHANGED source,
+    # whatever its name looks like.
+    try:
+        exclusions = load_exclusions()
+    except (OSError, ValueError, KeyError) as e:
+        say(f"CHANGED  the exclusions register cannot be read: {e}")
+        raise SystemExit(CHANGED)
+    if unexplained := unexplained_pdfs(entries, exclusions):
         verdict = CHANGED
         findings.append(
-            f"{len(refused)} PDF(s) named as a situation report that the "
-            f"predicate refused: {refused[:8]}{' ...' if len(refused) > 8 else ''}\n"
-            f"      INSP has renamed the series. Extend `parse_row` in "
-            f"scripts/fetch_sitrep_index.py to the new shape; until then the "
-            f"archive cannot grow, and the staleness clock will read it as a pause.")
+            f"{len(unexplained)} PDF(s) on the site that no rule accepts or "
+            f"excludes: {unexplained[:8]}{' ...' if len(unexplained) > 8 else ''}\n"
+            f"      Read each. A situation report means `parse_row` in "
+            f"scripts/fetch_sitrep_index.py must learn its name; anything else "
+            f"gets a row, with its reason, in registers/upstream_exclusions.tsv.")
 
     new = sorted(listed - have_nums)
     if new:
@@ -397,7 +470,11 @@ def main() -> None:
                 f"the source has published no SITUATION REPORT for {age} days "
                 f"(newest sitrep upload {newest}).\n"
                 f"      Either reporting has paused or the site changed in a "
-                f"way that hides it. Those want different responses.")
+                f"way that hides it. Those want different responses. Every "
+                f"PDF uploaded since, and how it was judged:\n"
+                + ("\n".join(f"        {ln}" for ln in
+                             uploads_since(entries, newest, exclusions))
+                   or "        (none: the site has uploaded no PDF since)"))
 
     label = {OK: "CURRENT", BEHIND: "BEHIND", CHANGED: "CHANGED",
              STALE: "STALE"}[verdict]
