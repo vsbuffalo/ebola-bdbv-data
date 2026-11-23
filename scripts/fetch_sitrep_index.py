@@ -111,8 +111,22 @@ _BARE = re.compile(r"\d{1,3}\.pdf", re.I)
 # that one ever reached the predicate; its siblings say `Ebola` and were
 # always filtered by the `MVE` test. Matching the series rather than the one
 # file means the next `MVE`-named issue does not reopen this.
+# The disease words keep out the situation reports INSP has prepared cover
+# images for (cholera, mpox, measles, floods) should one be uploaded under the
+# bare `SitRep_N<number>_` shape that `_SERIES_N` admits.
 _EXCLUDE = re.compile(
-    r"rougeole|rubeole|rubéole|MVE16|MVE-Ituri|MVE_Ituri|infod[ée]mi", re.I)
+    r"rougeole|rubeole|rubéole|MVE16|MVE-Ituri|MVE_Ituri|infod[ée]mi"
+    r"|chol[ée]ra|mpox|variole|inondation", re.I)
+
+# THE SERIES DROPPED ITS DISEASE TOKEN AT REPORT 179. Through 178 every upload
+# carried `MVE` (`SitRep_MVE_RDC_N178_08-11-2026_corrige.pdf`); from 179 they
+# read `SitRep_N179_09-11-2026_corrige.pdf`, and the `MVE` test refused all of
+# them. Twelve reports (179-190, data dates 9-20 November) went unfetched for
+# thirteen days while the checker read the silence as INSP pausing. This admits
+# that exact shape -- `SitRep_N`, a number, a DD-MM-YYYY date -- and nothing
+# broader, so that the next rename is refused and reaches the checker's
+# `refused_sitrep_like` alarm instead of being guessed at.
+_SERIES_N = re.compile(r"sitrep_N\d{1,3}_\d{2}-\d{2}-20\d{2}", re.I)
 
 # The endpoint also returns situation reports for the PREVIOUS DRC Ebola
 # outbreak (the 16th epidemic, from September 2025), whose report numbers run
@@ -239,7 +253,8 @@ def parse_row(entry: dict) -> dict | None:
     # prints loudly -- until someone reads the front page and records it in
     # `sitrep_number_overrides.tsv`. Admitting it is what makes it visible;
     # guessing that `83.pdf` is report 83 is what this file exists to avoid.
-    if not _BARE.fullmatch(name) and "MVE" not in name.upper():
+    if not (_BARE.fullmatch(name) or _SERIES_N.match(name)
+            or "MVE" in name.upper()):
         return None
     if _EXCLUDE.search(name):
         return None

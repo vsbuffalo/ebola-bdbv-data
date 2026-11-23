@@ -53,7 +53,7 @@ import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from fetch_sitrep_index import (API, EPIDEMIC_START, QUERY,
+from fetch_sitrep_index import (API, EPIDEMIC_START, QUERY, _EXCLUDE,
                                 numbering_conflicts, numbering_shifts,
                                 parse_row)
 from lib.provenance import REPO_ROOT, UA, _encode
@@ -74,6 +74,19 @@ def _fetch(start: str) -> list[dict]:
                 total_pages = int(resp.headers.get("X-WP-TotalPages", 1))
             out.extend(json.loads(resp.read()))
         page += 1
+    return out
+
+
+def refused_sitrep_like(entries: list[dict]) -> list[str]:
+    """Filenames of uploads since EPIDEMIC_START that are PDFs named with
+    `sitrep`, were not excluded on purpose, and that `parse_row` refused."""
+    out = []
+    for e in entries:
+        name = e.get("source_url", "").rsplit("/", 1)[-1]
+        if (name.lower().endswith(".pdf") and "sitrep" in name.lower()
+                and e.get("date", "")[:10] >= EPIDEMIC_START
+                and not _EXCLUDE.search(name) and parse_row(e) is None):
+            out.append(name)
     return out
 
 
@@ -347,6 +360,21 @@ def main() -> None:
             f"      A report published under a name carrying no series token "
             f"is invisible to every rule here. Read its front page and record "
             f"it in registers/sitrep_number_overrides.tsv.")
+
+    # A FILE NAMED AS A SITUATION REPORT THAT OUR PREDICATE REFUSED. This is
+    # the alarm the 179-190 rename needed: the predicate refused every one of
+    # them, so `unclassified` above never saw them, and the only symptom was
+    # the staleness clock -- which reads the same as INSP pausing. Refusals the
+    # exclusion list makes deliberately (the Ituri provincial reports, other
+    # diseases) are not alarms; any other `sitrep`-named PDF is.
+    if refused := refused_sitrep_like(entries):
+        verdict = CHANGED
+        findings.append(
+            f"{len(refused)} PDF(s) named as a situation report that the "
+            f"predicate refused: {refused[:8]}{' ...' if len(refused) > 8 else ''}\n"
+            f"      INSP has renamed the series. Extend `parse_row` in "
+            f"scripts/fetch_sitrep_index.py to the new shape; until then the "
+            f"archive cannot grow, and the staleness clock will read it as a pause.")
 
     new = sorted(listed - have_nums)
     if new:

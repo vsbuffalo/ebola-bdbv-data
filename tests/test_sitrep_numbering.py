@@ -63,3 +63,30 @@ def test_the_committed_index_with_its_overrides_is_consistent():
             r["sitrep"], r["data_date"] = ov[r["filename"]]
     assert numbering_conflicts(rows) == {}
     assert numbering_shifts(rows) == []
+
+
+# --- the series renamed at report 179 (`MVE` dropped from the filename) ---
+
+def _entry(name: str, date: str = "2026-11-22T09:31:35") -> dict:
+    return {"source_url": f"https://insp.cd/wp-content/uploads/2026/11/{name}",
+            "date": date}
+
+
+def test_the_n179_shape_is_admitted_with_its_number_and_date():
+    from fetch_sitrep_index import parse_row
+    r = parse_row(_entry("SitRep_N190_20-11-2026_corrige_VF-1.pdf"))
+    assert r is not None
+    assert (r["sitrep"], r["data_date"], r["status"]) == ("190", "2026-11-20", "final")
+
+
+def test_another_disease_in_the_n179_shape_is_refused():
+    from fetch_sitrep_index import parse_row
+    assert parse_row(_entry("SitRep_N012_20-11-2026_cholera.pdf")) is None
+
+
+def test_an_unknown_sitrep_name_is_an_alarm_and_a_deliberate_exclusion_is_not():
+    from check_upstream import refused_sitrep_like
+    entries = [_entry("SitRep_Ebola_191_21-11-2026.pdf"),
+               _entry("Sitrep_MVE-Ituri_N°004-au-20-mai-2026.pdf"),
+               _entry("SitRep_N190_20-11-2026_corrige_VF-1.pdf")]
+    assert refused_sitrep_like(entries) == ["SitRep_Ebola_191_21-11-2026.pdf"]
