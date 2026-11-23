@@ -863,15 +863,15 @@ def _continue_unruled(tabs: list[Table], words: list[dict]) -> list[Table]:
     grown: list[tuple[Table, bool]] = []
 
     for t in tabs:
-        xs = list(t.xs)
-
-        def is_value(k: int) -> bool:
-            return _is_value(lines[k], xs)
-
-        def is_name(k: int) -> bool:
-            return _is_name(lines[k], xs)
-
         def walk(start: int, step: int, edge: float) -> list[int]:
+            xs = _band_edges(t, edge)
+
+            def is_value(k: int) -> bool:
+                return _is_value(lines[k], xs)
+
+            def is_name(k: int) -> bool:
+                return _is_name(lines[k], xs)
+
             got: list[int] = []
             k, ref = start, edge
             while 0 <= k < len(lines) and k not in taken:
@@ -900,9 +900,66 @@ def _continue_unruled(tabs: list[Table], words: list[dict]) -> list[Table]:
             grown.append((t, False))
             continue
         taken.update(down + up)
-        grown.append((_with_lines(t, sorted(up), down, lines), True))
+        grown.append((_with_lines(t, sorted(up), down, lines,
+                                  up_xs=_band_edges(t, t.ys[0]),
+                                  down_xs=_band_edges(t, t.ys[-1])), True))
 
     return [_split_fused(t, words) for t, _ in _merge_meeting(grown)]
+
+
+#: How far apart two stretches of a table's column rules may be, down the page,
+#: and still be one band of ruled rows. Within one table the column rules
+#: overlap or meet end to end; a box merely laid against the table leaves a gap.
+BAND_TOL = 1.0
+
+
+def _band_edges(t: Table, at: float) -> list[float]:
+    """The column edges of `t` that the ruled rows nearest `at` actually draw.
+
+    A BOX TOUCHING A TABLE IS NOT ONE OF ITS COLUMNS. From sitrep 185 the zone
+    table's caption, `Tableau 2. Répartition des cas et décès confirmés par
+    province et zone`, sits in a filled banner at x 79.3-530.0 whose bottom is
+    3.0 pt above the table's top rule -- within `TOUCH`, so the banner joins the
+    table's component and its two sides become column edges. Where every row is
+    ruled that is harmless: a word is placed by its midpoint. But on sitreps
+    186-189 the rules stop after the first zone row and the rest print as bare
+    text, and a bare line is admitted only if no word crosses a column edge
+    (`_cols`). Every zone name starts at x=72.7, left of the banner's side at
+    79.3, so all 22 of Ituri's remaining page-2 zones were taken for running
+    text and dropped -- Ituri summed to 1,504 of the 7,911 its own row prints.
+
+    The banner's sides span only the banner. So the component's vertical rules
+    are split into bands that share no extent down the page, and a line beyond
+    the table is tested against the edges drawn by the band beside it. A table
+    whose column rules form one band -- every table without such a box -- gets
+    its own edges back unchanged.
+    """
+    xs = list(t.xs)
+    verts = sorted((s for s in t.rules if not s.horizontal), key=lambda s: s.lo)
+    bands: list[list[Segment]] = []
+    for s in verts:
+        if bands and s.lo <= max(v.hi for v in bands[-1]) + BAND_TOL:
+            bands[-1].append(s)
+        else:
+            bands.append([s])
+    if len(bands) < 2:
+        return xs
+
+    def reach(b: list[Segment]) -> tuple[float, float]:
+        return min(v.lo for v in b), max(v.hi for v in b)
+
+    def distance(b: list[Segment]) -> float:
+        lo, hi = reach(b)
+        return max(lo - at, at - hi, 0.0)
+
+    band = min(bands, key=distance)
+    lo, hi = reach(band)
+    drawn = [v.pos for v in band] + [
+        e for h in t.rules
+        if h.horizontal and lo - BAND_TOL <= h.pos <= hi + BAND_TOL
+        for e in (h.lo, h.hi)]
+    kept = [x for x in xs if any(abs(x - d) <= SNAP_X for d in drawn)]
+    return kept if len(kept) - 1 >= MIN_COLS else xs
 
 
 def _cols(line: list[dict], xs: list[float]) -> list[int] | None:
@@ -984,18 +1041,23 @@ def _split_fused(t: Table, words: list[dict]) -> Table:
 
 
 def _with_lines(t: Table, up: list[int], down: list[int],
-                lines: list[list[dict]]) -> Table:
+                lines: list[list[dict]], *,
+                up_xs: list[float] | None = None,
+                down_xs: list[float] | None = None) -> Table:
     """`t` with the printed lines `up` (above it) and `down` (below) as rows.
 
     A first-column-only line is part of the row of the value line beside it
     whose first column is empty, so the two print as one tall cell would.
+    "First column" is judged on the edges the lines were admitted under
+    (`up_xs`, `down_xs`; see `_band_edges`), and the words are then placed in
+    the table's own columns, so continued rows index exactly as ruled ones do.
     """
     xs = list(t.xs)
 
-    def col(w: dict) -> int | None:
-        return _bucket(xs, (w["x0"] + w["x1"]) / 2, SNAP_X)
+    def rows_of(ks: list[int], edges: list[float]) -> list[list[dict]]:
+        def col(w: dict) -> int | None:
+            return _bucket(edges, (w["x0"] + w["x1"]) / 2, SNAP_X)
 
-    def rows_of(ks: list[int]) -> list[list[dict]]:
         # Each group is one row: a value line plus any name-only lines that
         # wrap above or below it, joined only where its own first cell is empty.
         groups: list[list[dict]] = []
@@ -1035,14 +1097,14 @@ def _with_lines(t: Table, up: list[int], down: list[int],
     ys = list(t.ys)
     cells = dict(t.cells)
     if up:
-        b, c = as_rows(rows_of(up))
+        b, c = as_rows(rows_of(up, up_xs or xs))
         b[-1] = min(b[-1], ys[0])
         n = len(b) - 1
         cells = {(i + n, j): v for (i, j), v in cells.items()}
         cells.update({k: _join(v) for k, v in c.items()})
         ys = b[:-1] + ys
     if down:
-        b, c = as_rows(rows_of(down))
+        b, c = as_rows(rows_of(down, down_xs or xs))
         n = len(ys) - 1
         cells.update({(i + n, j): _join(v) for (i, j), v in c.items()})
         ys = ys + b[1:]
