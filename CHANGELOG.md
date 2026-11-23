@@ -38,6 +38,16 @@ same as withdrawn: the older tag stays exactly where it is.
 
 ---
 
+## `data/2026-11-20-r2` — 2026-11-23 — daily update
+
+Cut automatically by `scripts/daily_update.py`: every release gate passed (tests, verdict, export quotes, fresh-clone rebuild).
+
+**Fixes merged since the last release** (see each pull request for what moved):
+
+- upstream: a comparison source two data days ahead of our newest report is a CHANGED source -- INRB-UMIE's transcription and the epiforecasts scan read the same INSP reports independently of our scraper, so they do not share its failure modes. Only each one's newest data date is read, from its date column at its current head; no number is read and no pin in external.lock moves, so both stay sources we compare against and never build from. Replayed against the index as it stood at a3b6339 (data through 8 November) the check exits 2 with both sources 12 data days ahead; INRB-UMIE had report 179 by 10 November 23:05 UTC and was three days ahead by 12 November, so this would have fired on the 13 November run as a backstop to the whole-site rule. An unreachable source is reported UNVERIFIED and changes no verdict
+
+---
+
 ## `data/2026-11-20-r1` — 2026-11-23 — daily update
 
 Cut automatically by `scripts/daily_update.py`: every release gate passed (tests, verdict, export quotes, fresh-clone rebuild).
