@@ -3177,8 +3177,16 @@ def test_swab_coverage_reaches_meta_per_province_and_is_never_pooled():
     meta = json.loads((ROOT / "data/build/streams/meta.json").read_text())
     sc = meta.get("swab_coverage")
     assert sc and sc["by_province"], "swab coverage is not published"
+    # A ZERO IS A PRINTED OBSERVATION, NOT A READER FAULT -- but only these two,
+    # each a single alert whose page prints no body swabbed. Any other zero
+    # still fails here and must be read against its page before it is pinned:
+    #   tshopo, sitrep 182: "Tshopo : 1 alerte de décès reçue, 0 corps swabé"
+    #   sud_ubangi, sitrep 184: "1 tentative d'EDS soldée par un échec (0 corps swabé)"
+    printed_zeros = {"tshopo": [182], "sud_ubangi": [184]}
     for prov, v in sc["by_province"].items():
-        assert 0 < v["value"] <= 1
+        if v["value"] == 0:
+            assert sorted(v["sitreps"]) == printed_zeros.get(prov), (prov, v)
+        assert 0 <= v["value"] <= 1
         assert v["bodies_swabbed"] <= v["alerts_raised"]
         assert abs(v["value"] - v["bodies_swabbed"] / v["alerts_raised"]) < 1e-4
         assert v["province_days"] == len(v["sitreps"])
