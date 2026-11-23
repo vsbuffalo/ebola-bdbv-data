@@ -84,9 +84,28 @@ def test_another_disease_in_the_n179_shape_is_refused():
     assert parse_row(_entry("SitRep_N012_20-11-2026_cholera.pdf")) is None
 
 
-def test_an_unknown_sitrep_name_is_an_alarm_and_a_deliberate_exclusion_is_not():
-    from check_upstream import refused_sitrep_like
-    entries = [_entry("SitRep_Ebola_191_21-11-2026.pdf"),
-               _entry("Sitrep_MVE-Ituri_N°004-au-20-mai-2026.pdf"),
-               _entry("SitRep_N190_20-11-2026_corrige_VF-1.pdf")]
-    assert refused_sitrep_like(entries) == ["SitRep_Ebola_191_21-11-2026.pdf"]
+def test_a_pdf_no_rule_explains_is_an_alarm_whatever_its_name():
+    """The 179 rename hid behind a name the predicate refused and nothing
+    flagged. Any refused PDF without a stated reason is now CHANGED."""
+    from check_upstream import load_exclusions, unexplained_pdfs
+    ex = load_exclusions()
+    entries = [_entry("SitRep_Ebola_191_21-11-2026.pdf"),        # a rename
+               _entry("Rapport_MVE-BDBV_191.pdf".replace("MVE", "Ebola")),
+               _entry("Sitrep_MVE-Ituri_N°004-au-20-mai-2026.pdf"),  # `_EXCLUDE`
+               _entry("Repartition_hebdomadaire_des_cas_deces_letalite_SE46_2026.pdf"),
+               _entry("SitRep_N190_20-11-2026_corrige_VF-1.pdf")]   # accepted
+    assert unexplained_pdfs(entries, ex) == ["SitRep_Ebola_191_21-11-2026.pdf",
+                                             "Rapport_Ebola-BDBV_191.pdf"]
+
+
+def test_every_exclusion_row_matches_its_own_example_and_accepts_no_report():
+    """A row that matches no example explains nothing, and one that matched a
+    report we fetch would be the silent refusal this register exists to end."""
+    from check_upstream import load_exclusions
+    rows = list(csv.DictReader(
+        (ln for ln in (ROOT / "data/raw/insp_sitrep_index.tsv").open()
+         if not ln.startswith("#")), delimiter="\t"))
+    for x in load_exclusions():
+        assert x.pattern.search(x.example)
+        hits = [r["filename"] for r in rows if x.pattern.search(r["filename"])]
+        assert not hits, (x.series, hits)

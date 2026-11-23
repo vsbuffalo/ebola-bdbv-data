@@ -1,0 +1,26 @@
+# PDFs on insp.cd that are not situation reports of this epidemic, and why.
+#
+# `scripts/check_upstream.py` requires every PDF uploaded since the epidemic
+# began to be EXPLAINED: accepted by `parse_row` in
+# `scripts/fetch_sitrep_index.py`, refused by that file's `_EXCLUDE` pattern,
+# or matched by a row here. A PDF none of the three explains stops the daily
+# run (check exit 2) and starts the fixing agent. That is the point: the
+# filename predicate is an allowlist on a site we do not control, and twice a
+# rename turned it into a silent refusal of every new report (the series
+# renamed at 083 in August, and dropped `MVE` at 179 in November).
+#
+# One row per SERIES, not per file, so a weekly bulletin does not need a line
+# a week. `pattern` is a Python regular expression, matched case-insensitively
+# with `re.search` against the filename. Keep patterns anchored and narrow: a
+# broad pattern here is exactly the silent refusal this register exists to end.
+#
+# `example` is one real filename the pattern matches, and a test checks that
+# it does.
+pattern	series	reason	example
+^Repartition_hebdomadaire_des_cas_deces_letalite_SE\d+_20\d\d	weekly national epidemiological profile (CNC)	INSP's weekly profile of every notifiable disease, presented at the national coordination committee (CNC). Not a situation report. It does carry five pages on this epidemic, including cases and case fatality by age and sex; it has not been read as a source.	Repartition_hebdomadaire_des_cas_deces_letalite_SE45_2026.pdf
+^Communique-necrologique	obituary notice	An institutional death notice. Carries no surveillance data.	Communique-necrologique.pdf
+^Bulletin.*infod	weekly infodemic bulletin	The weekly analysis of community feedback, hotline calls and media. Carries no case counts. Some uploads spell the word with a mis-encoded accent (`InfodA©miques`), which the fetch's `infod[ée]mi` pattern does not match.	Bulletin-Hebdomadaire-dAnalyse-des-Tendances-InfodA©miques-Ebola.pdf
+^INSP_Rapport_T\d_20\d\d	INSP quarterly activity report	The institute's quarterly report on its own activities.	INSP_Rapport_T2_2026.pdf
+^Situation_du_cholera_	cholera situation report	Another disease's surveillance report.	Situation_du_cholera_en_RDC_SE34__SGI_Cholera_PAL.pdf
+^SGI_Rougeole_	measles surveillance report	Another disease's surveillance report.	SGI_Rougeole_31082026.pdf
+^97-1\.pdf$	duplicate upload of sitrep 097	A second upload of report 097. The archive holds 097 from the bare-numbered URL `97.pdf`, which `probe_gaps` recovered.	97-1.pdf

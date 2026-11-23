@@ -184,3 +184,33 @@ def test_a_release_with_a_new_report_closes_the_issue(tmp_path, monkeypatch):
     r = IssueRun(["21"])
     du.flag_no_update(r, None)
     assert r.calls == [["gh", "issue", "close"]]
+
+
+# --- escalation: a silence alerts once, a dead run's lock is released ---
+
+SILENT = ("CURRENT  --  179 reports listed\n"
+          "  * the source has published no SITUATION REPORT for 3 days "
+          "(newest sitrep upload 2026-11-22).\n")
+
+
+def test_a_silence_alerts_once_and_a_new_silence_alerts_again(tmp_path, monkeypatch):
+    sent = []
+    monkeypatch.setattr(du, "SILENCE_STATE", tmp_path / "silence")
+    monkeypatch.setattr(du, "alert", lambda run, subject, body: sent.append(subject))
+    run = du.Run(dry=False, log=tmp_path / "run.log")
+    assert du.alert_silence(run, SILENT)                       # first sight: alert
+    assert du.alert_silence(run, SILENT) is None               # same silence: quiet
+    assert du.alert_silence(run, SILENT.replace("11-22", "11-30"))  # a new one
+    assert len(sent) == 2 and "2026-11-30" in sent[1]
+
+
+def test_a_lock_whose_process_has_died_is_not_held(tmp_path, monkeypatch):
+    import os
+    lock = tmp_path / "daily.lock"
+    monkeypatch.setattr(du, "LOCK", lock)
+    assert not du.lock_held()
+    lock.write_text(str(os.getpid()))                          # this test: alive
+    assert du.lock_held()
+    dead = subprocess.Popen(["true"]); dead.wait()
+    lock.write_text(str(dead.pid))                             # exited: released
+    assert not du.lock_held()
