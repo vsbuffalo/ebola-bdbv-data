@@ -86,11 +86,23 @@ CARRIED_INSIDE = re.compile(
     rf"dont\s+({NUM})\s+reports?"
     rf"|{NUM}\s+alertes?[^:.]{{0,40}}?\(\s*({NUM})\s+reports?\s*\)", re.I)
 
-#: Bodies swabbed, across every phrasing the corpus uses.
+#: A deferral stated as OUTGOING: bodies the team could not reach today and
+#: carries to tomorrow. Those are part of the day's alerts, not added to them.
+#: Sitrep 185 prints both directions in one sentence -- "Sur 88 alertes EDS
+#: (dont 12 reports de la veille), 71 EDS ont été réalisés (80,7 %) et 14
+#: reportés" -- and sitrep 189's "67 alertes de décès ... (dont 2 corps swabés
+#: et 19 reports au lendemain)" was published as 86 alerts by adding them.
+DEFERRED_OUT = re.compile(
+    r"\s*(?:au\s+lendemain|pour\s+le\s+lendemain|au\s+jour\s+suivant"
+    r"|en\s+fin\s+de\s+journ[ée]e)", re.I)
+
+#: Bodies swabbed, across every phrasing the corpus uses. A count written
+#: after a slash is a denominator: sitrep 179's "78/108 corps swabés" was read
+#: as 108 bodies swabbed. Neither half is taken from such a fraction.
 SWABBED = re.compile(
-    rf"({NUM})\s+corps\s+(?:ont\s+[ée]t[ée]\s+)?(?:swab|pr[ée]lev)"
-    rf"|({NUM})\s+swabs?\s+effectu[ée]s"
-    rf"|({NUM})\s+corps\s+(?:a\s+[ée]t[ée]\s+)?pr[ée]lev", re.I)
+    rf"(?<![/\d])({NUM})\s+corps\s+(?:ont\s+[ée]t[ée]\s+)?(?:swab|pr[ée]lev)"
+    rf"|(?<![/\d])({NUM})\s+swabs?\s+effectu[ée]s"
+    rf"|(?<![/\d])({NUM})\s+corps\s+(?:a\s+[ée]t[ée]\s+)?pr[ée]lev", re.I)
 #: "toutes ont été prélevées par swab" -- every alert was swabbed. A word, not
 #: a number, and dropping it would lose a 100% day and bias the pooled ratio
 #: downward.
@@ -143,6 +155,28 @@ PROV_MARKER = re.compile(
     r"|Bas[-\s]?U[ée]l[ée]|Tshopo|Sud[-\s]?Ubangi|Nord[-\s]?Ubangi)\s*[,:]",
     re.I)
 
+#: A province LABEL -- the name followed by a colon -- opens that province's
+#: paragraph wherever it falls, not only after sentence punctuation. From
+#: sitrep 179 the pillar runs its paragraphs together: sitrep 189 prints
+#: "... 5 corps swabés (1 à Watsa, 1 à Isiro, 3 à Wamba) Ituri : Sur 74 alertes
+#: de décès reçues, 49 EDS ont été réalisés (avec 10 corps swabés) et 14
+#: reports enregistrés", and read as one fragment Haut-Uélé's 7 alerts gained
+#: Ituri's 14 carried-over ones; its "(EDS) Nord-Kivu : 67 alertes" was not
+#: seen as a marker at all and the fragment inherited Nord-Ubangi from the
+#: paragraph before. A fragment is therefore also split before every label,
+#: so that no fragment carries two provinces' numbers.
+PROV_LABEL = re.compile(
+    r"(?<![\w-])(?=(?:Ituri|Nord[-\s]?Kivu|Sud[-\s]?Kivu|Haut[-\s]?U[ée]l[ée]"
+    r"|Bas[-\s]?U[ée]l[ée]|Tshopo|Sud[-\s]?Ubangi|Nord[-\s]?Ubangi)\s*:)", re.I)
+
+#: A province's count since the outbreak began, which is not the day's. Sitreps
+#: 179 and 180 print, for Sud-Ubangi, "Aucun nouvel Enterrement Digne et
+#: Sécurisé (EDS) ni prélèvement par swab n'a été réalisé au cours de la
+#: journée, le cumul provincial s'élevant à 7 EDS et 7 corps swabés depuis le
+#: début" -- the day's swabs are none, and the 7 is the running total. Every
+#: column here is a count for the report day, so such a fragment is refused.
+CUMULATIVE = re.compile(r"\bcumul|depuis\s+le\s+d[ée]but", re.I)
+
 
 def fold(s: str) -> str:
     import unicodedata
@@ -184,7 +218,9 @@ def sentences(text: str) -> list[tuple[str, str | None]]:
     out: list[tuple[str, str | None]] = []
     for section in pillar_sections(text):
         current: str | None = None
-        for part in re.split(r"(?<=[.;])\s+|(?=[•→])", section):
+        parts = [p for chunk in re.split(r"(?<=[.;])\s+|(?=[•→])", section)
+                 for p in PROV_LABEL.split(chunk)]
+        for part in parts:
             m = PROV_MARKER.search(part)
             if m:
                 current = SLUG.get(fold(next(g for g in m.groups() if g)))
@@ -206,12 +242,24 @@ def parse(sentence: str) -> dict | None:
     if alerts is None and swabbed is None:
         return None
 
-    add = first(CARRIED_ADD.search(sentence))
+    add_m = CARRIED_ADD.search(sentence)
+    add = first(add_m)
     inside = first(CARRIED_INSIDE.search(sentence))
     construction = "none"
     carried = None
     if inside is not None:
         construction, carried = "dont (already inside)", inside
+    elif (add is not None and "dont" in sentence[:add_m.start()].lower()
+          and re.match(r"[ée]e?s?\s+de\s+la\s+veille", sentence[add_m.end():], re.I)):
+        # Sitrep 073: "... alertes de décès enregistrées, dont 67 du jour et 11
+        # reportées de la veille" -- carried in, and already inside the total
+        # the `dont` divides. Adding them published 89 alerts for 78.
+        construction, carried = "dont (already inside)", add
+    elif add is not None and (
+            # the participle `reporté(e)s` -- "et 20 reportées" -- not the noun
+            re.match(r"[ée]", sentence[add_m.end():])
+            or DEFERRED_OUT.match(sentence, add_m.end())):
+        construction = "deferred to the next day (inside, not added)"
     elif add is not None:
         construction, carried = "et (added)", add
         if alerts is not None:
@@ -234,6 +282,7 @@ def parse(sentence: str) -> dict | None:
         "failures": failures,
         "printed_pct": ", ".join(m.group(1) for m in PCT.finditer(sentence)) or None,
         "quote": sentence.strip()[:400],
+        "states_cumulative": bool(CUMULATIVE.search(sentence)),
     }
 
 
@@ -248,6 +297,8 @@ def check(row: dict) -> tuple[str, str]:
     """
     a, s, e = row["alerts_total"], row["bodies_swabbed"], row["eds_done"]
     r = row["bodies_reached"]
+    if row.get("states_cumulative"):
+        return "refused", "the fragment states a running total, not the day's count"
     if a is not None and s is not None and s > a and not row["alerts_carried"]:
         return "refused", "swabbed exceeds alerts with no carried-over count"
 

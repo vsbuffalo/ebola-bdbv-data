@@ -939,6 +939,35 @@ def test_a_table_printed_without_gridlines_is_read_from_its_lines(n):
 
 
 @needs_pdfs
+@pytest.mark.parametrize("n", [186, 187, 188, 189])
+def test_a_caption_box_touching_the_table_does_not_split_its_name_column(n):
+    """On sitreps 186-189 the zone table's page-2 rules stop after Adja and
+    Ituri's next 22 zones print as bare text. The caption banner above the
+    table (`Tableau 2. Répartition des cas et décès confirmés par province et
+    zone`) touches its top rule, and its left side at x=79.3 became a column
+    edge through the name column; every name starts left of it, so each line
+    was taken for running text and dropped. Ituri summed to 1,504 of its
+    printed 7,911 on sitrep 186. Every Ituri zone is now read, and they close
+    on the Ituri row the page prints."""
+    rows, _ = E.extract(pdf(n))
+    ituri = [r for r in rows if r["zone_reported"] == "Ituri"][0]
+    i = rows.index(ituri)
+    nk = next(k for k, r in enumerate(rows) if r["zone_reported"] == "Nord-Kivu")
+    parts = rows[i + 1:nk]
+    names = {r["zone_reported"] for r in parts}
+    assert {"Aru", "Bunia", "Mongbwalu", "Nizi", "Nyankunde"} <= names
+    assert len([r for r in parts if r["level"] == "zone"]) == 28
+    printed = {186: 7911, 187: 7946, 188: 7979, 189: 8005}[n]
+    assert ituri["cum_cases"] == printed
+    assert sum(r["cum_cases"] or 0 for r in parts) == printed
+    if n == 186:
+        bunia = [r for r in parts if r["zone_reported"] == "Bunia"][0]
+        assert (bunia["cum_cases"], bunia["cum_deaths"], bunia["new_cases"],
+                bunia["deaths_community"], bunia["deaths_treatment_centre"],
+                bunia["deaths_total"]) == (2105, 759, 7, 1, 3, 4)
+
+
+@needs_pdfs
 @pytest.mark.parametrize("n", [88, 89, 91, 95, 98])
 def test_a_value_in_a_taller_cell_is_not_split_off_its_own_row(n):
     """The same shading boxes that cut sitrep 098's province rows in half were
@@ -2010,9 +2039,13 @@ def test_the_built_streams_publish_no_negative_count():
 
 @needs_streams
 def test_the_record_holds_every_revision_the_source_made():
-    """Eight downward revisions exist in the corpus. Each opens a deficit on
+    """Nine downward revisions exist in the corpus. Each opens a deficit on
     the row that differenced negative and closes it on a later row; none is
-    left outstanding."""
+    left outstanding.
+
+    The ninth is Tshopo's cumulative confirmed deaths on sitrep 186, printed
+    as 33 in both its tables (`Tshopo 108 33 30,6% 0 0 0 0`) between 35 on
+    sitrep 185 and 35 again on sitrep 187."""
     rev = pl.read_csv(STREAMS / "revisions.tsv", separator="\t",
                       infer_schema_length=None)
     opened = rev.filter(pl.col("raw") < 0)
@@ -2024,6 +2057,7 @@ def test_the_record_holds_every_revision_the_source_made():
         ("deaths_daily_ituri", "2026-07-12", -23),
         ("deaths_daily_nord_kivu", "2026-06-11", -2),
         ("deaths_daily_nord_kivu", "2026-07-12", -1),
+        ("deaths_daily_tshopo", "2026-11-16", -2),
         ("deaths_haut_uele", "2026-07-21", -1),
     ]
     # Every deficit discharges: the last row of each (stream, column) run
@@ -3076,13 +3110,83 @@ def test_the_laboratory_section_is_not_read_as_burial_rows():
 
 
 @needs_pdfs
+def test_a_province_label_mid_fragment_opens_its_own_paragraph():
+    """From sitrep 179 the pillar runs its province paragraphs together, and a
+    label that follows no sentence punctuation was not a marker. Sitrep 189's
+    "(EDS) Nord-Kivu : 67 alertes de décès" inherited Nord-Ubangi from the
+    paragraph before and was published as Nord-Ubangi's 86 alerts; its
+    Haut-Uélé fragment ran on into "Ituri : Sur 74 alertes ... et 14 reports"
+    and published 7 + 14 = 21 alerts for Haut-Uélé."""
+    frags = [(s, p) for s, p in BA.sentences(BA.text_of(pdf(189))) if p]
+    nk = [p for s, p in frags if "67 alertes de décès ont généré" in s]
+    assert nk and set(nk) == {"nord_kivu"}
+    hu = [BA.parse(s) for s, p in frags if p == "haut_uele" and "Sur 7 alertes" in s]
+    assert hu and all(r["alerts_total"] == 7 for r in hu)
+    assert not [s for s, _ in frags if "Haut-Uélé :" in s and "Ituri :" in s]
+
+
+def test_a_running_total_is_not_the_days_count():
+    """Sitreps 179 and 180 print Sud-Ubangi's provincial total since the
+    outbreak began beside a day on which nothing was done; the 7 was published
+    as the day's bodies swabbed."""
+    r = BA.parse("Aucun nouvel Enterrement Digne et Sécurisé (EDS) ni prélèvement "
+                 "par swab n'a été réalisé au cours de la journée, le cumul "
+                 "provincial s'élevant à 7 EDS et 7 corps swabés depuis le début")
+    assert BA.check(r)[0] == "refused"
+
+
+def test_a_deferral_to_the_next_day_is_not_added_to_the_alerts():
+    """Bodies carried to tomorrow are part of today's alerts. Sitrep 189's
+    Nord-Kivu was published as 67 + 19 = 86, sitrep 188's as 84 + 22 = 106,
+    sitrep 104's Ituri as 87 + 5 = 92."""
+    for text, want in [
+        ("Nord-Kivu : 67 alertes de décès ont généré la réalisation de 59 EDS "
+         "(dont 2 corps swabés et 19 reports au lendemain).", 67),
+        ("Nord-Kivu : 84 alertes de décès ont été reçues, permettant de réaliser "
+         "72 EDS (dont 5 corps swabés et 22 reports au jour suivant)", 84),
+        ("Le pilier EDS a reçu 87 alertes : 65 corps swabés, 78 EDS réalisés et "
+         "5 reports en fin de journée.", 87),
+        ("59 alertes de décès reçues menant à 53 EDS réalisées (9 communautaires, "
+         "42 en ESS, 2 en CTE/CT) et 20 reportées.", 59),
+    ]:
+        r = BA.parse(text)
+        assert r["alerts_total"] == want, text
+        assert r["alerts_carried"] is None, text
+
+
+def test_carried_in_alerts_a_dont_divides_are_not_added_again():
+    """Sitrep 073: "78 alertes ..., dont 67 du jour et 11 reportées de la
+    veille" -- 67 + 11 is the 78; adding the 11 published 89."""
+    r = BA.parse("Ituri : 78 alertes de décès enregistrées, dont 67 du jour et 11 "
+                 "reportées de la veille, 61 EDS réalisés soit 78 % et 47 corps "
+                 "swabés, dont 38 en communauté et 9 en ESS.")
+    assert (r["alerts_total"], r["alerts_carried"]) == (78, 11)
+    assert r["alert_construction"].startswith("dont")
+
+
+def test_a_fractions_denominator_is_not_bodies_swabbed():
+    """Sitrep 179's Ituri "78/108 corps swabés" was read as 108 swabbed."""
+    r = BA.parse("78/108 corps swabés, avec 23 échecs (18 %, contre 5 %), et "
+                 "20 reports.")
+    assert r is None or r["bodies_swabbed"] != 108
+
+
+@needs_pdfs
 def test_swab_coverage_reaches_meta_per_province_and_is_never_pooled():
     import json
     meta = json.loads((ROOT / "data/build/streams/meta.json").read_text())
     sc = meta.get("swab_coverage")
     assert sc and sc["by_province"], "swab coverage is not published"
+    # A ZERO IS A PRINTED OBSERVATION, NOT A READER FAULT -- but only these two,
+    # each a single alert whose page prints no body swabbed. Any other zero
+    # still fails here and must be read against its page before it is pinned:
+    #   tshopo, sitrep 182: "Tshopo : 1 alerte de décès reçue, 0 corps swabé"
+    #   sud_ubangi, sitrep 184: "1 tentative d'EDS soldée par un échec (0 corps swabé)"
+    printed_zeros = {"tshopo": [182], "sud_ubangi": [184]}
     for prov, v in sc["by_province"].items():
-        assert 0 < v["value"] <= 1
+        if v["value"] == 0:
+            assert sorted(v["sitreps"]) == printed_zeros.get(prov), (prov, v)
+        assert 0 <= v["value"] <= 1
         assert v["bodies_swabbed"] <= v["alerts_raised"]
         assert abs(v["value"] - v["bodies_swabbed"] / v["alerts_raised"]) < 1e-4
         assert v["province_days"] == len(v["sitreps"])
@@ -3994,15 +4098,20 @@ def test_the_absconder_series_is_thin_and_the_figure_must_not_join_it():
     province-level row. Sitrep 115's Tshopo "absconder", published in the
     2026-09-18 release, was not one: it was the "1 évadé" in the outcome list
     of the experimental-treatment cohort, an outbreak-to-date count, and the
-    same clause put one on sitreps 129-132 as well."""
+    same clause put one on sitreps 129-132 as well.
+
+    28 as of the 2026-11-20 archive: three more printed zeros, each a province
+    sentence -- sitrep 185 Sud-Ubangi "0 sortie (0 guéri, 0 décès, 0 évadé)",
+    sitrep 186 Haut-Uélé "19 sorties ..., 4 décès et 0 évadé", sitrep 186
+    Sud-Ubangi "0 nouvelle admission, 0 sortie, 0 décès et 0 évadé ce jour"."""
     import plot_figures as P
     care, banner = _built()
     last = P.census_agreement(care, banner)["tile_confirmed_last"]
     a = P.absconder_coverage(care, last)
-    assert a["n"] == 25
-    assert a["n_after"] == 6
+    assert a["n"] == 28
+    assert a["n_after"] == 9
     assert a["n_national"] == 14
-    assert a["n_zero"] == 1
+    assert a["n_zero"] == 4
 
 
 @needs_build
