@@ -38,6 +38,16 @@ same as withdrawn: the older tag stays exactly where it is.
 
 ---
 
+## `data/2026-11-20-r1` — 2026-11-23 — daily update
+
+Cut automatically by `scripts/daily_update.py`: every release gate passed (tests, verdict, export quotes, fresh-clone rebuild).
+
+**Fixes merged since the last release** (see each pull request for what moved):
+
+- upstream: every PDF on the site must be accepted or excluded with a reason, a silence emails its evidence once, and a gate failure or crash emails at once -- the filename predicate is an allowlist, and a refusal made no noise: under the filter as it stood at a3b6339 the new rule finds 13 unexplained PDFs (reports 179-190 and a second upload of 188), so the first run after 179 was uploaded on 10 November would have exited 2 and started the fixing agent, where instead it read 13 days of refusals as INSP pausing. registers/upstream_exclusions.tsv names the seven series that are not situation reports, one pattern each, with a test that every pattern matches its own example and no indexed report; today all 239 PDFs since May are explained. When no situation report has been uploaded for more than SILENCE_DAYS (2) days the check lists every PDF uploaded since with how each was judged, and the run emails that list once per silence; it does not start the agent, which has no network and could not look at the site, and the silence it could fix is now exit 2. A lock whose process has died no longer refuses runs for twelve hours
+
+---
+
 ## `data/2026-11-20-r0` — 2026-11-23 — daily update
 
 Cut automatically by `scripts/daily_update.py`: every release gate passed (tests, verdict, export quotes, fresh-clone rebuild).
