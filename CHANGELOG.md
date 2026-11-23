@@ -38,6 +38,19 @@ same as withdrawn: the older tag stays exactly where it is.
 
 ---
 
+## `data/2026-11-20-r0` — 2026-11-23 — daily update
+
+Cut automatically by `scripts/daily_update.py`: every release gate passed (tests, verdict, export quotes, fresh-clone rebuild).
+
+**New data.** Sitreps 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, data date 2026-11-08 → 2026-11-20: 772 confirmed cases and 421 deaths nationally in windows from the previous data date.
+
+**Fixes merged since the last release** (see each pull request for what moved):
+
+- zone table, burial alerts: a caption box touching a table no longer splits its name column, and a province label opens its own paragraph wherever it falls -- on sitreps 186-189 the zone table's page-2 rules stop after Adja and the caption banner (x 79.3-530.0, 3.0 pt above the table, inside TOUCH) put a column edge through the zone names, so _continue_unruled took every bare row for running text and Ituri summed to 1,504 of its printed 7,911; bare lines are now tested against the edges of the band of rules they continue (_band_edges), and across the whole archive only those four pages read differently. The burial pillar from sitrep 179 runs its province paragraphs together, and a label after no sentence punctuation was not a marker: Nord-Kivu's rows were published under Nord-Ubangi (185, 187, 189, 190) and Bas-Uélé (188), Haut-Uélé's 7 alerts gained Ituri's 14 (189), Tshopo took Nord-Kivu's 7 swabs (181); the same defect had filed Nord-Kivu under Tshopo on 068 and under Haut-Uélé on 158. Also refused or corrected, each pinned to its sitrep: a running total read as the day's count (Sud-Ubangi 179-180), a deferral to the next day added to the alerts (104, 184, 188, 189), carried-in alerts a dont divides added again (073), and a fraction's denominator read as bodies swabbed (179). Two pinned values move because the pages added observations: a ninth downward revision (Tshopo deaths 35 -> 33 -> 35 on 185-187) and three printed zero absconders (185-186)
+- index: admit the series' new SitRep_N<number>_<DD-MM-YYYY> filenames, and make a refused sitrep-named upload a CHANGED finding -- from report 179 INSP dropped MVE from the name (SitRep_MVE_RDC_N178_08-11-2026 became SitRep_N179_09-11-2026), parse_row refused all of them, and reports 179-190 (data dates 9-20 November) went unfetched for 13 days while check_upstream exited 4 (stale), which the daily read as INSP pausing. refused_sitrep_like flags any sitrep-named PDF the predicate refuses that the exclusion list does not account for; it would have exited 2 on the first renamed upload and flags nothing earlier in the window. The exclusion list adds cholera, mpox, variole and inondation, the series INSP has prepared sitrep cover images for, since nothing reads a front page for the disease
+
+---
+
 ## `data/2026-11-08-r3` — 2026-11-14 — daily update
 
 Cut automatically by `scripts/daily_update.py`: every release gate passed (tests, verdict, export quotes, fresh-clone rebuild).
