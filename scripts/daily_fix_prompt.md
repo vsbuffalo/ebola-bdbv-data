@@ -41,6 +41,17 @@ means.
    quote, whose defect it is, what you changed, and the gate results. The runner
    pushes the branch and opens the pull request; you do not.
 
+## A reader that reads less is a break too
+
+Read `CLAUDE.md` at the repository root. If the failure, or anything you notice
+on the way, is a series that has thinned (refusals rising in a
+`data/build/series/*_status.csv`, a province or day no longer appearing),
+assume the source changed its wording and the numbers are still on the page.
+Repair the reader, or write a new one that reads a more stable printing of the
+same quantity, and check it against the second printing wherever the report
+gives one. The archive holds every PDF, so the repair backfills every report it
+affects.
+
 ## What you must not do
 
 - Do not add a row to `registers/reconciliation_exceptions.tsv`, or any other

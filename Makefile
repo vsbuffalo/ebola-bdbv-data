@@ -171,6 +171,11 @@ build:
 	uv run python scripts/extract_lab_prose.py \
 		--pdfs data/raw/sitrep_pdfs --quiet \
 		--out data/build/series/lab_prose.csv
+	# The front page's one-sentence national laboratory total, the stable
+	# printing of what the section above writes out province by province.
+	uv run python scripts/extract_lab_front_page.py \
+		--pdfs data/raw/sitrep_pdfs \
+		--out data/build/series/lab_front_page.csv
 	# The care ledger the reports state in words: admissions, exits and how
 	# they end, the end-of-day census with its confirmed/suspected split, the
 	# beds and the printed occupancy. It exists because the front-page
@@ -258,6 +263,7 @@ streams: onset
 		--summary data/build/series/province_summary.csv \
 		--prose data/build/series/prose_provinces.csv \
 		--lab data/build/series/lab_prose.csv \
+		--lab-front-page data/build/series/lab_front_page.csv \
 		--caveat data/build/series/provisional_caveat.csv \
 		--banner data/build/series/banner.csv \
 		--notified data/build/series/daily_notified.csv \

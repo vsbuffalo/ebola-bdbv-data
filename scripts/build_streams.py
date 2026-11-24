@@ -555,7 +555,7 @@ def on_calendar_day_grid(d: pl.DataFrame, report_days, *, time_col: str,
 #: measuring how much of the country the paragraph had been written out for.
 METADATA_COLUMNS = ("days_covered", "n_report_days", "flags", "n_provinces",
                     "n_province_days", "n_report_days_silent", "checks",
-                    "consolidating")
+                    "consolidating", "vintage")
 
 #: HOW A HOLE IS SPELLED ON DISK, in one place because both sides of it have
 #: to agree. The engines these files are written for read the literal token
@@ -632,6 +632,7 @@ DIVISOR, BINOMIAL_SIZE = "divisor", "binomial size"
 #: projected, ...)`, where `projected` is a ratio of modelled intensities and
 #: no data column enters the division -- it is a size and never a divisor.
 DENOMINATOR_OF = {"lab": ("tests", DIVISOR),
+                  "lab_front_page": ("tests", DIVISOR),
                   "community_deaths": ("deaths_split", BINOMIAL_SIZE)}
 
 
@@ -1823,6 +1824,7 @@ VALUE_SPAN = {
     "deaths_excluding_backlog": "interval",
     # a printed 24-hour figure, gridded onto calendar days
     "community_deaths": "report_day", "lab": "report_day",
+    "lab_front_page": "report_day",
     "cases_notified": "report_day", "deaths_notified": "report_day",
 
     "care_admissions": "report_day", "care_exits": "report_day",
@@ -2114,6 +2116,9 @@ def main() -> None:
     ap.add_argument("--lab", type=Path, default=None,
                     help="lab_prose.csv: licensed daily testing volume and "
                          "positives, for the national testing stream")
+    ap.add_argument("--lab-front-page", type=Path, default=None,
+                    help="lab_front_page.csv: the front page's national "
+                         "laboratory total, one per report")
     ap.add_argument("--banner", type=Path, default=None,
                     help="banner.csv: the front-page census of people in "
                          "isolation and the cumulative recoveries")
@@ -3048,6 +3053,51 @@ def main() -> None:
                                                  & (pl.col("n_report_days") > 0))
                                         .height),
                        **carry_note(name, cname)}
+
+    # THE FRONT PAGE'S NATIONAL LABORATORY TOTAL (extract_lab_front_page.py),
+    # one sentence per report, each checked against its own printed
+    # positivity. It is a separate family from `lab` because it is a separate
+    # printing: `lab_daily_national` sums whichever province paragraphs the
+    # section reader licensed, and from report 176 the section's wording
+    # changed so often that the sum fell to a few percent of the testing the
+    # reports describe. This one is the source's own national total and needs
+    # no coverage model. `vintage` marks report 178 onward, where the sample
+    # count stops equalling the province paragraphs' sum and most likely
+    # includes repeat samples.
+    FRONT_PAGE_WIDENED = dt.date(2026, 11, 8)  # report 178
+    if args.lab_front_page and args.lab_front_page.exists():
+        fp = pl.read_csv(args.lab_front_page, infer_schema_length=None)
+        if not fp.is_empty():
+            name = "lab_front_page_daily_national"
+            fd = (fp.with_columns(pl.col("date").str.to_date())
+                  .unique("date", keep="last").sort("date"))
+            n_stated = fd.height
+            fd = on_calendar_day_grid(
+                fd.select("date",
+                          pl.col("positives").alias("positives_national"),
+                          pl.col("samples").alias("tests_national"),
+                          "vintage"),
+                report_days, time_col="date", divisors=("tests_national",))
+            fd = fd.with_columns(
+                # The vintage is a property of the calendar, not of the row's
+                # reading, so a hole carries it too.
+                pl.when(pl.col("date") >= pl.lit(FRONT_PAGE_WIDENED))
+                .then(pl.lit("widened")).otherwise(pl.lit("province_sum"))
+                .alias("vintage"),
+                daily_flags(fd["date"], caveat, exceptions, "national"))
+            write_stream(
+                fd.select(pl.col("date").dt.to_string("%Y-%m-%d").alias("time"),
+                          "positives_national", "tests_national",
+                          "days_covered", "n_report_days",
+                          "n_report_days_silent", "vintage", "flags"),
+                args.out_dir / f"{name}.tsv", DAILY)
+            recon[name] = {
+                "n_obs": n_stated, "n_rows": fd.height,
+                "tests": int(fd.filter(pl.col("n_report_days") > 0)
+                             ["tests_national"].sum()),
+                "positives": int(fd["positives_national"].sum()),
+                "report_days_silent": int(fd["n_report_days_silent"].sum()),
+            }
 
     # THE TESTING STREAM, from the laboratory prose (extract_lab_prose.py:
     # every row is licensed by the sentence's own printed positivity). This
