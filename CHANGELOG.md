@@ -38,6 +38,16 @@ same as withdrawn: the older tag stays exactly where it is.
 
 ---
 
+## `data/2026-11-20-r4` — 2026-11-23 — daily update
+
+Cut automatically by `scripts/daily_update.py`: every release gate passed (tests, verdict, export quotes, fresh-clone rebuild).
+
+**Fixes merged since the last release** (see each pull request for what moved):
+
+- care: the care-ledger reader reads the "Province : ..." paragraphs that replaced the bullets from report 176, recovering the census, admissions and exits it had stopped reading -- across reports 176-190 the province censuses read rise from 20 to 49 and those whose own arithmetic closes from 9 to 35 (2.3 per report against 2.5 over 150-175). The numbers were all printed; the reader lost them because the section ended at ordinary words now inside the paragraphs ("Sur le plan logistique" in Nord-Kivu's, an inline "Défis :" in Ituri's), because the first province follows "Principales actions" with no punctuation, and because provinces run on without a full stop ("Cumul des guéris : 48 Ituri : 383 patients", sitrep 185, which filed Ituri's 69 exits under Tshopo). The new vintage also prints the census carried over from the day before ("520 patients en report", "La journée a débuté avec 37 patients"), which is now excised from the census and used for a new closure, start + admissions - exits = census; it refuses sitrep 181's Nord-Kivu "604 nouvelles admissions (132 confirmés et 472 suspects)", the previous day's census carried over word for word, whose split still sums. Patients held outside the treatment centres ("155 patients sont hospitalisés hors CTE/CT") are no longer read as a census, nor a meals share ("97 % (359/372) des patients ont reçu des repas") as beds. Nord-Kivu's census of sitreps 169-175, lost to an 80-character limit on its parenthetical, is read again, and the whole-response summary reader is confined to the reports that print one (before 100), which keeps "Au total, 595 patients" as Nord-Kivu's. Earlier rows that change, each read against its page: Nord-Kivu 077 and 078, Tshopo 077 and 078, Haut-Uélé 138 and 144, Nord-Kivu 144, Tshopo 146 and beds on 144 and 175 gain readings; Haut-Uélé 116 loses 22 recoveries that were a discharge ceremony in the continuity-of-services section. The front-page ISOLEMENT/CTE tile agrees with the province sum on 33 reports from 109 to 165 (now a test) but prints about 1,700 against about 1,000 from 181, so it no longer checks this family
+
+---
+
 ## `data/2026-11-20-r3` — 2026-11-23 — daily update
 
 Cut automatically by `scripts/daily_update.py`: every release gate passed (tests, verdict, export quotes, fresh-clone rebuild).
