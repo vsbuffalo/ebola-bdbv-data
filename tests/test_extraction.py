@@ -4611,7 +4611,10 @@ def test_every_prose_derived_stream_states_its_coverage_in_a_column():
         assert "n_report_days_silent" in t.columns, \
             f"{path.name} is prose-derived and states no coverage"
         assert t["n_report_days_silent"].min() >= 0, path.name
-        if path.stem.startswith("lab") and path.stem.endswith("national"):
+        # The front-page family is the source's own national total, printed
+        # as one number; it sums over no provinces, so it has none to count.
+        if (path.stem.startswith("lab") and path.stem.endswith("national")
+                and not path.stem.startswith("lab_front_page")):
             assert "n_provinces" in t.columns, \
                 f"{path.name} totals over provinces and does not say how many"
 

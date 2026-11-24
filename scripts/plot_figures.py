@@ -4010,7 +4010,23 @@ def draw_test_positivity(inputs: dict[str, Path], out: Path) -> None:
     ax_r.scatter(px, ppct, s=psz, color="#8a8a8a", alpha=0.62, lw=0, zorder=2,
                  label="one province-day (area = samples)")
     ax_r.plot(xs, _pooled_positivity(xs, pos, samp), color="#0072B2", lw=2.2,
-              zorder=3, label="7-day pooled")
+              zorder=3, label="7-day pooled, province paragraphs")
+    # THE FRONT PAGE'S NATIONAL TOTAL, drawn beside the province sum rather
+    # than in place of it. From report 176 the province paragraphs changed
+    # wording almost daily and the section reader licensed few of them, so
+    # the blue line and the grey bars below thin to a few provinces; the
+    # front page kept printing one national sentence
+    # (extract_lab_front_page.py). From report 178 its sample count most
+    # likely includes repeat samples, so the orange line falls there for a
+    # reason that is not epidemiological, and the mark says so.
+    fp = None
+    if "front_page" in inputs and Path(inputs["front_page"]).exists():
+        fp = pl.read_csv(inputs["front_page"]).sort("date")
+        fx = _dates(fp["date"])
+        ax_r.plot(fx, _pooled_positivity(fx, fp["positives"].to_list(),
+                                         fp["samples"].to_list()),
+                  color="#E69F00", lw=2.2, zorder=3,
+                  label="7-day pooled, front-page national total")
 
     pooled = 100 * sum(pos) / sum(samp)
     ax_r.axhline(pooled, color="#333333", lw=1.0, ls=(0, (4, 3)), zorder=1)
@@ -4042,13 +4058,29 @@ def draw_test_positivity(inputs: dict[str, Path], out: Path) -> None:
              label="positive · confirmed at death")
     ax_n.bar(xs, unsplit, width=1.0, color="#7FA8C9", zorder=3,
              label="positive · split not printed")
+    ymax = max(samp)
+    if fp is not None:
+        ax_n.bar(_dates(fp["date"]), fp["samples"].to_list(), width=1.0,
+                 fill=False, edgecolor="#B07800", lw=0.6, zorder=4,
+                 label="tested · front-page national total")
+        ymax = max(ymax, int(fp["samples"].max()))
+        widened = fp.filter(pl.col("vintage") == "widened")
+        if widened.height:
+            xw = _dates(widened["date"])[0] - 0.5
+            for ax in (ax_r, ax_n):
+                ax.axvline(xw, color="#B07800", lw=1.0, ls=(0, (2, 2)),
+                           zorder=4)
+            ax_r.annotate("from 8 Nov the front-page count\nlikely "
+                          "includes repeat samples",
+                          xy=(xw - 1, 38), ha="right", va="top",
+                          fontsize=7.5, color="#7A5300")
     ax_n.set_ylabel("samples analysed\nper report day")
-    ax_n.legend(loc="upper left", frameon=False, fontsize=8, ncol=4)
+    ax_n.legend(loc="upper left", frameon=False, fontsize=8, ncol=3)
     for s in ("top", "right"):
         ax_n.spines[s].set_visible(False)
     ax_n.grid(axis="y", color="#ededed", lw=0.6)
     ax_n.set_axisbelow(True)
-    ax_n.set_ylim(0, max(samp) * 1.30)
+    ax_n.set_ylim(0, ymax * 1.30)
 
     first_split = min((x for x, s in zip(xs, split) if s), default=None)
     if first_split is not None:
@@ -4809,6 +4841,7 @@ FIGURES = {
                                                   "provisional_caveat.csv"}),
     "test_positivity": (draw_test_positivity,
                         {"lab": "data/build/series/lab_prose.csv",
+                         "front_page": "data/build/series/lab_front_page.csv",
                          "capacity": "registers/lab_capacity_events.tsv",
                          "province_series":
                              "data/build/series/province_series.csv",
