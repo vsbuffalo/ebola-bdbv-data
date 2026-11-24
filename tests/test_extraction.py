@@ -4032,11 +4032,17 @@ def test_province_bullets_do_not_sum_to_a_national_census():
     # From about sitrep 130 the bullets cover every province holding patients
     # -- five a day -- but the whole-response sentence they would be compared
     # against stopped at sitrep 080, so the comparison below is unchanged.
+    # From sitrep 185 the "Province : ..." bullets print a census for six
+    # provinces on some days (sitrep 186: Ituri, Nord-Kivu, Haut-Uélé,
+    # Tshopo, Nord-Ubangi and Sud-Ubangi).
     import plot_figures as P
     care, _ = _built()
     p = P.province_census_is_not_national(care)
-    assert p["max_provinces_per_day"] == 5
-    assert p["median_provinces_per_day"] == 1
+    assert p["max_provinces_per_day"] == 6
+    # 2 once the reader read the confirmed census in the "Province : ..."
+    # vintage and in the Nord-Kivu bullets of sitreps 169-175; still well
+    # short of the five to seven provinces holding patients.
+    assert p["median_provinces_per_day"] == 2
     assert (p["n_short"], p["n_compared"]) == (15, 17)
     assert p["worst_shortfall"] == -279
 
@@ -4103,12 +4109,17 @@ def test_the_absconder_series_is_thin_and_the_figure_must_not_join_it():
     28 as of the 2026-11-20 archive: three more printed zeros, each a province
     sentence -- sitrep 185 Sud-Ubangi "0 sortie (0 guéri, 0 décès, 0 évadé)",
     sitrep 186 Haut-Uélé "19 sorties ..., 4 décès et 0 évadé", sitrep 186
-    Sud-Ubangi "0 nouvelle admission, 0 sortie, 0 décès et 0 évadé ce jour"."""
+    Sud-Ubangi "0 nouvelle admission, 0 sortie, 0 décès et 0 évadé ce jour".
+
+    29 once the care reader read sitrep 078's Nord-Kivu bullet: "47
+    admissions du jour et 40 sorties (4 décès, 33 non-cas, 2 guéris et 1
+    évadé), pour 196 patients en isolement en fin de journée", an exit
+    decomposition that closes (4 + 33 + 2 + 1 = 40)."""
     import plot_figures as P
     care, banner = _built()
     last = P.census_agreement(care, banner)["tile_confirmed_last"]
     a = P.absconder_coverage(care, last)
-    assert a["n"] == 28
+    assert a["n"] == 29
     assert a["n_after"] == 9
     assert a["n_national"] == 14
     assert a["n_zero"] == 4
@@ -4455,7 +4466,12 @@ def test_the_confirmed_census_holds_the_observations_the_release_rests_on():
     # Nord-Kivu's alone, "508 patients (171 confirmés et 337 suspects)", and
     # sitrep 168 Ituri's alone, "422 patients (147 confirmés et 275
     # suspects)".
-    assert counts == {"ituri": (32, 18), "nord_kivu": (27, 20)}
+    # 29/21 for Nord-Kivu once two bullets the reader had missed were read:
+    # sitrep 078, "196 patients en isolement en fin de journée (27 confirmés,
+    # 169 suspects)", and sitrep 144, "Au total, 417 patients (139 confirmés
+    # et 278 suspects) demeuraient hospitalisés", whose parenthetical used to
+    # stop the census exemption from the stock rule.
+    assert counts == {"ituri": (32, 18), "nord_kivu": (29, 21)}
     # The national file is the whole-response summary sentence, which stopped
     # on the same report as the tile -- so nothing national survives the split.
     nat = pl.read_csv(STREAMS / "care_census_confirmed_national.tsv",
@@ -4543,7 +4559,8 @@ def test_the_absconder_streams_are_published_thin_and_say_how_thin():
         # the observation column.
         holes = t.filter(pl.col("n_report_days") == 0)
         assert holes[_first_observation(t)].null_count() == holes.height, p.name
-    assert obs["care_exits_absconded_nord_kivu"] == 1
+    # 2: sitrep 078's "1 évadé" (see the absconder-coverage test above).
+    assert obs["care_exits_absconded_nord_kivu"] == 2
     assert obs["care_exits_absconded_ituri"] == 8
     assert obs["care_exits_absconded_national"] == 14
 

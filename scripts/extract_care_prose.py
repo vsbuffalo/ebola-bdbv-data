@@ -52,6 +52,9 @@ VALIDATED BY the passage's own arithmetic, first and mainly. Every check a
                exits_split         recovered + non-case + absconded + died
                                      + transferred  =  exits
                admissions_split    confirmed + suspected admissions = admissions
+               balance             census at the start of the day + admissions
+                                     - exits  =  census (from sitrep 181,
+                                     where the bullet prints the start)
                contacts_rate       followed / to follow reproduces its %
 
              and the BOUNDS, which pass on almost any reading but catch the
@@ -166,9 +169,27 @@ SECTION = re.compile(r"Continuit[ée]\s+des\s+soins"
 #: faute de nourriture", which are a subset of the day's absconders attributed
 #: to named centres. Harvesting there would double-count them against the
 #: bullet's own `évadés` figure, so the section ends at the heading.
+#:
+#: THE HEADING WORDS ARE HEADINGS ONLY IN CAPITALS OR AFTER A SECTION NUMBER.
+#: The pattern used to match them case-insensitively, which was harmless while
+#: the bullets were short. From report 178 the bullets are full paragraphs and
+#: say "Sur le plan logistique, 19 ambulances sont disponibles" (Nord-Kivu,
+#: sitrep 190), and the section ended there, inside the first province's
+#: bullet, so that report yielded no care row at all. The same vintage also
+#: writes the challenges INLINE, inside a province's bullet, followed by a
+#: colon -- "Ituri : 611 patients hospitalisés ... Défis : 30 malades
+#: critiques" -- with four more provinces after it; a `Défis` followed by a
+#: colon is therefore not the subsection heading, and `pool` excises it
+#: instead.
 SECTION_END = re.compile(
-    r"D[ée]fis\b|RECHERCHE|COMMUNICATION\s+SUR\s+LES\s+RISQUES|VACCINATION"
-    r"|LOGISTIQUE\b|SURVEILLANCE\b|CONTINUITE\s+DES\s+SERVICES", re.I)
+    # Capitalised: "défis majeurs liés à l'insécurité" (Tshopo, sitrep 187)
+    # is a phrase in a bullet, and ending the section there lost Ituri.
+    r"D[ée]fis\b(?!\s*(?i:majeurs?)?\s*:)"
+    r"|RECHERCHE|COMMUNICATION\s+SUR\s+LES\s+RISQUES|VACCINATION"
+    r"|LOGISTIQUE\b|SURVEILLANCE\b|CONTINUITE\s+DES\s+SERVICES"
+    r"|\b\d+(?:\.\d+)*\.?\s+(?i:Vaccination|Continuit[ée]\s+des\s+soins"
+    r"|Communication|Pr[ée]vention|Logistique|Surveillance|Recherche"
+    r"|Laboratoire|Points?\s+d.entr[ée]e)\b")
 
 #: A province's bullet can run long -- sitrep 093's Ituri bullet is 900
 #: characters -- so the cap is generous and the real boundary is the next
@@ -213,11 +234,38 @@ JOINED = re.compile(r"^\s*(?:et|/|,)\s*(?:l[ae]\s+)?"
 CAP_LEAD_IN = re.compile(r"(?:^|\s)(?:En|Au|Aux|[ÀA]\s+la|Dans\s+l[ae])\s*$")
 
 
-def opens_passage(block: str, at: int) -> bool:
+#: THE SUBSECTION TITLE OPENS THE FIRST PASSAGE. From report 178 the first
+#: province follows the title directly -- "3.3.1. Principales actions
+#: Nord-Kivu : La journée compte 604 patients hospitalisés" -- with no bullet
+#: glyph left in the text and no full stop for OPENER to see, so the first
+#: province of every report from 178 had no row. Only the title is added: a
+#: province name followed by a colon is NOT enough on its own, because the
+#: two-column vintage (sitreps 059-083) interleaves bullets so that "Tshopo :"
+#: is followed by Haut-Uélé's sentence ("Tshopo : 2 confirmés ont été admis
+#: (Boma Mangbetu 1, Wamba 1)", sitrep 079).
+TITLE = re.compile(r"Principales\s+actions\s*$", re.I)
+#: AND OUTSIDE THAT VINTAGE A NAME USED AS A LABEL OPENS ONE. From report 178
+#: the bullets are "Province : ..." paragraphs, and some run on from the one
+#: before with no full stop: "Cumul des guéris : 48 Ituri : 383 patients sont
+#: hospitalisés" (sitrep 185), which filed Ituri's figures, 69 exits among
+#: them, under Tshopo. A name followed by a colon is a label, never an aside
+#: in another province's sentence -- except where the two-column layout of
+#: sitreps 059-083 interleaves a label with the other column's text.
+#: Or by a capitalised word with no punctuation at all: "2 nouveaux patients
+#: sortis guéris au CTE d'Isiro Bas-Uélé Aucun nouveau cas confirmé n'est
+#: hospitalisé" (sitrep 188) gave Bas-Uélé's 13 admissions to Haut-Uélé.
+LABEL = re.compile(r"\s*:|\s+(?=[A-ZÀÂÉÈ][a-zà-ÿ])")
+TWO_COLUMN = range(59, 84)
+
+
+def opens_passage(block: str, at: int, end: int | None = None,
+                  labels: bool = False) -> bool:
     """Does the province mention at `at` begin a passage about that province?"""
     before = block[max(0, at - 24):at]
     return bool(OPENER.search(LEAD_IN.sub("", before))
-                or CAP_LEAD_IN.search(before))
+                or CAP_LEAD_IN.search(before)
+                or TITLE.search(before)
+                or (labels and end is not None and LABEL.match(block, end)))
 
 CARE_WORD = re.compile(r"hospitalis|isolement|isol[ée]s?\b|lits?\b|admissions?"
                        r"|sorties?\b|[ée]vad|gu[ée]ri|occupation|non-?cas"
@@ -283,6 +331,7 @@ CUMUL_PAREN = re.compile(r"\([^()]*cumul\w*[^()]*\)", re.I)
 STOCK_TAIL = re.compile(
     r"(?:le\s+|un\s+|du\s+)?\b(?:cumul\w*|depuis\s+le\s+d[ée]but"
     r"|au\s+total(?!,?\s*\d[\d\s]*\s+(?:patients?|malades?)\s+"
+    r"(?:\([^()]{0,200}\)\s*)?"
     r"(?:demeur|sont\b|restent\b|[ée]taient\b)))"
     r"\b[^;.]*", re.I)
 #: A clause reporting the in-facility case fatality is cumulative even when it
@@ -322,13 +371,70 @@ def _norm_prov(s: str) -> str:
     return PROVINCES[re.sub(r"[^a-z]", "", t.lower())]
 
 
+#: STOCKS AT THE START OF THE DAY. From report 183 several bullets state the
+#: census twice, once carried over from the day before and once at the end of
+#: the day: "Nord-Kivu : 520 patients en report (126 confirmés, 394
+#: suspects), 138 nouvelles admissions ... 554 patients hospitalisés au total
+#: (119 confirmés et 435 suspects)" (sitrep 183), "La journée a débuté avec 37
+#: patients hospitalisés (34 suspects et 3 confirmés) ... 29 patients restent
+#: hospitalisés à l'issue de la journée" (Nord-Ubangi, sitrep 186). The census
+#: streams are end-of-day stocks, and the 37 was read as Nord-Ubangi's census
+#: until these clauses were excised.
+START_OF_DAY = re.compile(
+    rf"(?:a\s+)?d[ée]but[ée]\s+avec\s+({NUM})\s+(?:patients?|malades?)"
+    rf"(?:\s+hospitalis[ée]s)?\s*(?:\([^()]*\))?"
+    rf"|report\s+de\s+({NUM})\s+(?:patients?|malades?)\s*(?:\([^()]*\))?"
+    rf"|({NUM})\s+(?:patients?|malades?)\s+en\s+report\s*(?:\([^()]*\))?"
+    rf"|{NUM}\s+suspects?\s+en\s+report\s*(?:\([^()]*\))?",
+    re.I)
+
+
+def census_start(seg: str) -> int | None:
+    """The census carried over from the day before, where the bullet prints
+    it ("Sur un report de 482 patients", "520 patients en report", "La
+    journée a débuté avec 37 patients"). It is excised from the harvest pool
+    so it is never read as the day's census, and kept here because with it
+    the bullet closes one more way: start + admissions - exits = end."""
+    m = START_OF_DAY.search(WORD_THEN_DIGITS.sub(lambda m: " " + m.group(1) + " ", seg))
+    if m is None:
+        return None
+    g = next((x for x in m.groups() if x), None)
+    return None if g is None else _int(g)
+#: PATIENTS OUTSIDE THE TREATMENT CENTRES, stated as a clause of their own:
+#: "155 patients sont hospitalisés hors CTE/CT" (sitrep 178), "209 patients (5
+#: confirmés et 204 suspects) sont hospitalisés hors CTE/CT dans des ESS"
+#: (186), "240 patients sont pris en charge dans des établissements de soins de
+#: santé (ESS) hors des réseaux CTE/CT" (190). The same bullet states the
+#: total those are part of, and read as a census they made it ambiguous, or
+#: replaced it.
+OUTSIDE_CTE = re.compile(
+    rf"{NUM}\s+patients?\s*(?:\([^()]*\))?\s*(?:sont\s+)?"
+    rf"(?:hospitalis[ée]s|pris\s+en\s+charge)\s+(?:hors\b|dans\s+des\s+"
+    rf"(?:ESS|structures\s+de\s+soins|[ée]tablissements))[^;.]*", re.I)
+#: The inline challenges of the same vintage ("Défis : 30 malades critiques,
+#: ... 14 patients n'ayant pas bénéficié d'alimentation"), which run to the
+#: end of the province's bullet.
+INLINE_DEFIS = re.compile(r"D[ée]fis?\s*(?:majeurs?\s*)?:.*$", re.I | re.S)
+#: "N patients au total", "hospitalisés au total", "aux lits au total": the
+#: day's census with "au total" after the noun, which the stock rule below
+#: would otherwise strip with everything after it ("611 patients hospitalisés
+#: au total (372 confirmés et 239 suspects)", Ituri, sitrep 190).
+TOTAL_AFTER_NOUN = re.compile(
+    r"\b(patients?|malades?|hospitalis[ée]s|lits?)\s+au\s+total\b", re.I)
+
+
 def pool(seg: str) -> str:
     """The segment with cumulative clauses removed and number words in digits.
 
     The stored `sentence` stays whole: what licensed or refused a row has to be
     auditable against the page, and a pre-processed string is not the page.
     """
-    p = CUMUL_PAREN.sub(" ", seg)
+    p = INLINE_DEFIS.sub(" ", seg)
+    p = WORD_THEN_DIGITS.sub(lambda m: " " + m.group(1) + " ", p)
+    p = START_OF_DAY.sub(" ", p)
+    p = OUTSIDE_CTE.sub(" ", p)
+    p = TOTAL_AFTER_NOUN.sub(lambda m: m.group(1), p)
+    p = CUMUL_PAREN.sub(" ", p)
     p = MORTALITY_CLAUSE.sub(" ", p)
     p = TREATMENT_CLAUSE.sub(" ", p)
     p = STOCK_TAIL.sub(" ", p)
@@ -366,10 +472,21 @@ CENSUS = [
     # From sitrep 150 the split sits between the noun and the verb -- "Ainsi,
     # 363 patients (127 confirmés et 236 suspects) sont hospitalisés" -- so one
     # parenthetical is allowed there; SPLIT_CS reads the split out of it.
-    rf"({NUM})\s+(?:patients?|malades?)\s+(?:\([^()]{{0,80}}\)\s*)?"
+    # Up to 200 characters: from sitrep 169 Nord-Kivu writes "595 patients
+    # (197 confirmés et 398 suspects, dont 67 enfants de moins de 5 ans et 27
+    # malades critiques) restent en isolement", and at 80 its census went
+    # unread for three weeks.
+    rf"({NUM})\s+(?:patients?|malades?)\s+(?:\([^()]{{0,200}}\)\s*)?"
     rf"(?:y\s+)?(?:sont|est|restent|reste"
     rf"|[ée]taient|sortis|demeur(?:aient|ent|e))?\s*(?:en\s+)?"
-    rf"(?:hospitalis[ée]s?|hospitalisation|isolement|isol[ée]s?"
+    # From report 178: "347 patients aux lits", "27 patients au lit", "27
+    # patients sont alités", "12 patients actifs", "419 patients dans les
+    # structures".
+    # Not "(325 patients aux lits des CTE/CT sur 354 lits)" (sitrep 147),
+    # the dedicated-structure part of a larger total.
+    rf"(?:aux?\s+lits?\b(?!\s+des\s+CTE)|alit[ée]s\b|actifs\b"
+    rf"|dans\s+les\s+structures\b"
+    rf"|hospitalis[ée]s?|hospitalisation|isolement|isol[ée]s?"
     rf"|pris\s+en\s+charge(?!\s+dans\s+(?:des|les)\s+(?:ESS|centres\s+non)))",
     # "portent à 4 le nombre de patients isolés", "porte à 5 le nombre de
     # patients isolés", "portant à 8 le nombre de patients en isolement"
@@ -391,15 +508,34 @@ CENSUS_SUSPECT_ONLY = [
     rf"(?:suivis\s+(?:en\s+|[àa]\s+l.)?)?(?:hospitalis[ée]s?|hospitalisation"
     rf"|isolement|isol[ée]s?)",
     rf"({NUM})\s+suspects?\s+isol[ée]s",
+    # "25 suspects sont déclarés en isolement (0 confirmé)" (Bas-Uélé, 186),
+    # "48 patients suspects sont actuellement pris en charge en isolement"
+    # (189).
+    rf"({NUM})\s+(?:patients?\s+)?suspects?\s+(?:sont\s+)?"
+    rf"(?:actuellement\s+)?(?:d[ée]clar[ée]s\s+)?(?:pris\s+en\s+charge\s+)?"
+    rf"en\s+isolement",
 ]
 #: "(179 confirmés ... 259 suspects)", "(173 suspects et 32 confirmés)",
 #: "dont 20 confirmés et 161 suspects", "302 confirmés, 169 suspects",
 #: "(5 cas confirmés et 3 suspects)". Both orders occur; sitrep 083 prints the
 #: suspects first.
-SPLIT_CS = re.compile(rf"({NUM})\s+(?:cas\s+)?confirm[ée]s?[\s,]+(?:et\s+)?"
+#: From report 183 a rate can sit between the halves: "dont 146 cas confirmés
+#: (taux d'occupation des lits de 27 %) et 273 cas suspects", so one
+#: parenthetical is allowed after the first.
+_PAREN = r"(?:\s*\([^()]{0,80}\))?"
+SPLIT_CS = re.compile(rf"({NUM})\s+(?:cas\s+)?confirm[ée]s?{_PAREN}[\s,]+(?:et\s+)?"
                       rf"({NUM})\s+(?:cas\s+)?suspects?", re.I)
-SPLIT_SC = re.compile(rf"({NUM})\s+(?:cas\s+)?suspects?[\s,]+(?:et\s+)?"
+SPLIT_SC = re.compile(rf"({NUM})\s+(?:cas\s+)?suspects?{_PAREN}[\s,]+(?:et\s+)?"
                       rf"({NUM})\s+(?:cas\s+)?confirm[ée]s?", re.I)
+#: BOTH HALVES OF THE CENSUS WITH NO TOTAL PRINTED: "21 confirmés et 34
+#: suspects aux lits" (Haut-Uélé, sitrep 178), "94 patients suspects et 5
+#: patients confirmés actuellement hospitalisés" (183). The halves are taken;
+#: their sum is not, because the page does not print it.
+CENSUS_HALVES = re.compile(
+    rf"({NUM})\s+(?:patients?\s+)?(?:cas\s+)?(confirm[ée]s?|suspects?)\s+et\s+"
+    rf"({NUM})\s+(?:patients?\s+)?(?:cas\s+)?(confirm[ée]s?|suspects?)\s+"
+    rf"(?:actuellement\s+)?(?:sont\s+)?(?:aux?\s+lits?\b|hospitalis|en\s+isolement)",
+    re.I)
 #: "173 patients hospitalisés, dont 17 confirmés" -- the confirmed half alone,
 #: with no suspected count to close it against. Kept because the confirmed
 #: census is the quantity this extraction exists for; unlicensed, and the
@@ -438,12 +574,22 @@ DEDICATED = [
 #: 87,2 % : (326/374)"). Haut-Uélé prints "29,4 % (45/153)" against 68 patients
 #: in isolation on sitrep 149 and does not say where the other 23 are, so its
 #: numerator is an occupied-bed count and not a claim about structures.
-OCC_FRACTION = re.compile(rf"(\d{{1,3}}(?:[.,]\d{{1,2}})?)\s*%\s*:?\s*\(({NUM})\s*/\s*({NUM})\)")
+#: Not a share of patients fed: "97 % (359/372) des patients ont reçu des
+#: repas chauds" (Ituri, sitrep 186) read as 372 beds. From report 183 the
+#: pair is also written in words, "82,7 % (359 lits occupés sur 434)", or
+#: with a tail inside the bracket, "41% (277/434 lits occupés dans les
+#: CTE/CT)".
+OCC_FRACTION = re.compile(
+    rf"(\d{{1,3}}(?:[.,]\d{{1,2}})?)\s*%\s*:?\s*\(\s*(?:pour\s+)?({NUM})\s*"
+    rf"(?:/|\s+lits\s+occup[ée]s\s+sur)\s*({NUM})(?:\)|\s+lits\b[^()]*\))"
+    rf"(?!\s*(?:des\s+)?(?:patients|ont)\b)", re.I)
 OCC_NAMES_CTE = re.compile(r"occupation[^%]{0,40}?CTE", re.I)
 
 BEDS = [
     # "pour 965 lits", "sur 833 lits", "pour 78 lits montés"
-    rf"(?:pour|sur)\s+({NUM})\s+lits",
+    # Not "pour 359 lits occupés sur 434" (sitrep 188): those are the
+    # occupied beds, read by OCC_FRACTION.
+    rf"(?:pour|sur)\s+({NUM})\s+lits\b(?!\s+occup)",
     # "atteint 488 lits sur 833 (59 %)"
     rf"atteint\s+{NUM}\s+lits\s+sur\s+({NUM})",
     # "portant la capacité provinciale à 130 lits", "la capacité installée de
@@ -561,7 +707,7 @@ FIELDS = ("admissions", "admissions_confirmed", "admissions_suspect",
           "exits", "exits_recovered", "exits_noncase", "exits_absconded",
           "exits_deaths", "exits_deaths_confirmed", "exits_transferred",
           "census", "census_confirmed", "census_suspect", "census_dedicated",
-          "beds", "beds_occupied", "beds_confirmed", "beds_suspect",
+          "census_start", "beds", "beds_occupied", "beds_confirmed", "beds_suspect",
           "printed_occupancy_pct", "printed_occupancy_confirmed_pct",
           "printed_occupancy_suspect_pct")
 
@@ -590,6 +736,7 @@ def harvest(seg: str) -> dict:
     agree; `checks` decides that afterwards."""
     p = pool(seg)
     r: dict = {f: None for f in FIELDS}
+    r["census_start"] = census_start(seg)
 
     adm = _first(ADMISSIONS, p)
     r["admissions"] = None if adm is None else adm[0]
@@ -630,6 +777,12 @@ def harvest(seg: str) -> dict:
         conf = _first(CENSUS_CONFIRMED_ONLY, p)
         if conf is not None:
             r["census_confirmed"] = conf[0]
+        m = CENSUS_HALVES.search(p)
+        if m and m.group(2)[0].lower() != m.group(4)[0].lower():
+            a, b = _int(m.group(1)), _int(m.group(3))
+            conf_first = m.group(2)[0].lower() == "c"
+            r["census_confirmed"] = a if conf_first else b
+            r["census_suspect"] = b if conf_first else a
 
     # The confirmed/suspected split is read from the clause that FOLLOWS the
     # census, not from anywhere in the bullet: the same shape describes the
@@ -794,6 +947,17 @@ def checks(r: dict) -> list[tuple[str, bool]]:
             out.append(("exits_split", total == r["exits"]))
         elif any(x is not None for x in parts) and total > r["exits"]:
             out.append(("exits_over_total", False))
+    # THE DAY'S BALANCE, where the bullet prints the census it started from:
+    # "Sur un report de 482 patients ..., 116 nouvelles admissions ... et 84
+    # sorties ... 514 patients hospitalisés" (Nord-Kivu, sitrep 185) closes as
+    # 482 + 116 - 84 = 514. It is the one check that catches a stale clause
+    # whose own split still sums: sitrep 181 prints Nord-Kivu's "604 nouvelles
+    # admissions (132 confirmés et 472 suspects)" -- the previous day's
+    # census, carried over word for word -- beside 14 at the start of the day,
+    # 200 exits and 540 at the end.
+    if None not in (r["census_start"], r["admissions"], r["exits"], r["census"]):
+        out.append(("balance", r["census_start"] + r["admissions"] - r["exits"]
+                    == r["census"]))
     if r["admissions"] is not None and None not in (r["admissions_confirmed"],
                                                     r["admissions_suspect"]):
         out.append(("admissions_split",
@@ -820,7 +984,7 @@ def checks(r: dict) -> list[tuple[str, bool]]:
 #: are worth recording because they catch the source contradicting itself, but
 #: which pass on almost any reading and license nothing.
 CLOSURES = frozenset({"census_split", "beds_split", "occupancy",
-                      "occupancy_occupied",
+                      "occupancy_occupied", "balance",
                       "occupancy_confirmed", "occupancy_suspect",
                       "exits_split", "admissions_split", "contacts_rate"})
 
@@ -830,7 +994,7 @@ CLOSURES = frozenset({"census_split", "beds_split", "occupancy",
 #: itself can still carry a census that closes twice over -- so the census gets
 #: its own verdict rather than being condemned by a neighbour's failure.
 CENSUS_CLOSURES = frozenset({"census_split", "occupancy", "occupancy_confirmed",
-                             "occupancy_suspect"})
+                             "occupancy_suspect", "balance"})
 
 
 def licensed(cs: list[tuple[str, bool]]) -> bool:
@@ -883,6 +1047,8 @@ SUMMARY = re.compile(r"Au\s+total,\s*(?=\d)"
                      r"|L['’]\s*(Ituri|Tshopo|Nord[-\s]?Kivu|Sud[-\s]?Kivu"
                      r"|Haut[-\s]?U[ée]l[ée]|Bas[-\s]?U[ée]l[ée])\s+concentre", re.I)
 SUMMARY_CAP = 460
+#: The first report after the summary-sentence vintage; see `extract`.
+SUMMARY_LAST = 100
 ESSENTIEL = re.compile(rf"l['’]\s*essentiel\s+des\s+patients?"
                        rf"\s*\(({NUM})\)", re.I)
 
@@ -1075,13 +1241,24 @@ DISPLACED_BULLETS = re.compile(r"(?:\s*[•●▪])+\s+(?=[a-zà-ÿ])")
 
 
 def extract(pdf: Path) -> tuple[list[dict], list[dict]]:
+    labels = report_key(pdf)[0] not in TWO_COLUMN
     text = pdftotext(pdf)
     flat = re.sub(r"\s+", " ", PAGE_NUMBER.sub("\n\f", text))
     flat = DISPLACED_BULLETS.sub(" ", flat)
     refused: list[dict] = []
 
     best: dict[str, dict] = {}
-    for sm in SECTION.finditer(flat):
+    # "CONTINUITÉ DES SOINS" IS THE CARE PILLAR ONLY WHERE NOTHING ELSE IS. The
+    # early vintage heads the care pillar that way; from about sitrep 150 the
+    # care pillar is "Prise en charge holistique" and a later section of the
+    # same title covers the continuity of ordinary health services, whose
+    # bullets mention survivors in follow-up ("En Ituri, 18 guéris (12 au
+    # premier suivi et 6 au second) ont bénéficié d'un suivi médical",
+    # sitrep 161) -- not the day's recoveries.
+    heads = list(SECTION.finditer(flat))
+    if any(not re.match(r"Continuit", h.group(0), re.I) for h in heads):
+        heads = [h for h in heads if not re.match(r"Continuit", h.group(0), re.I)]
+    for sm in heads:
         end = SECTION_END.search(flat, sm.end())
         hi = end.start() if end else min(len(flat), sm.end() + 2500)
         block = flat[sm.end():hi]
@@ -1096,7 +1273,7 @@ def extract(pdf: Path) -> tuple[list[dict], list[dict]]:
         # conservative rule stands here. The summary sentence is a different
         # construction and is handled in `summary_rows`.
         mentions = [m for m in PROV_RE.finditer(block)
-                    if opens_passage(block, m.start())]
+                    if opens_passage(block, m.start(), m.end(), labels)]
         for i, m in enumerate(mentions):
             stop = mentions[i + 1].start() if i + 1 < len(mentions) else len(block)
             seg = block[m.start():min(stop, m.start() + SEGMENT_CAP)]
@@ -1146,8 +1323,15 @@ def extract(pdf: Path) -> tuple[list[dict], list[dict]]:
                   " ".join(seg.split())[:400])
 
     # The whole-response summary sentence, offered on the same terms as any
-    # other passage: it wins where its arithmetic closes better.
-    for s in summary_rows(flat):
+    # other passage: it wins where its arithmetic closes better. ONLY IN THE
+    # VINTAGE THAT PRINTS ONE (sitreps 052-080 in this archive). From about
+    # sitrep 135 every province bullet closes with its own "Au total, N
+    # patients ...", and from 169 Nord-Kivu's runs "Au total, 595 patients
+    # (197 confirmés et 398 suspects, dont 67 enfants ...) restent en
+    # isolement" in a paragraph with no bullet glyph left for the guard in
+    # `summary_rows` to find, so it was read as the national census.
+    summaries = summary_rows(flat) if report_key(pdf)[0] < SUMMARY_LAST else []
+    for s in summaries:
         r = {f: s[f] for f in FIELDS}
         offer(best, refused, s["province"], r, checks(r), s["sentence"])
 
@@ -1179,6 +1363,7 @@ SCHEMA = {"sitrep": pl.Int64, "date": pl.Utf8, "province": pl.Utf8,
           "exits_deaths_confirmed": pl.Int64, "exits_transferred": pl.Int64,
           "census": pl.Int64, "census_confirmed": pl.Int64,
           "census_suspect": pl.Int64, "census_dedicated": pl.Int64,
+          "census_start": pl.Int64,
           "beds": pl.Int64, "beds_occupied": pl.Int64,
           "beds_confirmed": pl.Int64, "beds_suspect": pl.Int64,
           "printed_occupancy_pct": pl.Float64,

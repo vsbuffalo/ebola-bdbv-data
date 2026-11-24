@@ -1761,7 +1761,7 @@ CARE_NATIONAL = "Ensemble"
 #: either not observations of the epidemic or too thin to be one.
 CARE_STREAMS = (
     ("care_census", "census",
-     ("census_split", "occupancy")),
+     ("census_split", "occupancy", "balance")),
     ("care_census_confirmed", "census_confirmed",
      ("census_split", "occupancy_confirmed", "confirmed_le_census")),
     ("care_census_suspect", "census_suspect",
@@ -1776,9 +1776,9 @@ CARE_STREAMS = (
     ("care_census_dedicated", "census_dedicated",
      ("occupancy_occupied",)),
     ("care_admissions", "admissions",
-     ("admissions_split",)),
+     ("admissions_split", "balance")),
     ("care_exits", "exits",
-     ("exits_split", "exits_over_total")),
+     ("exits_split", "exits_over_total", "balance")),
     ("care_exits_recovered", "exits_recovered",
      ("exits_split", "recovered_le_exits")),
     ("care_exits_noncase", "exits_noncase",
