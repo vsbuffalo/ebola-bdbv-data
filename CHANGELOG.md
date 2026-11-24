@@ -38,6 +38,16 @@ same as withdrawn: the older tag stays exactly where it is.
 
 ---
 
+## `data/2026-11-20-r3` — 2026-11-23 — daily update
+
+Cut automatically by `scripts/daily_update.py`: every release gate passed (tests, verdict, export quotes, fresh-clone rebuild).
+
+**Fixes merged since the last release** (see each pull request for what moved):
+
+- lab: a new stream, lab_front_page_daily_national, reads the front page's national laboratory total, repairing the testing series that thinned from report 176 -- the laboratory section's province paragraphs changed wording almost daily from 6 November and the section reader licensed few of them, so lab_daily_national fell from about 450 samples a day to under 40 (90 in the week of 10-17 November against roughly 3,000 printed) while every gate passed. The front page prints one sentence of fixed shape ("Un total de N nouveaux échantillons ... K ... positifs ..., soit P %"), read on 55 reports from 130 (21 September) to 190 and accepted only where K/N reproduces P; 165 (81/383 is not its printed 21.4%) and 169 (no positive count) are refused. Against the province paragraphs it agrees exactly, samples and positives, on 13 of the 42 reports from 130 to 177 that both read, and exceeds them on most of the rest, where a paragraph was refused; its positives equal the day's new confirmed cases on 50 of 53 single-day intervals. From report 178 (8 November) its sample count rises about a third while new cases do not, most likely because repeat samples are now counted; rows carry vintage = widened from that date, and positivity is not comparable across it. lab_* files are unchanged. test_positivity draws the front-page series beside the province sum. CLAUDE.md and the fixing agent's prompt now say that a series which thins is a break to repair with a better extractor and backfill, checked against a second printing where the report gives one; a tripwire test fails if this reader stops matching recent reports
+
+---
+
 ## `data/2026-11-20-r2` — 2026-11-23 — daily update
 
 Cut automatically by `scripts/daily_update.py`: every release gate passed (tests, verdict, export quotes, fresh-clone rebuild).
