@@ -352,7 +352,14 @@ P = re.compile
 ZONE_TABLE = TableSpec(
     name="zone_cumulative",
     requires=(
-        P(r"provinces?\s*/\s*zones?\s*de\s*sant|zones?\s+de\s+sant"),
+        # `de` IS OPTIONAL AFTER `Province / Zone`, because geometry can take it
+        # into another cell. Sitrep 193 wraps the label heading as `Province /
+        # Zone` over `de santé`; the caption banner's left side (x 79.3, drawn
+        # only beside the caption) is a column edge of the whole component, and
+        # the wrapped `de` at x 72.7-83.2 falls left of it. The block then reads
+        # `de | ... Province / Zone santé`, and the table -- every row of which
+        # reads correctly -- was not identified at all.
+        P(r"provinces?\s*/\s*zones?\s*(?:de\s*)?sant|zones?\s+de\s+sant"),
         P(r"\bcas\b"),
         P(r"deces"),
     ),

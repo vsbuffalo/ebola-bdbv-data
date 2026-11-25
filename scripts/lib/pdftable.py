@@ -799,16 +799,38 @@ def tables(page, *, min_cols: int = MIN_COLS, min_rows: int = MIN_ROWS,
 
 #: How far apart two printed lines may be and still be consecutive rows of one
 #: table, measured top to top -- and how far the first such line may sit from
-#: the ruled edge it continues. Rows here are 10-12 pt apart; a wrapped name
-#: adds one line inside a row; the space Word leaves after a table is larger.
-UNRULED_PITCH = 16.0
+#: the ruled edge it continues. Rows were 10-13 pt apart to sitrep 191; a
+#: wrapped name adds one line inside a row.
+#:
+#: THE PITCH IS THE SOURCE'S TYPESETTING, AND IT CHANGES. Sitrep 192 re-sets
+#: the zone table with rows 15.4-16.1 pt apart, the wrapped `Boma` / `Mangbetu`
+#: row leaves 18 pt on either side of its value line, and page 4 sets its rows
+#: taller again: `Tshopo` sits 21.6 pt above the rule it continues, and
+#: `Wanie-Rukula` to `Sud-Kivu` is 22.8 pt. At 16.0 the walk stopped at the
+#: first 16.1 pt step (Damas to Drodro, Goma to Kalunguta): 41 rows were lost
+#: and, with Haut-U\u00e9l\u00e9's own row among them, its seven zones were filed under
+#: Nord-Kivu.
+#:
+#: What keeps a caption or a paragraph out is the shape of the line
+#: (`_is_value`, `_is_name`), not this distance: the zone table of every report
+#: to 190 reads byte-identically at 16, 20, 24 and 30. So the limit only needs
+#: to clear the tallest row the tables print, and is kept no wider than that,
+#: because a limit too tight costs rows -- which the province totals then catch
+#: -- while one too wide could admit a line that is not the table's.
+UNRULED_PITCH = 24.0
 
 #: How far a word may overhang its column's edge and still be that column's.
 CELL_SLACK = 2.0
 
 #: Marks a data cell prints for "not reported" or "not applicable". Geometry
 #: needs only to know they are not running text.
-UNREPORTED = {"NA", "ND", "N/A", "N/D", "-", "\u2013", "\u2014", "*"}
+#:
+#: `#DIV/0!` is the spreadsheet's division-by-zero error, printed from sitrep
+#: 191 in the `A ventiler` row's letality cell (0 cases, 493 deaths) where 190
+#: printed `NA`. It is the same statement -- a ratio with no denominator -- and
+#: unrecognised it ended the unruled walk at that row, dropping it and the four
+#: Ituri zones above it on 191 (1,509 cases).
+UNREPORTED = {"NA", "ND", "N/A", "N/D", "-", "\u2013", "\u2014", "*", "#DIV/0!"}
 
 
 def _lines(words: list[dict]) -> list[list[dict]]:
