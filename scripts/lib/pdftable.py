@@ -807,7 +807,7 @@ def tables(page, *, min_cols: int = MIN_COLS, min_rows: int = MIN_ROWS,
 #: row leaves 18 pt on either side of its value line, and page 4 sets its rows
 #: taller again: `Tshopo` sits 21.6 pt above the rule it continues, and
 #: `Wanie-Rukula` to `Sud-Kivu` is 22.8 pt. At 16.0 the walk stopped at the
-#: first 16.1 pt step (Damas to Drodro, Goma to Kalunguta): 43 rows were lost
+#: first 16.1 pt step (Damas to Drodro, Goma to Kalunguta): 41 rows were lost
 #: and, with Haut-U\u00e9l\u00e9's own row among them, its seven zones were filed under
 #: Nord-Kivu.
 #:

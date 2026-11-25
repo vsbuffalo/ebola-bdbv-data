@@ -1007,7 +1007,7 @@ def test_sitrep_191_a_spreadsheet_error_cell_does_not_end_the_table():
 @needs_pdfs
 def test_sitrep_192_taller_rows_are_still_one_table():
     """Sitrep 192 re-sets the zone table with rows 15.4-16.1 pt apart, and up
-    to 22.8 pt on page 4, where the bare-text walk stopped at 16. 43 rows were
+    to 22.8 pt on page 4, where the bare-text walk stopped at 16. 41 rows were
     lost, among them Haut-Uélé's own province row, so its seven zones were
     filed under Nord-Kivu: Nord-Kivu summed to 1,895 of its printed 3,116
     and Ituri to 2,478 of 8,080. Every province now closes on the row the
