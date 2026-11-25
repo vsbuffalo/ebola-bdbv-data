@@ -967,6 +967,99 @@ def test_a_caption_box_touching_the_table_does_not_split_its_name_column(n):
                 bunia["deaths_total"]) == (2105, 759, 7, 1, 3, 4)
 
 
+def _by_province(rows: list[dict]) -> dict[str, tuple[dict, list[dict]]]:
+    """Each printed province row with the rows printed beneath it."""
+    out: dict[str, tuple[dict, list[dict]]] = {}
+    cur: str | None = None
+    for r in rows:
+        if r["level"] == "province":
+            cur = r["zone_reported"]
+            out[cur] = (r, [])
+        elif r["level"] == "national":
+            cur = None
+        elif cur is not None:
+            out[cur][1].append(r)
+    return out
+
+
+@needs_pdfs
+def test_sitrep_191_a_spreadsheet_error_cell_does_not_end_the_table():
+    """From sitrep 191 the `A ventiler` row's letality cell prints `#DIV/0!`
+    -- the spreadsheet's error for 493 deaths over 0 cases -- where 190
+    printed `NA`. The row sits in the bare text above the shaded Nord-Kivu
+    box at the top of page 3, and a bare line is admitted only if every cell
+    past the name is a number or a not-reported mark: the error string ended
+    the walk, and the row and the four Ituri zones above it (Nyankunde, Rimba,
+    Rwampara, Tchomia: 1,509 cases) were lost. The row is read, its letality
+    is no value rather than a number, and Ituri closes on its printed 8,052."""
+    rows, _ = E.extract(pdf(191))
+    prov = _by_province(rows)
+    ituri, parts = prov["Ituri"]
+    by = {r["zone_reported"]: r for r in parts}
+    assert {"Nyankunde", "Rimba", "Rwampara", "Tchomia", "A ventiler"} <= by.keys()
+    assert (by["A ventiler"]["cum_cases"], by["A ventiler"]["cum_deaths"]) == (0, 493)
+    assert by["Rwampara"]["cum_cases"] == 1249
+    assert ituri["cum_cases"] == 8052
+    assert sum(r["cum_cases"] or 0 for r in parts) == 8052
+    assert sum(r["cum_deaths"] or 0 for r in parts) == ituri["cum_deaths"] == 3804
+
+
+@needs_pdfs
+def test_sitrep_192_taller_rows_are_still_one_table():
+    """Sitrep 192 re-sets the zone table with rows 15.4-16.1 pt apart, and up
+    to 22.8 pt on page 4, where the bare-text walk stopped at 16. 43 rows were
+    lost, among them Haut-Uélé's own province row, so its seven zones were
+    filed under Nord-Kivu: Nord-Kivu summed to 1,895 of its printed 3,116
+    and Ituri to 2,478 of 8,080. Every province now closes on the row the
+    page prints, the wrapped `Boma` / `Mangbetu` is one zone under Haut-Uélé,
+    and the zones above page 4's first rule are Tshopo's."""
+    rows, _ = E.extract(pdf(192))
+    prov = _by_province(rows)
+    printed = {"Ituri": (8080, 3815), "Nord-Kivu": (3116, 1740),
+               "Haut-Uélé": (553, 235), "Tshopo": (109, 35)}
+    for name, (cases, deaths) in printed.items():
+        head, parts = prov[name]
+        assert (head["cum_cases"], head["cum_deaths"]) == (cases, deaths), name
+        assert sum(r["cum_cases"] or 0 for r in parts) == cases, name
+        assert sum(r["cum_deaths"] or 0 for r in parts) == deaths, name
+    hu = {r["zone_reported"] for r in prov["Haut-Uélé"][1]}
+    assert {"Boma Mangbetu", "Dungu", "Pawa", "Wamba"} <= hu
+    assert not hu & {r["zone_reported"] for r in prov["Nord-Kivu"][1]}
+    tshopo = {r["zone_reported"]: r["cum_cases"] for r in prov["Tshopo"][1]}
+    assert (tshopo["Makiso-Kisangani"], tshopo["Mangobo"], tshopo["Tshopo"]) == (41, 11, 6)
+    total = next(r for r in rows if r["level"] == "national")
+    assert total["cum_cases"] == 11886
+    assert sum(r["cum_cases"] for r in rows if r["level"] == "province") == 11886
+
+
+def test_zone_table_identified_when_its_label_heading_is_split():
+    """Sitrep 193 wraps the label heading as `Province / Zone` over `de
+    santé`, and the caption banner's left side (x 79.3) puts the wrapped `de`
+    into a column of its own. The heading block, as the reader returns it
+    for that page, must still identify the table."""
+    header = ["de", "Tableau Province / Zone santé", "2. Répartition Nombre Cas (n)",
+              "des cumulatif Décès (n)", "cas et décès Létalité",
+              "confirmés Situation du Nouv. Cas",
+              "par province et zone jour (24h) Décès communautaires (Swab+)",
+              "au 23 novembre Décès confirmés intra-CTE",
+              "2026 Total décès confirmés", ""]
+    assert ZONE_TABLE.identifies(header)
+    assert not EARLY_ZONE_TABLE.identifies(header)
+
+
+@needs_pdfs
+def test_sitrep_193_zone_table_is_read():
+    """Sitrep 193's zone table was reported as `no_matching_table`, though
+    every row reads; it is now found, and closes on the page's own total."""
+    rows, status = E.extract(pdf(193))
+    assert status == "ok"
+    prov = _by_province(rows)
+    ituri, parts = prov["Ituri"]
+    assert ituri["cum_cases"] == sum(r["cum_cases"] or 0 for r in parts) == 8114
+    total = next(r for r in rows if r["level"] == "national")
+    assert total["cum_cases"] == 11955
+
+
 @needs_pdfs
 @pytest.mark.parametrize("n", [88, 89, 91, 95, 98])
 def test_a_value_in_a_taller_cell_is_not_split_off_its_own_row(n):
